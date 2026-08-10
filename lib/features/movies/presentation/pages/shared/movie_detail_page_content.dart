@@ -3,7 +3,9 @@ import 'dart:math' as math;
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:oktoast/oktoast.dart';
 import 'package:sakuramedia/core/format/file_size.dart';
 import 'package:sakuramedia/core/platform/clipboard_copy.dart';
 import 'package:sakuramedia/features/clips/data/dto/media_clip_dto.dart';
@@ -874,7 +876,7 @@ class _InlineMagnetSectionState extends ConsumerState<_InlineMagnetSection> {
     final state = ref.watch(movieDetailMagnetProvider(widget.movieNumber));
 
     if (state.isLoading && state.items.isEmpty) {
-      return _buildSkeleton();
+      return _buildSkeleton(context);
     }
 
     if (state.errorMessage != null && state.items.isEmpty) {
@@ -949,18 +951,18 @@ class _InlineMagnetSectionState extends ConsumerState<_InlineMagnetSection> {
     );
   }
 
-  Widget _buildSkeleton() {
+  Widget _buildSkeleton(BuildContext ctx) {
     return SizedBox(
       height: 180,
       child: ListView.separated(
         itemCount: 3,
         separatorBuilder: (_, __) =>
-            SizedBox(height: context.appSpacing.sm),
+            SizedBox(height: ctx.appSpacing.sm),
         itemBuilder: (_, __) => Container(
           height: 52,
           decoration: BoxDecoration(
-            color: context.appColors.surfaceMuted,
-            borderRadius: context.appRadius.mdBorder,
+            color: ctx.appColors.surfaceMuted,
+            borderRadius: ctx.appRadius.mdBorder,
           ),
         ),
       ),
