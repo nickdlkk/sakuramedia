@@ -16,6 +16,9 @@ import 'package:sakuramedia/features/movies/data/dto/detail/movie_review_dto.dar
 import 'package:sakuramedia/features/movies/data/dto/listing/movie_list_item_dto.dart';
 import 'package:sakuramedia/features/movies/presentation/actions/movie_collection_feature_actions.dart';
 import 'package:sakuramedia/features/movies/presentation/providers/movie_detail_magnet_provider.dart';
+import 'package:sakuramedia/features/downloads/data/download_candidate_dto.dart';
+import 'package:sakuramedia/widgets/base/actions/app_button.dart';
+import 'package:sakuramedia/widgets/base/forms/app_select_field.dart';
 import 'package:sakuramedia/features/movies/presentation/providers/movie_detail_review_provider.dart';
 import 'package:sakuramedia/features/movies/presentation/providers/movie_detail_thumbnail_provider.dart';
 import 'package:sakuramedia/features/movies/presentation/widgets/detail/movie_playback_options.dart';
@@ -713,7 +716,7 @@ class _InlineReviewSectionState extends ConsumerState<_InlineReviewSection> {
     }
 
     return SizedBox(
-      height: 220,
+      height: 320,
       child: ListView.separated(
         controller: _scrollController,
         key: const Key('inline-review-list'),
@@ -745,7 +748,7 @@ class _InlineReviewSectionState extends ConsumerState<_InlineReviewSection> {
 
   Widget _buildSkeleton() {
     return SizedBox(
-      height: 220,
+      height: 320,
       child: ListView.separated(
         itemCount: 3,
         separatorBuilder: (_, __) =>
@@ -935,7 +938,7 @@ class _InlineMagnetSectionState extends ConsumerState<_InlineMagnetSection> {
           ))
         else
           SizedBox(
-            height: 180,
+            height: 280,
             child: ListView.separated(
               key: const Key('inline-magnet-list'),
               itemCount: state.sortedItems.length,
@@ -943,7 +946,7 @@ class _InlineMagnetSectionState extends ConsumerState<_InlineMagnetSection> {
                   SizedBox(height: context.appSpacing.sm),
               itemBuilder: (context, index) {
                 final candidate = state.sortedItems[index];
-                return _InlineMagnetCard(candidate: candidate);
+                return _InlineMagnetCard(candidate: candidate, movieNumber: widget.movieNumber);
               },
             ),
           ),
@@ -953,7 +956,7 @@ class _InlineMagnetSectionState extends ConsumerState<_InlineMagnetSection> {
 
   Widget _buildSkeleton(BuildContext ctx) {
     return SizedBox(
-      height: 180,
+      height: 280,
       child: ListView.separated(
         itemCount: 3,
         separatorBuilder: (_, __) =>
@@ -970,13 +973,49 @@ class _InlineMagnetSectionState extends ConsumerState<_InlineMagnetSection> {
   }
 }
 
-class _InlineMagnetCard extends StatelessWidget {
-  const _InlineMagnetCard({required this.candidate});
-  final dynamic candidate; // DownloadCandidateDto
+class _InlineMagnetCard extends ConsumerStatefulWidget {
+  const _InlineMagnetCard({required this.candidate, required this.movieNumber});
+  final DownloadCandidateDto candidate;
+  final String movieNumber;
+
+  @override
+  ConsumerState<_InlineMagnetCard> createState() => _InlineMagnetCardState();
+}
+
+class _InlineMagnetCardState extends ConsumerState<_InlineMagnetCard> {
+  int? _selectedClientId;
+  bool _isSubmitting = false;
+  bool _submitted = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final first = widget.candidate.selectableDownloadClients.firstOrNull;
+    _selectedClientId = first?.id;
+  }
+
+  void _handleSubmit() async {
+    if (_selectedClientId == null || !widget.candidate.hasDownloadSource) return;
+    setState(() => _isSubmitting = true);
+    try {
+      final controller = ref.read(movieDetailMagnetProvider(widget.movieNumber).notifier);
+      await controller.submitCandidate(widget.candidate, clientId: _selectedClientId!);
+      if (mounted) {
+        final name = widget.candidate.selectableDownloadClients
+            .where((c) => c.id == _selectedClientId).firstOrNull?.name ?? '下载器';
+        showToast('已提交到 $name');
+        setState(() { _isSubmitting = false; _submitted = true; });
+      }
+    } catch (e) {
+      if (mounted) { showToast('提交失败'); setState(() => _isSubmitting = false); }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final magnetUrl = candidate.magnetUrl ?? '';
+    final magnetUrl = widget.candidate.magnetUrl ?? '';
+    final clients = widget.candidate.selectableDownloadClients;
+
     return Container(
       padding: EdgeInsets.all(context.appSpacing.sm),
       decoration: BoxDecoration(
@@ -984,52 +1023,90 @@ class _InlineMagnetCard extends StatelessWidget {
         borderRadius: context.appRadius.smBorder,
         border: Border.all(color: context.appColors.borderSubtle),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  candidate.title ?? '',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: resolveAppTextStyle(context, size: AppTextSize.s12,
-                      weight: AppTextWeight.medium),
-                ),
-                SizedBox(height: context.appSpacing.xs),
-                Wrap(
-                  spacing: context.appSpacing.sm,
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '做种: ${candidate.seeders}',
-                      style: resolveAppTextStyle(context,
-                          size: AppTextSize.s10,
-                          tone: AppTextTone.muted),
+                      widget.candidate.title ?? '',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: resolveAppTextStyle(context, size: AppTextSize.s12,
+                          weight: AppTextWeight.medium),
                     ),
-                    Text(
-                      formatFileSize(candidate.sizeBytes),
-                      style: resolveAppTextStyle(context,
-                          size: AppTextSize.s10,
-                          tone: AppTextTone.muted),
+                    SizedBox(height: context.appSpacing.xs),
+                    Wrap(
+                      spacing: context.appSpacing.sm,
+                      children: [
+                        Text(
+                          '做种: ${widget.candidate.seeders}',
+                          style: resolveAppTextStyle(context,
+                              size: AppTextSize.s10,
+                              tone: AppTextTone.muted),
+                        ),
+                        Text(
+                          formatFileSize(widget.candidate.sizeBytes),
+                          style: resolveAppTextStyle(context,
+                              size: AppTextSize.s10,
+                              tone: AppTextTone.muted),
+                        ),
+                      ],
                     ),
                   ],
                 ),
-              ],
-            ),
+              ),
+              if (magnetUrl.isNotEmpty)
+                AppIconButton(
+                  key: const Key('inline-magnet-copy'),
+                  tooltip: '复制磁力链接',
+                  size: AppIconButtonSize.mini,
+                  onPressed: () async {
+                    final copied = await copyTextToClipboard(magnetUrl);
+                    if (context.mounted) {
+                      showToast(copied ? '磁力链接已复制' : '复制失败');
+                    }
+                  },
+                  icon: const Icon(Icons.copy_rounded, size: 16),
+                ),
+            ],
           ),
-          if (magnetUrl.isNotEmpty)
-            AppIconButton(
-              key: const Key('inline-magnet-copy'),
-              tooltip: '复制磁力链接',
-              size: AppIconButtonSize.mini,
-              onPressed: () async {
-                final copied = await copyTextToClipboard(magnetUrl);
-                if (context.mounted) {
-                  showToast(copied ? '磁力链接已复制' : '复制失败');
-                }
-              },
-              icon: const Icon(Icons.copy_rounded, size: 16),
+          SizedBox(height: context.appSpacing.sm),
+          // Download row: client selector + submit button
+          if (clients.isNotEmpty)
+            SizedBox(
+              height: 30,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: AppSelectField<int>(
+                      value: _selectedClientId,
+                      size: AppSelectFieldSize.compact,
+                      items: clients.map((c) => DropdownMenuItem<int>(
+                        value: c.id,
+                        child: Text(c.name, style: const TextStyle(fontSize: 12)),
+                      )).toList(),
+                      onChanged: (v) => setState(() => _selectedClientId = v),
+                    ),
+                  ),
+                  SizedBox(width: context.appSpacing.xs),
+                  AppButton(
+                    key: const Key('inline-magnet-submit'),
+                    size: AppButtonSize.xSmall,
+                    label: _submitted
+                        ? '已提交'
+                        : widget.candidate.hasDownloadSource ? '提交下载' : '无资源',
+                    variant: _submitted ? AppButtonVariant.ghost : AppButtonVariant.primary,
+                    isLoading: _isSubmitting,
+                    onPressed: (_submitted || !widget.candidate.hasDownloadSource)
+                        ? null : _handleSubmit,
+                  ),
+                ],
+              ),
             ),
         ],
       ),
@@ -1082,7 +1159,7 @@ class _InlineThumbnailSection extends ConsumerWidget {
         SizedBox(height: context.appSpacing.md),
         if (state.isLoading && state.thumbnails.isEmpty)
           Container(
-            height: 200,
+            height: 280,
             decoration: BoxDecoration(
               color: context.appColors.surfaceMuted,
               borderRadius: context.appRadius.mdBorder,
@@ -1098,7 +1175,7 @@ class _InlineThumbnailSection extends ConsumerWidget {
           const Center(child: AppEmptyState(message: '暂无缩略图'))
         else
           SizedBox(
-            height: 200,
+            height: 280,
             child: LayoutBuilder(
               builder: (context, constraints) {
                 final columns = state.columns ?? 3;
