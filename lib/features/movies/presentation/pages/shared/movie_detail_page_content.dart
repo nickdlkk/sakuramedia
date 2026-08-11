@@ -730,7 +730,7 @@ class _InlineReviewSectionState extends ConsumerState<_InlineReviewSection> {
           if (state.isLoadingMore) {
             return const Center(
                 child: Padding(
-              padding: EdgeInsets.all(8),
+              padding: EdgeInsets.all(context.appSpacing.sm),
               child: CupertinoActivityIndicator(),
             ));
           }
@@ -933,7 +933,7 @@ class _InlineMagnetSectionState extends ConsumerState<_InlineMagnetSection> {
         if (state.items.isEmpty)
           const Center(
               child: Padding(
-            padding: EdgeInsets.all(16),
+            padding: EdgeInsets.all(context.appSpacing.lg),
             child: CupertinoActivityIndicator(),
           ))
         else
@@ -1039,7 +1039,7 @@ class _InlineMagnetCardState extends ConsumerState<_InlineMagnetCard> {
                             margin: EdgeInsets.only(right: context.appSpacing.xs),
                             padding: EdgeInsets.symmetric(
                               horizontal: context.appSpacing.xs,
-                              vertical: 2,
+                              vertical: context.appSpacing.xs,
                             ),
                             decoration: BoxDecoration(
                               color: context.appColors.movieCardPlayableBadgeBackground
@@ -1115,7 +1115,7 @@ class _InlineMagnetCardState extends ConsumerState<_InlineMagnetCard> {
                       size: AppSelectFieldSize.compact,
                       items: clients.map((c) => DropdownMenuItem<int>(
                         value: c.id,
-                        child: Text(c.name, style: const TextStyle(fontSize: 12)),
+                        child: Text(c.name, style: Theme.of(context).textTheme.bodySmall),
                       )).toList(),
                       onChanged: (v) => setState(() => _selectedClientId = v),
                     ),
