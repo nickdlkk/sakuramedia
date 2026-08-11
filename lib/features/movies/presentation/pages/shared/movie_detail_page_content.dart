@@ -1032,12 +1032,39 @@ class _InlineMagnetCardState extends ConsumerState<_InlineMagnetCard> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      widget.candidate.title ?? '',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: resolveAppTextStyle(context, size: AppTextSize.s12,
-                          weight: AppTextWeight.medium),
+                    Row(
+                      children: [
+                        if (widget.candidate.indexerName.isNotEmpty)
+                          Container(
+                            margin: EdgeInsets.only(right: context.appSpacing.xs),
+                            padding: EdgeInsets.symmetric(
+                              horizontal: context.appSpacing.xs,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: context.appColors.movieCardPlayableBadgeBackground
+                                  .withValues(alpha: 0.2),
+                              borderRadius: context.appRadius.xsBorder,
+                            ),
+                            child: Text(
+                              widget.candidate.indexerName,
+                              style: resolveAppTextStyle(context,
+                                  size: AppTextSize.s10,
+                                  weight: AppTextWeight.medium,
+                                  tone: AppTextTone.primary),
+                            ),
+                          ),
+                        Expanded(
+                          child: Text(
+                            widget.candidate.title ?? '',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: resolveAppTextStyle(context,
+                                size: AppTextSize.s12,
+                                weight: AppTextWeight.medium),
+                          ),
+                        ),
+                      ],
                     ),
                     SizedBox(height: context.appSpacing.xs),
                     Wrap(
