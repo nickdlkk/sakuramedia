@@ -728,10 +728,10 @@ class _InlineReviewSectionState extends ConsumerState<_InlineReviewSection> {
             return _InlineReviewCard(review: state.items[index]);
           }
           if (state.isLoadingMore) {
-            return const Center(
+            return Center(
                 child: Padding(
               padding: EdgeInsets.all(context.appSpacing.sm),
-              child: CupertinoActivityIndicator(),
+              child: const CupertinoActivityIndicator(),
             ));
           }
           if (state.loadMoreErrorMessage != null) {
@@ -931,10 +931,10 @@ class _InlineMagnetSectionState extends ConsumerState<_InlineMagnetSection> {
         ),
         SizedBox(height: context.appSpacing.sm),
         if (state.items.isEmpty)
-          const Center(
+          Center(
               child: Padding(
             padding: EdgeInsets.all(context.appSpacing.lg),
-            child: CupertinoActivityIndicator(),
+            child: const CupertinoActivityIndicator(),
           ))
         else
           SizedBox(
