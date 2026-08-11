@@ -19,7 +19,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # 注意：GitHub Release 的实际版本由 CI 从 git tag 注入
 # （release-*.yml 里 flutter build --build-name="${GITHUB_REF_NAME#v}"）。
 # 这里的 version 仅供本地开发/占位，改它不影响发布产物的版本号，发版无需再手动改这里。
-version: 0.3.6
+version: 0.4.10
 
 environment:
   sdk: ^3.7.2
