@@ -25,4 +25,19 @@ class InMemoryCredentialStore implements CredentialStore {
     username = null;
     password = null;
   }
+
+  final Map<String, String> _accountPasswords = {};
+
+  @override
+  Future<void> saveAccountPassword({
+    required String accountId,
+    required String password,
+  }) async {
+    _accountPasswords[accountId] = password;
+  }
+
+  @override
+  Future<void> deleteAccountPassword(String accountId) async {
+    _accountPasswords.remove(accountId);
+  }
 }

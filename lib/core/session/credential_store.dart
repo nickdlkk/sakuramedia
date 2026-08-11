@@ -55,4 +55,34 @@ class CredentialStore {
       return null;
     }
   }
+
+  // Per-account password storage for multi-account support
+  static String _accountPasswordKey(String accountId) =>
+      'credential.account.$accountId.password';
+
+  Future<void> saveAccountPassword({
+    required String accountId,
+    required String password,
+  }) async {
+    try {
+      await _storage.write(
+        key: _accountPasswordKey(accountId),
+        value: password,
+      );
+    } catch (error, stackTrace) {
+      debugPrint(
+        'CredentialStore.saveAccountPassword failed: $error\n$stackTrace',
+      );
+    }
+  }
+
+  Future<void> deleteAccountPassword(String accountId) async {
+    try {
+      await _storage.delete(key: _accountPasswordKey(accountId));
+    } catch (error, stackTrace) {
+      debugPrint(
+        'CredentialStore.deleteAccountPassword failed: $error\n$stackTrace',
+      );
+    }
+  }
 }
