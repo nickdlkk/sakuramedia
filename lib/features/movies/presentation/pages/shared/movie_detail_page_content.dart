@@ -1115,7 +1115,7 @@ class _InlineMagnetCardState extends ConsumerState<_InlineMagnetCard> {
                       size: AppSelectFieldSize.compact,
                       items: clients.map((c) => DropdownMenuItem<int>(
                         value: c.id,
-                        child: Text(c.name, style: Theme.of(context).textTheme.bodySmall),
+                        child: Text(c.name),
                       )).toList(),
                       onChanged: (v) => setState(() => _selectedClientId = v),
                     ),
