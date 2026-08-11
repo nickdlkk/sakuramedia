@@ -21,6 +21,7 @@ List<RouteBase> get $appRoutes => [
   $mobileSettingsExternalPlayerRouteData,
   $mobileSettingsUsernameRouteData,
   $mobileSettingsPasswordRouteData,
+  $mobileSettingsAccountsRouteData,
   $mobileMoviePlayerRouteData,
   $mobileTagsRouteData,
   $mobileTagMoviesRouteData,
@@ -455,6 +456,32 @@ mixin $MobileSettingsPasswordRouteData on GoRouteData {
 
   @override
   String get location => GoRouteData.$location('/mobile/settings/password');
+
+  @override
+  void go(BuildContext context) => context.go(location);
+
+  @override
+  Future<T?> push<T>(BuildContext context) => context.push<T>(location);
+
+  @override
+  void pushReplacement(BuildContext context) =>
+      context.pushReplacement(location);
+
+  @override
+  void replace(BuildContext context) => context.replace(location);
+}
+
+RouteBase get $mobileSettingsAccountsRouteData => GoRouteData.$route(
+  path: '/mobile/settings/accounts',
+  factory: $MobileSettingsAccountsRouteData._fromState,
+);
+
+mixin $MobileSettingsAccountsRouteData on GoRouteData {
+  static MobileSettingsAccountsRouteData _fromState(GoRouterState state) =>
+      const MobileSettingsAccountsRouteData();
+
+  @override
+  String get location => GoRouteData.$location('/mobile/settings/accounts');
 
   @override
   void go(BuildContext context) => context.go(location);

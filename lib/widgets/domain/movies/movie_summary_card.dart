@@ -20,6 +20,8 @@ class MovieSummaryCard extends StatelessWidget {
     this.selectionMode = false,
     this.isSelected = false,
     this.onSelectedChanged,
+    this.onLongPress,
+    this.isExpanded = false,
   });
 
   final MovieListItemDto movie;
@@ -35,6 +37,11 @@ class MovieSummaryCard extends StatelessWidget {
   final bool selectionMode;
   final bool isSelected;
   final ValueChanged<bool>? onSelectedChanged;
+
+  /// 长按触发展开详情面板
+  final VoidCallback? onLongPress;
+  /// 当前卡片是否处于展开状态（展开时显示展开标识）
+  final bool isExpanded;
 
   @override
   Widget build(BuildContext context) {
@@ -111,15 +118,19 @@ class MovieSummaryCard extends StatelessWidget {
           key: Key('movie-summary-card-checkbox-${movie.movieNumber}'),
           borderRadius: context.appRadius.lgBorder,
           onTap: () => onSelectedChanged?.call(!isSelected),
+          onLongPress: onLongPress,
           child: card,
         ),
       );
     } else if (onTap == null && onRequestMenu == null) {
-      interactiveCard = card;
+      interactiveCard = onLongPress != null
+          ? GestureDetector(onLongPress: onLongPress, child: card)
+          : card;
     } else {
       interactiveCard = AppImageActionTrigger(
         onTap: onTap,
         onRequestMenu: onRequestMenu,
+        onLongPress: onLongPress,
         child: card,
       );
     }

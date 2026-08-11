@@ -20,6 +20,8 @@ class MovieSummaryGrid extends StatelessWidget {
     this.selectionMode = false,
     this.isMovieSelected,
     this.onMovieSelectedChanged,
+    this.onMovieLongPress,
+    this.isMovieExpanded,
   });
 
   final List<MovieListItemDto> items;
@@ -27,17 +29,21 @@ class MovieSummaryGrid extends StatelessWidget {
   final String? errorMessage;
   final ValueChanged<MovieListItemDto>? onMovieTap;
   final void Function(MovieListItemDto movie, Offset globalPosition)?
-  onMovieMenuRequest;
+      onMovieMenuRequest;
   final ValueChanged<MovieListItemDto>? onMovieSubscriptionTap;
   final bool Function(MovieListItemDto movie)? isMovieSubscriptionUpdating;
   final String emptyMessage;
   final int placeholderCount;
 
-  /// 选择模式开关：向 [MovieSummaryCard] 透传，卡片进入多选态。
   final bool selectionMode;
   final bool Function(MovieListItemDto movie)? isMovieSelected;
   final void Function(MovieListItemDto movie, bool selected)?
-  onMovieSelectedChanged;
+      onMovieSelectedChanged;
+
+  /// 长按影片卡片触发展开详情
+  final ValueChanged<MovieListItemDto>? onMovieLongPress;
+  /// 当前影片是否处于展开状态
+  final bool Function(MovieListItemDto movie)? isMovieExpanded;
 
   @override
   Widget build(BuildContext context) {
@@ -75,6 +81,8 @@ class MovieSummaryGrid extends StatelessWidget {
                 onMovieSelectedChanged == null
                     ? null
                     : (selected) => onMovieSelectedChanged!(movie, selected),
+            onLongPress: onMovieLongPress == null ? null : () => onMovieLongPress!(movie),
+            isExpanded: isMovieExpanded?.call(movie) ?? false,
           ),
     );
   }
@@ -96,6 +104,8 @@ class MovieSummarySliver extends StatelessWidget {
     this.selectionMode = false,
     this.isMovieSelected,
     this.onMovieSelectedChanged,
+    this.onMovieLongPress,
+    this.isMovieExpanded,
   });
 
   final List<MovieListItemDto> items;
@@ -103,7 +113,7 @@ class MovieSummarySliver extends StatelessWidget {
   final String? errorMessage;
   final ValueChanged<MovieListItemDto>? onMovieTap;
   final void Function(MovieListItemDto movie, Offset globalPosition)?
-  onMovieMenuRequest;
+      onMovieMenuRequest;
   final ValueChanged<MovieListItemDto>? onMovieSubscriptionTap;
   final bool Function(MovieListItemDto movie)? isMovieSubscriptionUpdating;
   final String emptyMessage;
@@ -112,7 +122,12 @@ class MovieSummarySliver extends StatelessWidget {
   final bool selectionMode;
   final bool Function(MovieListItemDto movie)? isMovieSelected;
   final void Function(MovieListItemDto movie, bool selected)?
-  onMovieSelectedChanged;
+      onMovieSelectedChanged;
+
+  /// 长按影片卡片触发展开详情
+  final ValueChanged<MovieListItemDto>? onMovieLongPress;
+  /// 当前影片是否处于展开状态
+  final bool Function(MovieListItemDto movie)? isMovieExpanded;
 
   @override
   Widget build(BuildContext context) {
@@ -150,6 +165,8 @@ class MovieSummarySliver extends StatelessWidget {
                 onMovieSelectedChanged == null
                     ? null
                     : (selected) => onMovieSelectedChanged!(movie, selected),
+            onLongPress: onMovieLongPress == null ? null : () => onMovieLongPress!(movie),
+            isExpanded: isMovieExpanded?.call(movie) ?? false,
           ),
     );
   }

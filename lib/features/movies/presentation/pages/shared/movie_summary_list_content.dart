@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:oktoast/oktoast.dart';
 import 'package:sakuramedia/features/movies/data/dto/detail/movie_collection_type_dto.dart';
+import 'package:sakuramedia/features/movies/data/dto/listing/movie_list_item_dto.dart';
 import 'package:sakuramedia/features/movies/presentation/actions/movie_collection_feature_actions.dart';
 import 'package:sakuramedia/features/movies/presentation/controllers/listing/movie_filter_state.dart';
 import 'package:sakuramedia/features/movies/presentation/providers/movie_summary_provider.dart';
@@ -18,6 +19,7 @@ import 'package:sakuramedia/widgets/base/navigation/app_list_header.dart';
 import 'package:sakuramedia/widgets/base/overlays/app_filter_popover.dart';
 import 'package:sakuramedia/widgets/domain/movies/movie_batch_selection.dart';
 import 'package:sakuramedia/widgets/domain/movies/movie_filter_sections.dart';
+import 'package:sakuramedia/features/movies/presentation/widgets/movie_inline_detail_picker.dart';
 import 'package:sakuramedia/widgets/domain/movies/movie_summary_grid.dart';
 
 typedef MovieSummaryListBodyBuilder =
@@ -91,6 +93,7 @@ class _MovieSummaryListContentState
         MultiSelectStateMixin<MovieSummaryListContent, String>,
         MovieBatchSelectionMixin<MovieSummaryListContent> {
   late final ScrollController _scrollController;
+  String? _expandedMovieNumber;
 
   @override
   String get batchKeyPrefix => 'movie-list';
@@ -254,6 +257,14 @@ class _MovieSummaryListContentState
       );
     }
 
+    // 查找当前展开的影片
+    final expandedMovie = _expandedMovieNumber != null
+        ? items.cast<MovieListItemDto?>().firstWhere(
+            (m) => m?.movieNumber == _expandedMovieNumber,
+            orElse: () => null,
+          )
+        : null;
+
     final body = ColoredBox(
       color: widget.surfaceColor,
       child: widget.bodyBuilder(
@@ -268,12 +279,31 @@ class _MovieSummaryListContentState
                 children: [header, SizedBox(height: widget.sectionSpacing)],
               ),
             ),
+            if (expandedMovie != null)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: widget.sectionSpacing),
+                  child: MovieInlineDetailPicker(
+                    key: Key('inline-detail-${expandedMovie.movieNumber}'),
+                    movieNumber: expandedMovie.movieNumber,
+                    onClose: () => setState(() => _expandedMovieNumber = null),
+                  ),
+                ),
+              ),
             MovieSummarySliver(
               items: items,
               isLoading: isInitialLoading,
               errorMessage: initialErrorMessage,
               onMovieTap:
                   (movie) => widget.onMovieTap(context, movie.movieNumber),
+              onMovieLongPress: (movie) {
+                setState(() {
+                  _expandedMovieNumber = _expandedMovieNumber == movie.movieNumber
+                      ? null
+                      : movie.movieNumber;
+                });
+              },
+              isMovieExpanded: (movie) => movie.movieNumber == _expandedMovieNumber,
               onMovieMenuRequest: (movie, globalPosition) {
                 unawaited(
                   showMovieCollectionFeatureActionMenu(

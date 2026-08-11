@@ -42,7 +42,7 @@ final class MediaLibrariesProvider
   MediaLibraries create() => MediaLibraries();
 }
 
-String _$mediaLibrariesHash() => r'48db917fe60dcbd4c9045902a21faabbb90b5180';
+String _$mediaLibrariesHash() => r'ef76a95a8b203cc1e045df0b6f04790ec6a49201';
 
 /// 媒体库列表 provider：keepAlive；两页（媒体管理 + 媒体维护）与秒传弹窗共享一份，
 /// 避免每次进 tab 各拉一次。加载失败以 `AsyncError` 呈现，消费方可 fallback

@@ -6,7 +6,9 @@ import 'package:go_router/go_router.dart';
 import 'package:oktoast/oktoast.dart';
 import 'package:sakuramedia/app/app_platform.dart';
 import 'package:sakuramedia/app/web_platform_notice.dart';
+import 'package:sakuramedia/core/session/providers/saved_accounts_runtime_provider.dart';
 import 'package:sakuramedia/core/session/providers/session_store_provider.dart';
+import 'package:sakuramedia/core/session/saved_accounts_store.dart';
 import 'package:sakuramedia/core/session/session_store.dart';
 import 'package:sakuramedia/routes/app_router.dart';
 import 'package:sakuramedia/theme.dart';
@@ -33,11 +35,13 @@ class MyApp extends StatefulWidget {
     super.key,
     this.platformOverride,
     this.sessionStore,
+    this.savedAccountsStore,
     this.observers,
   });
 
   final AppPlatform? platformOverride;
   final SessionStore? sessionStore;
+  final SavedAccountsStore? savedAccountsStore;
 
   /// 挂到组合根 [ProviderScope] 上的观察者。
   ///
@@ -53,8 +57,10 @@ class MyApp extends StatefulWidget {
 class _MyAppState extends State<MyApp> {
   late AppPlatform _platform;
   late SessionStore _activeSessionStore;
+  late SavedAccountsStore _activeSavedAccountsStore;
   late GoRouter _router;
   late bool _ownsSessionStore;
+  late bool _ownsSavedAccountsStore;
 
   @override
   void initState() {
@@ -84,14 +90,24 @@ class _MyAppState extends State<MyApp> {
   void _initializeAppState() {
     _platform = resolveAppPlatform(override: widget.platformOverride);
     _ownsSessionStore = widget.sessionStore == null;
+    _ownsSavedAccountsStore = widget.savedAccountsStore == null;
     _activeSessionStore = widget.sessionStore ?? SessionStore.inMemory();
-    _router = buildAppRouter(_platform, _activeSessionStore);
+    _activeSavedAccountsStore =
+        widget.savedAccountsStore ?? SavedAccountsStore.inMemory();
+    _router = buildAppRouter(
+      _platform,
+      _activeSessionStore,
+      savedAccountsStore: _activeSavedAccountsStore,
+    );
   }
 
   void _disposeAppState() {
     _router.dispose();
     if (_ownsSessionStore) {
       _activeSessionStore.dispose();
+    }
+    if (_ownsSavedAccountsStore) {
+      _activeSavedAccountsStore.dispose();
     }
   }
 
@@ -108,7 +124,11 @@ class _MyAppState extends State<MyApp> {
     // 重建，等价于旧 MultiProvider 时代的全量重挂。
     return ProviderScope(
       key: ObjectKey(_activeSessionStore),
-      overrides: [sessionStoreProvider.overrideWithValue(_activeSessionStore)],
+      overrides: [
+        sessionStoreProvider.overrideWithValue(_activeSessionStore),
+        savedAccountsStoreRuntimeProvider
+            .overrideWithValue(_activeSavedAccountsStore),
+      ],
       observers: widget.observers,
       child: AppPlatformScope(
         platform: _platform,

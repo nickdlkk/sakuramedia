@@ -82,7 +82,7 @@ final class LlmSettingsProvider
   LlmSettings create() => LlmSettings();
 }
 
-String _$llmSettingsHash() => r'92e5a14324ac7f688b32662aa1dd831f7215e608';
+String _$llmSettingsHash() => r'c623109344d4f89c0d64a59ebe76b513455b8191';
 
 abstract class _$LlmSettings extends $AsyncNotifier<LlmSettingsState> {
   FutureOr<LlmSettingsState> build();

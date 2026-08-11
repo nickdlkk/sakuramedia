@@ -54,6 +54,7 @@ const String mobileSettingsExternalPlayerPath =
     '/mobile/settings/external-player';
 const String mobileSettingsUsernamePath = '/mobile/settings/username';
 const String mobileSettingsPasswordPath = '/mobile/settings/password';
+const String mobileSettingsAccountsPath = '/mobile/settings/accounts';
 
 const String loginPath = '/login';
 

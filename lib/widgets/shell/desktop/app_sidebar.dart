@@ -5,10 +5,13 @@ import 'package:flutter/material.dart';
 import 'package:oktoast/oktoast.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sakuramedia/app/providers/app_shell_providers.dart';
+import 'package:sakuramedia/core/session/app_module_permission.dart';
+import 'package:sakuramedia/core/session/providers/saved_accounts_runtime_provider.dart';
 import 'package:sakuramedia/features/activity/presentation/providers/notification_center_provider.dart';
 import 'package:sakuramedia/app/app_version_info_state.dart';
 import 'package:sakuramedia/features/image_search/presentation/image_search_file_picker.dart';
 import 'package:sakuramedia/routes/app_navigation_actions.dart';
+import 'package:sakuramedia/routes/app_route_paths.dart';
 import 'package:sakuramedia/routes/app_route_spec.dart';
 import 'package:sakuramedia/theme.dart';
 import 'package:sakuramedia/widgets/base/actions/app_icon_button.dart';
@@ -114,7 +117,7 @@ class AppSidebar extends ConsumerWidget {
                   useMacSidebarGlass
                       ? appColors.desktopSidebarGlassTint
                       : appColors.sidebarBackground,
-              children: _buildNavChildren(context, isCompact),
+              children: _buildNavChildren(context, ref, isCompact),
             ),
           ),
           Padding(
@@ -147,10 +150,12 @@ class AppSidebar extends ConsumerWidget {
     );
   }
 
-  List<Widget> _buildNavChildren(BuildContext context, bool isCompact) {
+  List<Widget> _buildNavChildren(BuildContext context, WidgetRef ref, bool isCompact) {
+    final enabledModules = ref.watch(enabledModulesRuntimeProvider);
+    final filteredGroups = _filterNavGroupsForModules(navGroups, enabledModules);
     final children = <Widget>[];
     String? previousSection;
-    for (final group in navGroups) {
+    for (final group in filteredGroups) {
       final section = group.sectionLabel;
       if (section != null && section != previousSection) {
         children.add(
@@ -170,6 +175,41 @@ class AppSidebar extends ConsumerWidget {
       );
     }
     return children;
+  }
+
+  /// Filter nav groups by enabled module permissions.
+  List<AppNavGroup> _filterNavGroupsForModules(
+    List<AppNavGroup> groups,
+    Set<AppModulePermission> enabledModules,
+  ) {
+    return groups
+        .map((group) {
+          final items = group.items.where((item) {
+            return _isNavItemAllowed(item.path, enabledModules);
+          }).toList();
+          if (items.isEmpty) return null;
+          return AppNavGroup(
+            id: group.id,
+            label: group.label,
+            icon: group.icon,
+            items: items,
+            isCollapsible: group.isCollapsible,
+            sectionLabel: group.sectionLabel,
+          );
+        })
+        .whereType<AppNavGroup>()
+        .toList(growable: false);
+  }
+
+  bool _isNavItemAllowed(
+    String path,
+    Set<AppModulePermission> enabledModules,
+  ) {
+    if ((path == desktopSearchPath) &&
+        !enabledModules.contains(AppModulePermission.search)) {
+      return false;
+    }
+    return true;
   }
 }
 

@@ -56,7 +56,7 @@ final class MediaRapidUploadHistoryProvider
 }
 
 String _$mediaRapidUploadHistoryHash() =>
-    r'9ce0836d60f3d6d3917cecdc33191e2c77deb2bf';
+    r'b79f57629e0bc8c204201b5e9ef8ce0a86dd77fa';
 
 /// 秒传批次历史控制器（Riverpod）：只读分页 + 单批次覆盖更新。
 ///

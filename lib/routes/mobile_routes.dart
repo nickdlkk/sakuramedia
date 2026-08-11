@@ -12,6 +12,7 @@ import 'package:sakuramedia/app/app_platform.dart';
 import 'package:sakuramedia/app/app_version_info_state.dart';
 import 'package:sakuramedia/features/account/presentation/pages/mobile/change_password_page.dart';
 import 'package:sakuramedia/features/account/presentation/pages/mobile/change_username_page.dart';
+import 'package:sakuramedia/features/account/presentation/pages/mobile/mobile_accounts_page.dart';
 import 'package:sakuramedia/features/actors/presentation/pages/mobile/actor_detail_page.dart';
 import 'package:sakuramedia/features/activity/presentation/pages/mobile/notifications_page.dart';
 import 'package:sakuramedia/features/auth/presentation/login_page.dart';
@@ -435,6 +436,29 @@ class MobileSettingsPasswordRouteData extends _MobileSubpageRouteData
   @override
   Widget buildSubpage(BuildContext context, GoRouterState state) {
     return const MobileChangePasswordPage();
+  }
+}
+
+@TypedGoRoute<MobileSettingsAccountsRouteData>(path: mobileSettingsAccountsPath)
+class MobileSettingsAccountsRouteData extends _MobileSubpageRouteData
+    with $MobileSettingsAccountsRouteData {
+  const MobileSettingsAccountsRouteData();
+
+  @override
+  String get pageName => 'mobile-settings-accounts';
+
+  @override
+  String get title => '账号与权限';
+
+  @override
+  String get defaultLocation => mobileOverviewPath;
+
+  @override
+  EdgeInsetsGeometry get bodyPadding => AppPageInsets.zero;
+
+  @override
+  Widget buildSubpage(BuildContext context, GoRouterState state) {
+    return const MobileAccountsPage();
   }
 }
 
@@ -916,6 +940,13 @@ class _MobileOverviewDrawer extends ConsumerWidget {
         label: '修改用户名',
       );
 
+  static const _MobileOverviewDrawerMenuItem _accountsItem =
+      _MobileOverviewDrawerMenuItem(
+        key: 'accounts',
+        icon: Icons.group_outlined,
+        label: '账号与权限',
+      );
+
   static const _MobileOverviewDrawerMenuItem _passwordItem =
       _MobileOverviewDrawerMenuItem(
         key: 'password',
@@ -1062,6 +1093,10 @@ class _MobileOverviewDrawer extends ConsumerWidget {
                           _buildMenuEntry(
                             context: context,
                             item: _passwordItem,
+                          ),
+                          _buildMenuEntry(
+                            context: context,
+                            item: _accountsItem,
                           ),
                         ],
                       ),

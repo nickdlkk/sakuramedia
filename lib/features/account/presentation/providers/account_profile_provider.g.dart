@@ -11,7 +11,9 @@ part of 'account_profile_provider.dart';
 /// 账号资料（用户名/创建时间/上次登录）+ 修改用户名。
 ///
 /// keepAlive：账号资料是全局共享数据（configuration 桌面段 + mobile 改用户名页
-/// 都消费）；首次加载后跨页保留，切换 tab 不重拉。登出时随 ProviderScope 拆掉。
+/// 都消费）；首次加载后跨页保留，切换 tab 不重拉。登出走 [invalidateOnSignOut]
+/// 失效——组合根的 ObjectKey 绑的是 SessionStore 实例，同一次运行内登出换账号
+/// **不会**重建 ProviderScope，keepAlive 状态必须自行处理登出边沿。
 ///
 /// 迁移前对应：`AccountProfileController`（configuration section + mobile
 /// change_username page 两处各自 late final 构造）。四态复合（account /
@@ -24,7 +26,9 @@ final accountProfileProvider = AccountProfileProvider._();
 /// 账号资料（用户名/创建时间/上次登录）+ 修改用户名。
 ///
 /// keepAlive：账号资料是全局共享数据（configuration 桌面段 + mobile 改用户名页
-/// 都消费）；首次加载后跨页保留，切换 tab 不重拉。登出时随 ProviderScope 拆掉。
+/// 都消费）；首次加载后跨页保留，切换 tab 不重拉。登出走 [invalidateOnSignOut]
+/// 失效——组合根的 ObjectKey 绑的是 SessionStore 实例，同一次运行内登出换账号
+/// **不会**重建 ProviderScope，keepAlive 状态必须自行处理登出边沿。
 ///
 /// 迁移前对应：`AccountProfileController`（configuration section + mobile
 /// change_username page 两处各自 late final 构造）。四态复合（account /
@@ -35,7 +39,9 @@ final class AccountProfileProvider
   /// 账号资料（用户名/创建时间/上次登录）+ 修改用户名。
   ///
   /// keepAlive：账号资料是全局共享数据（configuration 桌面段 + mobile 改用户名页
-  /// 都消费）；首次加载后跨页保留，切换 tab 不重拉。登出时随 ProviderScope 拆掉。
+  /// 都消费）；首次加载后跨页保留，切换 tab 不重拉。登出走 [invalidateOnSignOut]
+  /// 失效——组合根的 ObjectKey 绑的是 SessionStore 实例，同一次运行内登出换账号
+  /// **不会**重建 ProviderScope，keepAlive 状态必须自行处理登出边沿。
   ///
   /// 迁移前对应：`AccountProfileController`（configuration section + mobile
   /// change_username page 两处各自 late final 构造）。四态复合（account /
@@ -68,12 +74,14 @@ final class AccountProfileProvider
   }
 }
 
-String _$accountProfileHash() => r'dd428ea3e9a3fb883419f3017d0073a0c7f44227';
+String _$accountProfileHash() => r'a0101fe0437e257b3501bd54b8271fd57f7394c1';
 
 /// 账号资料（用户名/创建时间/上次登录）+ 修改用户名。
 ///
 /// keepAlive：账号资料是全局共享数据（configuration 桌面段 + mobile 改用户名页
-/// 都消费）；首次加载后跨页保留，切换 tab 不重拉。登出时随 ProviderScope 拆掉。
+/// 都消费）；首次加载后跨页保留，切换 tab 不重拉。登出走 [invalidateOnSignOut]
+/// 失效——组合根的 ObjectKey 绑的是 SessionStore 实例，同一次运行内登出换账号
+/// **不会**重建 ProviderScope，keepAlive 状态必须自行处理登出边沿。
 ///
 /// 迁移前对应：`AccountProfileController`（configuration section + mobile
 /// change_username page 两处各自 late final 构造）。四态复合（account /
