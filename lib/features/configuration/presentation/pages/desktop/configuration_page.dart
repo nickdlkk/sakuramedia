@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:sakuramedia/features/account/presentation/pages/desktop/desktop_accounts_section.dart';
+import 'package:sakuramedia/features/account/presentation/pages/mobile/mobile_accounts_page.dart';
 import 'package:sakuramedia/features/configuration/presentation/pages/desktop/account_security_section.dart';
 import 'package:sakuramedia/features/configuration/presentation/pages/desktop/advanced_settings_section.dart';
 import 'package:sakuramedia/features/configuration/presentation/pages/desktop/download_clients_section.dart';
@@ -67,6 +69,11 @@ class _DesktopConfigurationPageState extends State<DesktopConfigurationPage> {
       itemKey: Key('configuration-tab-advanced'),
       label: '高级设置',
       icon: Icons.tune_outlined,
+    ),
+    _ConfigurationCategory(
+      itemKey: Key('configuration-tab-accounts'),
+      label: '账号与权限',
+      icon: Icons.group_outlined,
     ),
     // 媒体维护 / 媒体管理已迁出：并入侧边栏「管理 > 媒体管理」独立页（三 tab）。
   ];
@@ -175,6 +182,9 @@ class _DesktopConfigurationPageState extends State<DesktopConfigurationPage> {
                         onDirtyChanged: _handleAdvancedDirtyChanged,
                       ),
                     ),
+                    _ConfigurationTabScrollView(
+                      child: MobileAccountsPage(),
+                    ),
                   ],
                 ),
               ),
@@ -212,8 +222,61 @@ class _ConfigurationTabScrollView extends StatelessWidget {
           right: context.appSpacing.lg,
           bottom: context.appSpacing.xxl,
         ),
-        child: child,
+        child: _ErrorCapture(child: child),
       ),
     );
+  }
+}
+
+class _ErrorCapture extends StatefulWidget {
+  final Widget child;
+  const _ErrorCapture({required this.child});
+  @override
+  State<_ErrorCapture> createState() => _ErrorCaptureState();
+}
+
+class _ErrorCaptureState extends State<_ErrorCapture> {
+  Object? _error;
+  StackTrace? _stack;
+  bool _built = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_built) {
+      _built = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _error == null) {
+          setState(() {});
+        }
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_error != null) {
+      return Container(
+        color: Colors.red.shade100,
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('ERROR: $_error',
+                style: const TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            Text(_stack?.toString() ?? '', style: const TextStyle(fontSize: 11)),
+          ],
+        ),
+      );
+    }
+    try {
+      return widget.child;
+    } catch (e, st) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() { _error = e; _stack = st; });
+      });
+      return const SizedBox.shrink();
+    }
   }
 }
