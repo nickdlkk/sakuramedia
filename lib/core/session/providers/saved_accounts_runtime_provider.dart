@@ -41,6 +41,8 @@ class SavedAccountsRuntimeNotifier extends Notifier<SavedAccountsSnapshot> {
     required String accessToken,
     required String refreshToken,
     required DateTime expiresAt,
+    Set<AppModulePermission>? enabledModules,
+    bool activate = true,
   }) async {
     final store = ref.read(savedAccountsStoreRuntimeProvider);
     final account = await store.upsertAuthenticatedAccount(
@@ -49,6 +51,8 @@ class SavedAccountsRuntimeNotifier extends Notifier<SavedAccountsSnapshot> {
       accessToken: accessToken,
       refreshToken: refreshToken,
       expiresAt: expiresAt,
+      enabledModules: enabledModules,
+      activate: activate,
     );
     await ref.read(credentialStoreProvider).saveAccountPassword(
       accountId: account.id,

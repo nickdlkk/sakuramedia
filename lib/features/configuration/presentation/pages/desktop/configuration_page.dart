@@ -182,7 +182,11 @@ class _DesktopConfigurationPageState extends State<DesktopConfigurationPage> {
                         onDirtyChanged: _handleAdvancedDirtyChanged,
                       ),
                     ),
-                    _ConfigurationTabScrollView(
+                    Padding(
+                      padding: EdgeInsets.only(
+                        right: context.appSpacing.lg,
+                        bottom: context.appSpacing.xxl,
+                      ),
                       child: MobileAccountsPage(),
                     ),
                   ],

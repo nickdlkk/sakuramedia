@@ -1,14 +1,35 @@
 class AuthUserDto {
-  const AuthUserDto({required this.username});
+  const AuthUserDto({
+    required this.username,
+    this.role = 'user',
+    this.permissions,
+  });
 
   final String username;
+  final String role;
+  final List<String>? permissions;
 
   factory AuthUserDto.fromJson(Map<String, dynamic> json) {
-    return AuthUserDto(username: json['username'] as String? ?? '');
+    final rawPermissions = json['permissions'];
+    final permissions = rawPermissions is List
+        ? rawPermissions
+            .whereType<Object?>()
+            .map((value) => '$value')
+            .toList(growable: false)
+        : null;
+    return AuthUserDto(
+      username: json['username'] as String? ?? '',
+      role: json['role'] as String? ?? 'user',
+      permissions: permissions,
+    );
   }
 
   Map<String, dynamic> toJson() {
-    return <String, dynamic>{'username': username};
+    return <String, dynamic>{
+      'username': username,
+      'role': role,
+      if (permissions != null) 'permissions': permissions,
+    };
   }
 }
 

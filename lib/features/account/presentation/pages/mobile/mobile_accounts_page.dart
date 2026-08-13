@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:oktoast/oktoast.dart';
 import 'package:sakuramedia/core/session/app_module_permission.dart';
 import 'package:sakuramedia/core/session/providers/saved_accounts_runtime_provider.dart';
+import 'package:sakuramedia/core/session/providers/session_store_provider.dart';
 import 'package:sakuramedia/features/account/presentation/widgets/add_account_dialog.dart';
 import 'package:sakuramedia/theme.dart';
 import 'package:sakuramedia/widgets/base/actions/app_button.dart';
@@ -36,7 +37,10 @@ class MobileAccountsPage extends ConsumerWidget {
           label: '添加账号',
           variant: AppButtonVariant.primary,
           onPressed: () async {
-            final draft = await showAddAccountDialog(context);
+            final draft = await showAddAccountDialog(
+              context,
+              sessionStore: ref.read(sessionStoreProvider),
+            );
             if (draft == null) {
               return;
             }
@@ -47,9 +51,11 @@ class MobileAccountsPage extends ConsumerWidget {
               accessToken: draft.tokens.accessToken,
               refreshToken: draft.tokens.refreshToken,
               expiresAt: draft.tokens.expiresAt,
+              enabledModules: draft.enabledModules,
+              activate: false,
             );
             if (context.mounted) {
-              showToast('账号已添加并切换');
+              showToast('账号已添加');
             }
           },
         ),

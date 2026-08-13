@@ -58,6 +58,13 @@ class SessionStore extends ChangeNotifier {
   static const String _refreshTokenKey = 'session.refresh_token';
   static const String _expiresAtKey = 'session.expires_at';
 
+  /// 本地开发默认后端地址。未存储 base_url 时使用；可用
+  /// `--dart-define=FLUTTER_BASE_URL=https://example.com` 在运行/构建时覆盖。
+  static const String _defaultBaseUrl = String.fromEnvironment(
+    'FLUTTER_BASE_URL',
+    defaultValue: 'http://192.168.66.35:38000',
+  );
+
   final SessionStorageBackend _backend;
   late SessionSnapshot _snapshot;
 
@@ -130,7 +137,7 @@ class SessionStore extends ChangeNotifier {
   SessionSnapshot _readSnapshot() {
     final expiresAtRaw = _backend.getString(_expiresAtKey);
     return SessionSnapshot(
-      baseUrl: _backend.getString(_baseUrlKey) ?? '',
+      baseUrl: _backend.getString(_baseUrlKey) ?? _defaultBaseUrl,
       accessToken: _backend.getString(_accessTokenKey) ?? '',
       refreshToken: _backend.getString(_refreshTokenKey) ?? '',
       expiresAt: expiresAtRaw == null ? null : DateTime.tryParse(expiresAtRaw),

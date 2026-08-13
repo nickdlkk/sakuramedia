@@ -132,6 +132,8 @@ class SavedAccountsStore extends ChangeNotifier {
     required String accessToken,
     required String refreshToken,
     required DateTime expiresAt,
+    Set<AppModulePermission>? enabledModules,
+    bool activate = true,
   }) async {
     final normalizedBaseUrl = baseUrl.trim();
     final normalizedUsername = username.trim();
@@ -150,6 +152,7 @@ class SavedAccountsStore extends ChangeNotifier {
       refreshToken: refreshToken,
       expiresAt: expiresAt.toUtc(),
       enabledModules:
+          enabledModules ??
           existing?.enabledModules ??
           <AppModulePermission>{...kDefaultEnabledModules},
     );
@@ -160,8 +163,11 @@ class SavedAccountsStore extends ChangeNotifier {
       nextAccounts.add(next);
     }
     _accounts = nextAccounts;
-    _activeAccountId = next.id;
-    await _persist();
+    if (activate) {
+      _activeAccountId = next.id;
+    }
+    await _persistAccounts();
+    await _persistActiveAccountId(autoActivateIfNull: activate);
     notifyListeners();
     return next;
   }
@@ -309,16 +315,27 @@ class SavedAccountsStore extends ChangeNotifier {
   }
 
   Future<void> _persist() async {
+    await _persistAccounts();
+    await _persistActiveAccountId(autoActivateIfNull: true);
+  }
+
+  Future<void> _persistAccounts() async {
     await _backend.setString(
       _accountsKey,
       jsonEncode(
         _accounts.map((item) => item.toJson()).toList(growable: false),
       ),
     );
+  }
+
+  Future<void> _persistActiveAccountId({bool autoActivateIfNull = true}) async {
     final activeId = _activeAccountId;
     if (activeId == null ||
         !_accounts.any((account) => account.id == activeId)) {
-      _activeAccountId = _accounts.isEmpty ? null : _accounts.first.id;
+      _activeAccountId =
+          autoActivateIfNull && _accounts.isNotEmpty
+              ? _accounts.first.id
+              : null;
     }
     if (_activeAccountId == null) {
       await _backend.remove(_activeAccountIdKey);
