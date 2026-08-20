@@ -10,6 +10,7 @@ class JobMetadataDto {
     required this.cronSetting,
     required this.cronExpr,
     required this.manualTriggerAllowed,
+    required this.paramsSchema,
     required this.lastTaskRun,
   });
 
@@ -20,6 +21,7 @@ class JobMetadataDto {
   final String cronSetting;
   final String cronExpr;
   final bool manualTriggerAllowed;
+  final Map<String, dynamic>? paramsSchema;
   final TaskRunDto? lastTaskRun;
 
   factory JobMetadataDto.fromJson(Map<String, dynamic> json) {
@@ -31,6 +33,7 @@ class JobMetadataDto {
       cronSetting: json['cron_setting'] as String? ?? '',
       cronExpr: json['cron_expr'] as String? ?? '',
       manualTriggerAllowed: json['manual_trigger_allowed'] as bool? ?? false,
+      paramsSchema: asMapOrNull(json['params_schema']),
       lastTaskRun: _taskRunFromJson(json['last_task_run']),
     );
   }

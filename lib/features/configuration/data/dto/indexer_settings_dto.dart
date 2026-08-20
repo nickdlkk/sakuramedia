@@ -26,6 +26,7 @@ class IndexerEntryDto {
     required this.name,
     required this.url,
     required this.kind,
+    this.apiKey,
     required this.downloadClients,
   });
 
@@ -33,7 +34,11 @@ class IndexerEntryDto {
   final String name;
   final String url;
   final String kind;
+  /// 每个索引器独立的 Torznab 鉴权 key；为空表示请求不携带 apikey。
+  final String? apiKey;
   final List<IndexerBoundClientDto> downloadClients;
+
+  bool get hasApiKey => apiKey?.trim().isNotEmpty ?? false;
 
   List<int> get downloadClientIds =>
       downloadClients.map((client) => client.id).toList(growable: false);
@@ -47,15 +52,18 @@ class IndexerEntryDto {
       name: json['name'] as String? ?? '',
       url: json['url'] as String? ?? '',
       kind: json['kind'] as String? ?? '',
+      apiKey: json['api_key'] as String?,
       downloadClients: _parseBoundClients(json['download_clients']),
     );
   }
 
   Map<String, dynamic> toJson() {
+    final key = apiKey?.trim() ?? '';
     return <String, dynamic>{
       'name': name,
       'url': url,
       'kind': kind,
+      'api_key': key.isEmpty ? null : key,
       'download_client_ids': downloadClientIds,
     };
   }
@@ -76,14 +84,8 @@ class IndexerEntryDto {
 }
 
 class IndexerSettingsDto {
-  const IndexerSettingsDto({
-    required this.type,
-    required this.apiKey,
-    required this.indexers,
-  });
+  const IndexerSettingsDto({required this.indexers});
 
-  final String type;
-  final String apiKey;
   final List<IndexerEntryDto> indexers;
 
   factory IndexerSettingsDto.fromJson(Map<String, dynamic> json) {
@@ -103,36 +105,24 @@ class IndexerSettingsDto {
                 .toList(growable: false)
             : const <IndexerEntryDto>[];
     return IndexerSettingsDto(
-      type: json['type'] as String? ?? '',
-      apiKey: json['api_key'] as String? ?? '',
       indexers: indexers,
     );
   }
 
   Map<String, dynamic> toJson() {
     return <String, dynamic>{
-      'type': type,
-      'api_key': apiKey,
       'indexers': indexers.map((item) => item.toJson()).toList(growable: false),
     };
   }
 }
 
 class UpdateIndexerSettingsPayload {
-  const UpdateIndexerSettingsPayload({
-    required this.type,
-    required this.apiKey,
-    required this.indexers,
-  });
+  const UpdateIndexerSettingsPayload({required this.indexers});
 
-  final String type;
-  final String apiKey;
   final List<IndexerEntryDto> indexers;
 
   Map<String, dynamic> toJson() {
     return <String, dynamic>{
-      'type': type,
-      'api_key': apiKey,
       'indexers': indexers.map((item) => item.toJson()).toList(growable: false),
     };
   }

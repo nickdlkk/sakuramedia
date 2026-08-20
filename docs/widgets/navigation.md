@@ -17,11 +17,12 @@
 - **筛选入口二选一**(有 assert 守卫,最多给一个):
   - 桌面 → `filterPanelBuilder`(+`filterPanelFooter`),点击**就地展开浮层**;
   - 移动 → `onFilterTap`,点击**弹底部抽屉**。
-  两端按钮外观、面板内容、即时生效行为完全一致,只有容器不同。
+  两端按钮外观、面板内容、条件即时更新行为完全一致,只有容器不同。服务端结果
+  统一在 250ms 尾随防抖后更新,期间保留上一版内容。
 - **两个都不传 = 该列表没有筛选维度**(系列影片页:后端 `/movies/by-series` 只吃
   seriesId + 分页),此时左侧不渲染入口、信息槽从最左开始。**只有真无筛选才这么用**
   ——有筛选却不接入口,这一行会看起来像别的东西。
-- **可选**: `filterLabel`(当前筛选摘要,长在入口里) · `filterIcon` · `filterTooltip` · `filterButtonKey` · `filterEnabled`(筛选元数据没加载完时传 `false`,两端一致地不响应点击,外观不变;榜单页用) · `informationSlots` · `actionSlots`
+- **可选**: `filterLabel`(当前筛选摘要,长在入口里) · `filterIcon` · `filterTooltip` · `filterButtonKey` · `filterEnabled`(筛选元数据没加载完时传 `false`,两端一致地不响应点击,外观不变;榜单页用) · `filterUpdate` / `hasPreviousFilterItems` / `onRetryFilter`(列表结果追赶条件时的共享反馈) · `informationSlots` · `actionSlots`
 - **多选态**: 用命名构造 `AppListHeader.selection(selectionLabel:, onExitSelection:, actionSlots:)` **原地改写整条**——只放退出 / 计数 / 全选,批量动作走 `AppSelectionBottomBar`。
 - **注意**: 筛选入口外观**恒定**,不随「当前有没有筛选生效」变色;当前值由 `filterLabel` 表达。`filterLabel` 一律只报**一个主维度**(见各 `XxxFilterState.triggerLabel`)。
 
@@ -35,7 +36,7 @@
 - **用途**: 移动筛选抽屉外壳,**与桌面 `AppFilterPopover` 面板逐行同构**:`Flexible(SingleChildScrollView)` + 滚动区外的 footer。
 - **required**: `child`
 - **可选**: `footer`(通常是 `AppFilterPanelFooter`,重置在这里) · `scrollViewKey`
-- **注意**: **没有标题行、没有确定按钮**——筛选即时生效,关闭靠下拉/点遮罩(对应桌面点面板外部)。
+- **注意**: **没有标题行、没有确定按钮**——控件选中态即时更新,关闭靠下拉/点遮罩(对应桌面点面板外部)。这里的“即时”只指 UI,不表示服务端结果已经返回。
 
 ---
 

@@ -18,8 +18,6 @@ class IndexerSettingsState {
   final bool isSaving;
 
   bool get isDirty =>
-      saved.type != draft.type ||
-      saved.apiKey != draft.apiKey ||
       !listEquals(saved.indexers, draft.indexers);
 
   IndexerSettingsState copyWith({

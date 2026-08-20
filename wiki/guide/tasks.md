@@ -4,7 +4,7 @@ outline: [2, 3]
 
 # 后台任务
 
-SakuraMedia 后台定时任务的作用和默认频率。
+SakuraMedia 宿主内置后台定时任务的作用和默认频率。
 
 ## 任务总览
 
@@ -14,7 +14,6 @@ SakuraMedia 后台定时任务的作用和默认频率。
 | 已订阅缺失影片自动下载 | 搜索并提交符合条件的影片资源 | 每天 02:30 |
 | 影片热度重算 | 更新影片热度字段 | 每天 00:15 |
 | 影片互动数同步 | 回刷评分、想看、评论等互动统计，并联动热度 | 每天 05:00 |
-| 排行榜同步 | 同步排行榜数据 | 每天 01:45 |
 | JavDB 热评同步 | 同步热评和关联影片快照 | 每天 01:20 |
 | 合集影片同步 | 同步合集标记 | 每天 01:00 |
 | 下载任务状态同步 | 同步所有下载客户端的任务状态到本地 | 每 5 分钟 |
@@ -22,9 +21,6 @@ SakuraMedia 后台定时任务的作用和默认频率。
 | 115 离线任务对账 | 115 离线任务进度回写、完成导入、超时放弃 | 每 1 分钟 |
 | 下载小文件清理 | 把种子里的小文件设为不下载并物理删除 | 每 5 分钟 |
 | 媒体文件巡检 | 检查文件是否存在并补视频信息 | 每天 04:00 |
-| 影片描述回填 | 为历史影片补抓原文描述 `desc` | 每天 04:00 |
-| 影片简介翻译 | 把原文描述翻译成中文 `desc_zh` | 每天 04:15 |
-| 影片标题翻译 | 把原始标题翻译成中文 `title_zh` | 每天 04:20 |
 | 媒体缩略图生成 | 为媒体生成缩略图 | 每 30 分钟 |
 | 以图搜图索引 | 为待处理缩略图生成向量并入索引 | 每天 00:00 |
 | 影片相似度重算 | 离线重算影片相似结果 | 每天 03:30 |
@@ -73,11 +69,6 @@ SakuraMedia 后台定时任务的作用和默认频率。
 
 老片评分和评论基本不动了，跟着每天刷浪费抓取额度。需要更新时重新订阅一次即可。
 
-### 排行榜同步
-
-同步排行榜数据。
-
-默认频率：每天 `01:45`
 
 ### JavDB 热评同步
 
@@ -124,24 +115,6 @@ SakuraMedia 后台定时任务的作用和默认频率。
 检查已有媒体文件是否存在并补视频信息（编码、码率等）。文件不存在时标为无效，信息缺失时补齐。
 
 默认频率：每天 `04:00`
-
-### 影片描述回填
-
-为历史影片补抓原文描述 `desc`。
-
-默认频率：每天 `04:00`
-
-### 影片简介翻译
-
-把已抓到的原文描述翻译成中文 `desc_zh`，依赖 `[movie_info_translation]` 配置的大模型接口。模型选择可参考[常见问题里的模型建议](/faq#movie-desc-translation-model)。
-
-默认频率：每天 `04:15`
-
-### 影片标题翻译
-
-把影片原始标题翻译成中文 `title_zh`，和"影片简介翻译"共用 `[movie_info_translation]` 配置。优先处理已订阅影片和已订阅女优相关影片。
-
-默认频率：每天 `04:20`
 
 ### 媒体缩略图生成
 
@@ -219,12 +192,8 @@ cloud115_offline_sync_cron = "* * * * *"
 movie_collection_sync_cron = "0 1 * * *"
 movie_heat_cron = "15 0 * * *"
 movie_interaction_sync_cron = "0 5 * * *"
-ranking_sync_cron = "45 1 * * *"
 hot_review_sync_cron = "20 1 * * *"
 media_file_scan_cron = "0 4 * * *"
-movie_desc_sync_cron = "0 4 * * *"
-movie_desc_translation_cron = "15 4 * * *"
-movie_title_translation_cron = "20 4 * * *"
 media_thumbnail_cron = "*/30 * * * *"
 image_search_index_cron = "0 0 * * *"
 image_search_optimize_cron = "0 3 * * *"
@@ -259,13 +228,10 @@ activity_notification_read_retention_days = 3
 - `actor_subscription_sync_cron` — 已订阅女优的影片持续补进来
 - `movie_collection_sync_cron` — 合集标记持续同步
 - `movie_interaction_sync_cron` — 影片互动统计持续回刷
-- `ranking_sync_cron` — 排行榜数据更新
 - `hot_review_sync_cron` — 热评数据更新
 
 ### 媒体增强相关
 
-- `movie_desc_sync_cron` — 影片原文描述补进来
-- `movie_desc_translation_cron` — 原文描述翻译成中文
 - `media_thumbnail_cron` — 为时刻和图片搜索提供基础数据
 - `image_search_index_cron` — 缩略图送进图片搜索索引
 - `image_search_optimize_cron` — 索引压缩和优化

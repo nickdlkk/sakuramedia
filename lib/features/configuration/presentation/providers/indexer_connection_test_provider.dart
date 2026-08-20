@@ -37,7 +37,7 @@ class IndexerConnectionTestState {
   }
 }
 
-/// 以组件 identity 隔离的 Jackett 测试状态，请求由调用方传入以支持草稿测试。
+/// 以组件 identity 隔离的 Torznab 测试状态，请求由调用方传入以支持草稿测试。
 @riverpod
 class IndexerConnectionTest extends _$IndexerConnectionTest {
   var _disposed = false;
@@ -74,7 +74,7 @@ class IndexerConnectionTest extends _$IndexerConnectionTest {
     } catch (error) {
       if (!_disposed && requestVersion == state.configurationVersion) {
         state = state.copyWith(
-          requestError: apiErrorMessage(error, fallback: 'Jackett 连通性测试请求失败'),
+          requestError: apiErrorMessage(error, fallback: 'Torznab 连通性测试请求失败'),
         );
       }
       return null;

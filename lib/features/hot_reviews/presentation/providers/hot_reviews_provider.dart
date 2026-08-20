@@ -11,8 +11,7 @@ part 'hot_reviews_provider.g.dart';
 
 /// 热评分页列表（周期筛选驱动,`FilterablePagedAsyncNotifierMixin` 首个采用者）。
 ///
-/// - 切周期走 [FilterReloadStrategy.spinner]（默认）:清列表闪骨架,与迁移前
-///   `setPeriod → reload()` 的视觉一致。
+/// - 切周期先更新条件并保留旧列表，防抖请求成功后再替换结果。
 /// - autoDispose:离开页面即释放,对齐迁移前控制器随页面 State 生灭。
 ///
 /// 迁移前对应:`PagedHotReviewController`(含「占位 fetchPage 抛
@@ -39,8 +38,7 @@ class HotReviews extends _$HotReviews
   @override
   HotReviewPeriod get initialFilter => HotReviewPeriod.weekly;
 
-  /// 当前生效周期,供页面在 [AsyncLoading] 期间（state 无值）渲染顶栏标签,
-  /// 避免切周期加载中标签闪回默认值。
+  /// 当前选中周期；首次加载尚无 state 时供页面渲染默认标签。
   HotReviewPeriod get period => activeFilter;
 
   @override

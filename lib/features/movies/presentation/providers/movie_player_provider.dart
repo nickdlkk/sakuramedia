@@ -116,10 +116,9 @@ class MoviePlayer extends _$MoviePlayer {
       final movie = results[0] as MovieDetailDto;
       final selectedMedia = _resolveInitialMedia(movie.mediaItems);
       final startupPosition = _resolveExplicitStartupPlaybackPosition();
-      final resumePosition =
-          startupPosition == null
-              ? _resolveResumePlaybackPosition(selectedMedia)
-              : null;
+      final resumePosition = startupPosition == null
+          ? _resolveResumePlaybackPosition(selectedMedia)
+          : null;
       state = _resetSubtitleState(
         state.copyWith(
           movie: movie,
@@ -246,15 +245,14 @@ class MoviePlayer extends _$MoviePlayer {
           .whereType<MoviePlayerSubtitleOption>()
           .toList(growable: false);
       state = state.copyWith(
-        subtitleFetchStatus:
-            result.fetchStatus.trim().isEmpty
-                ? 'pending'
-                : result.fetchStatus.trim(),
+        subtitleFetchStatus: result.fetchStatus.trim().isEmpty
+            ? 'pending'
+            : result.fetchStatus.trim(),
         subtitleOptions: options,
         selectedSubtitleId:
             options.any((item) => item.subtitleId == previousSelectedSubtitleId)
-                ? previousSelectedSubtitleId
-                : null,
+            ? previousSelectedSubtitleId
+            : null,
         subtitleErrorMessage: _subtitleErrorMessageFromResult(result),
       );
     } catch (_) {
@@ -424,10 +422,7 @@ class MoviePlayer extends _$MoviePlayer {
     if (resolvedUrl == null || resolvedUrl.isEmpty) {
       return null;
     }
-    final label =
-        item.fileName.trim().isNotEmpty
-            ? item.fileName.trim()
-            : '字幕 ${item.subtitleId}';
+    final label = item.displayName;
     return MoviePlayerSubtitleOption(
       subtitleId: item.subtitleId,
       label: label,

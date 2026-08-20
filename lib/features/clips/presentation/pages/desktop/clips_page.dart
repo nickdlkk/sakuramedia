@@ -26,6 +26,7 @@ import 'package:sakuramedia/widgets/base/actions/app_button.dart';
 import 'package:sakuramedia/widgets/base/actions/app_text_button.dart';
 import 'package:sakuramedia/widgets/base/feedback/app_confirm_dialog.dart';
 import 'package:sakuramedia/widgets/base/feedback/app_empty_state.dart';
+import 'package:sakuramedia/widgets/base/feedback/app_filter_update_bar.dart';
 import 'package:sakuramedia/widgets/base/interaction/refresh/app_page_refresh_scope.dart';
 import 'package:sakuramedia/widgets/base/interaction/selection/multi_select_state_mixin.dart';
 import 'package:sakuramedia/widgets/base/operations/batch/batch_progress_dialog.dart';
@@ -79,9 +80,7 @@ class _DesktopClipsPageState extends ConsumerState<DesktopClipsPage>
       if (!mounted) {
         return;
       }
-      unawaited(
-        ref.read(clipCollectionsOverviewProvider.notifier).refresh(),
-      );
+      unawaited(ref.read(clipCollectionsOverviewProvider.notifier).refresh());
     });
   }
 
@@ -109,15 +108,15 @@ class _DesktopClipsPageState extends ConsumerState<DesktopClipsPage>
 
   @override
   Widget build(BuildContext context) {
-    ref.listen<AsyncValue<ClipMutationChange>>(
-      clipMutationEventsProvider,
-      (previous, next) {
-        final change = next.value;
-        if (change != null) {
-          _onMutation(change);
-        }
-      },
-    );
+    ref.listen<AsyncValue<ClipMutationChange>>(clipMutationEventsProvider, (
+      previous,
+      next,
+    ) {
+      final change = next.value;
+      if (change != null) {
+        _onMutation(change);
+      }
+    });
 
     final clipsAsync = ref.watch(clipsOverviewProvider);
     final collectionsAsync = ref.watch(clipCollectionsOverviewProvider);
@@ -156,9 +155,7 @@ class _DesktopClipsPageState extends ConsumerState<DesktopClipsPage>
                 SliverToBoxAdapter(
                   child: _buildCollectionsSection(context, collectionsAsync),
                 ),
-                SliverToBoxAdapter(
-                  child: _buildClipsHeader(context, clips),
-                ),
+                SliverToBoxAdapter(child: _buildClipsHeader(context, clips)),
                 _buildClipsSliver(context, clips),
                 SliverToBoxAdapter(
                   child: _buildFooter(context, clipsState?.paged),
@@ -178,8 +175,7 @@ class _DesktopClipsPageState extends ConsumerState<DesktopClipsPage>
     AsyncValue<List<ClipCollectionDto>> collectionsAsync,
   ) {
     final spacing = context.appSpacing;
-    final collections =
-        collectionsAsync.value ?? const <ClipCollectionDto>[];
+    final collections = collectionsAsync.value ?? const <ClipCollectionDto>[];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -256,10 +252,9 @@ class _DesktopClipsPageState extends ConsumerState<DesktopClipsPage>
             child: CollectionCard.clip(
               key: Key('clip-collection-card-${collection.id}'),
               collection: collection,
-              onTap:
-                  () => context.pushDesktopClipCollectionDetail(
-                    collectionId: collection.id,
-                  ),
+              onTap: () => context.pushDesktopClipCollectionDetail(
+                collectionId: collection.id,
+              ),
             ),
           );
         },
@@ -272,11 +267,8 @@ class _DesktopClipsPageState extends ConsumerState<DesktopClipsPage>
   Widget _buildClipsHeader(BuildContext context, List<MediaClipDto> clips) {
     final spacing = context.appSpacing;
     final hasClips = clips.isNotEmpty;
-    final currentSort = ref.watch(
-      clipsOverviewProvider.select(
-        (async) => async.value?.filter.sort ?? ClipsFilter.defaultSort,
-      ),
-    );
+    final summary = ref.watch(clipsOverviewProvider).value;
+    final currentSort = summary?.filter.sort ?? ClipsFilter.defaultSort;
     return Padding(
       padding: EdgeInsets.only(bottom: spacing.sm),
       child: Column(
@@ -326,6 +318,14 @@ class _DesktopClipsPageState extends ConsumerState<DesktopClipsPage>
             SizedBox(height: spacing.sm),
             _buildSelectionBar(context, clips),
           ],
+          AppFilterUpdateBar(
+            state:
+                summary?.paged.filterUpdate ?? const FilterUpdateState.idle(),
+            hasPreviousItems: clips.isNotEmpty,
+            onRetry: () => unawaited(
+              ref.read(clipsOverviewProvider.notifier).retryFilter(),
+            ),
+          ),
         ],
       ),
     );
@@ -343,9 +343,17 @@ class _DesktopClipsPageState extends ConsumerState<DesktopClipsPage>
       label: label,
       size: AppTextButtonSize.xSmall,
       isSelected: currentSort == sort,
-      onPressed: () =>
-          unawaited(ref.read(clipsOverviewProvider.notifier).applySort(sort)),
+      onPressed: () => _applySort(sort),
     );
+  }
+
+  void _applySort(String sort) {
+    final current = ref.read(clipsOverviewProvider).value?.filter.sort;
+    if (current == sort) return;
+    if (_scrollController.hasClients) {
+      _scrollController.jumpTo(0);
+    }
+    unawaited(ref.read(clipsOverviewProvider.notifier).applySort(sort));
   }
 
   /// 选择模式下的批量操作栏：已选数 / 全选 / 加入合集 / 删除 / 取消。
@@ -400,6 +408,14 @@ class _DesktopClipsPageState extends ConsumerState<DesktopClipsPage>
   }
 
   Widget _buildClipsSliver(BuildContext context, List<MediaClipDto> clips) {
+    final filterUpdate = ref
+        .read(clipsOverviewProvider)
+        .value
+        ?.paged
+        .filterUpdate;
+    if (clips.isEmpty && (filterUpdate?.hasFailed ?? false)) {
+      return const SliverToBoxAdapter(child: SizedBox.shrink());
+    }
     if (clips.isEmpty) {
       return const SliverToBoxAdapter(
         child: SizedBox(
@@ -433,10 +449,9 @@ class _DesktopClipsPageState extends ConsumerState<DesktopClipsPage>
               onRename: () => _renameClip(clip),
               onDelete: () => _deleteClip(clip),
               onAddToCollection: () => _addToCollection(clip),
-              onOpenMovie:
-                  movieNumber != null && movieNumber.isNotEmpty
-                      ? () => _openMovie(movieNumber)
-                      : null,
+              onOpenMovie: movieNumber != null && movieNumber.isNotEmpty
+                  ? () => _openMovie(movieNumber)
+                  : null,
               selectionMode: selectionMode,
               isSelected: isSelected(clip.clipId),
               onSelectedChanged: (_) => toggleSelect(clip.clipId),
@@ -561,7 +576,9 @@ class _DesktopClipsPageState extends ConsumerState<DesktopClipsPage>
     if (!mounted || created == null) {
       return;
     }
-    ref.read(clipCollectionsOverviewProvider.notifier).insertCollection(created);
+    ref
+        .read(clipCollectionsOverviewProvider.notifier)
+        .insertCollection(created);
     showToast('已创建合集');
   }
 
@@ -579,7 +596,7 @@ class _DesktopClipsPageState extends ConsumerState<DesktopClipsPage>
   List<MediaClipDto> _selectedClips() {
     final clips =
         ref.read(clipsOverviewProvider).value?.paged.items ??
-            const <MediaClipDto>[];
+        const <MediaClipDto>[];
     return clips.where((c) => isSelected(c.clipId)).toList(growable: false);
   }
 
@@ -607,11 +624,8 @@ class _DesktopClipsPageState extends ConsumerState<DesktopClipsPage>
       context,
       title: '正在加入「${target.name}」',
       items: selected,
-      action:
-          (clip) => api.addClipToCollection(
-            collectionId: target.id,
-            clipId: clip.clipId,
-          ),
+      action: (clip) =>
+          api.addClipToCollection(collectionId: target.id, clipId: clip.clipId),
     );
     if (!mounted) {
       return;

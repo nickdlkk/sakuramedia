@@ -27,10 +27,8 @@ import 'package:sakuramedia/features/configuration/data/api/config_api.dart';
 import 'package:sakuramedia/features/configuration/data/api/download_clients_api.dart';
 import 'package:sakuramedia/features/configuration/data/api/indexer_settings_api.dart';
 import 'package:sakuramedia/features/configuration/data/api/media_libraries_api.dart';
-import 'package:sakuramedia/features/configuration/data/api/movie_desc_translation_settings_api.dart';
 import 'package:sakuramedia/features/configuration/presentation/providers/config_api_provider.dart';
 import 'package:sakuramedia/features/configuration/presentation/providers/indexer_settings_api_provider.dart';
-import 'package:sakuramedia/features/configuration/presentation/providers/llm_settings_provider.dart';
 import 'package:sakuramedia/features/discovery/data/discovery_api.dart';
 import 'package:sakuramedia/features/discovery/presentation/providers/discovery_api_provider.dart';
 import 'package:sakuramedia/features/downloads/data/downloads_api.dart';
@@ -87,7 +85,6 @@ class TestApiBundle {
     required this.mediaApi,
     required this.mediaImportApi,
     required this.mediaLibrariesApi,
-    required this.movieDescTranslationSettingsApi,
     required this.statusApi,
     required this.moviesApi,
     required this.movieSubscriptionsApi,
@@ -121,7 +118,6 @@ class TestApiBundle {
   final MediaApi mediaApi;
   final MediaImportApi mediaImportApi;
   final MediaLibrariesApi mediaLibrariesApi;
-  final MovieDescTranslationSettingsApi movieDescTranslationSettingsApi;
   final StatusApi statusApi;
   final MoviesApi moviesApi;
   final MovieSubscriptionsApi movieSubscriptionsApi;
@@ -204,7 +200,6 @@ class TestApiBundle {
       indexerSettingsApiProvider.overrideWithValue(
         indexerSettingsApi ?? this.indexerSettingsApi,
       ),
-      llmSettingsApiProvider.overrideWithValue(movieDescTranslationSettingsApi),
       mediaApiProvider.overrideWithValue(mediaApi),
       mediaImportApiProvider.overrideWithValue(mediaImportApi),
       mediaLibrariesApiProvider.overrideWithValue(
@@ -295,9 +290,6 @@ Future<TestApiBundle> createTestApiBundle(SessionStore sessionStore) async {
     mediaApi: MediaApi(apiClient: apiClient),
     mediaImportApi: MediaImportApi(apiClient: apiClient),
     mediaLibrariesApi: MediaLibrariesApi(apiClient: apiClient),
-    movieDescTranslationSettingsApi: MovieDescTranslationSettingsApi(
-      apiClient: apiClient,
-    ),
     statusApi: StatusApi(apiClient: apiClient),
     moviesApi: MoviesApi(apiClient: apiClient),
     movieSubscriptionsApi: MovieSubscriptionsApi(apiClient: apiClient),

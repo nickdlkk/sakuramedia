@@ -5,7 +5,7 @@ void main() {
   group('ResourceTaskRecordDto.fromJson', () {
     test('maps movie task payload with nested resource summary', () {
       final dto = ResourceTaskRecordDto.fromJson(<String, dynamic>{
-        'task_key': 'movie_desc_sync',
+        'task_key': 'movie_interaction_sync',
         'resource_type': 'movie',
         'resource_id': 1234,
         'state': 'failed',
@@ -25,7 +25,7 @@ void main() {
         },
       });
 
-      expect(dto.taskKey, 'movie_desc_sync');
+      expect(dto.taskKey, 'movie_interaction_sync');
       expect(dto.resourceType, 'movie');
       expect(dto.resourceId, 1234);
       expect(dto.state, 'failed');
@@ -34,7 +34,7 @@ void main() {
       expect(dto.lastError, 'timeout');
       expect(dto.lastTaskRunId, 88);
       expect(dto.lastTriggerType, 'scheduled');
-      expect(dto.recordKey, 'movie_desc_sync/1234');
+      expect(dto.recordKey, 'movie_interaction_sync/1234');
       expect(dto.resource, isNotNull);
       expect(dto.resource!.movieNumber, 'SSIS-123');
       expect(dto.resource!.title, '示例影片');
@@ -68,7 +68,7 @@ void main() {
 
     test('tolerates missing optional fields and null resource', () {
       final dto = ResourceTaskRecordDto.fromJson(<String, dynamic>{
-        'task_key': 'movie_desc_sync',
+        'task_key': 'movie_interaction_sync',
         'resource_id': 1,
         'state': 'pending',
       });

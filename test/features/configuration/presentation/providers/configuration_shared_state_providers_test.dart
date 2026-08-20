@@ -139,29 +139,41 @@ void main() {
       retry: (_, __) => null,
     );
     addTearDown(container.dispose);
-    api.getHandler = () async => _settings(apiKey: 'old');
+    api.getHandler = () async => _settings();
     await container.read(indexerSettingsProvider.future);
 
     final notifier = container.read(indexerSettingsProvider.notifier);
-    notifier.updateDraft(apiKey: 'draft');
+    notifier.updateDraft(indexers: <IndexerEntryDto>[_indexer(apiKey: 'draft')]);
     expect(
       container.read(indexerSettingsProvider).requireValue.isDirty,
       isTrue,
     );
     api.updateHandler = (payload) async {
-      expect(payload.apiKey, 'draft');
-      return _settings(apiKey: 'saved');
+      expect(payload.indexers.single.apiKey, 'draft');
+      return _settings(indexers: <IndexerEntryDto>[_indexer(apiKey: 'saved')]);
     };
     await notifier.save();
     expect(
-      container.read(indexerSettingsProvider).requireValue.draft.apiKey,
+      container
+          .read(indexerSettingsProvider)
+          .requireValue
+          .draft
+          .indexers
+          .single
+          .apiKey,
       'saved',
     );
 
     api.getHandler = () async => throw StateError('refresh failed');
     expect(await notifier.refresh(), contains('索引器加载失败'));
     expect(
-      container.read(indexerSettingsProvider).requireValue.draft.apiKey,
+      container
+          .read(indexerSettingsProvider)
+          .requireValue
+          .draft
+          .indexers
+          .single
+          .apiKey,
       'saved',
     );
   });
@@ -225,20 +237,20 @@ void main() {
     var fetches = 0;
     api.getHandler = () async {
       fetches += 1;
-      return _settings(apiKey: 'account-$fetches');
+      return _settings();
     };
     expect(
-      (await container.read(indexerSettingsProvider.future)).draft.apiKey,
-      'account-1',
+      (await container.read(indexerSettingsProvider.future)).draft.indexers,
+      isEmpty,
     );
 
-    // 索引器/LLM/下载器这类是账号级服务端配置，登出必须失效，
+    // 索引器/下载器这类是账号级服务端配置，登出必须失效，
     // 否则换账号后仍会读到上一账号的设置。
     await store.clearSession();
 
     expect(
-      (await container.read(indexerSettingsProvider.future)).draft.apiKey,
-      'account-2',
+      (await container.read(indexerSettingsProvider.future)).draft.indexers,
+      isEmpty,
     );
     expect(fetches, 2);
   });
@@ -366,8 +378,18 @@ DownloadClientDto _client(int id, String name) => DownloadClientDto(
   updatedAt: null,
 );
 
-IndexerSettingsDto _settings({required String apiKey}) =>
-    IndexerSettingsDto(type: 'jackett', apiKey: apiKey, indexers: const []);
+IndexerEntryDto _indexer({String? apiKey}) => IndexerEntryDto(
+  id: 1,
+  name: 'mteam',
+  url: 'https://example.com/torznab',
+  kind: 'pt',
+  apiKey: apiKey,
+  downloadClients: const <IndexerBoundClientDto>[],
+);
+
+IndexerSettingsDto _settings({
+  List<IndexerEntryDto> indexers = const <IndexerEntryDto>[],
+}) => IndexerSettingsDto(indexers: indexers);
 
 ConfigResourceDto _config(List<DownloadClientKind> kinds) => ConfigResourceDto(
   media: const AdvancedMediaConfigDto(
@@ -378,12 +400,7 @@ ConfigResourceDto _config(List<DownloadClientKind> kinds) => ConfigResourceDto(
     uncensoredPrefix: [],
     allowedMinVideoFileSize: 0,
   ),
-  metadata: const AdvancedMetadataConfigDto(
-    javdbHost: '',
-    javdbUsername: '',
-    javdbPassword: '',
-    proxy: '',
-  ),
+  metadata: const AdvancedMetadataConfigDto(javdbHost: ''),
   scheduler: const AdvancedSchedulerConfigDto(crons: {}),
   downloads: AdvancedDownloadsConfigDto(
     smallFileCleanupThresholdMb: 0,

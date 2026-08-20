@@ -16,12 +16,17 @@ const Map<String, String> _kFailureReasonDescriptions = {
   'import_job_bootstrap_failed': '作业启动失败：导入作业入队/引导阶段失败',
   'import_job_interrupted': '导入进程中断：作业未正常结束（孤儿恢复判失败）',
   'retry_sources_missing': '源文件缺失：待重导的源文件均已不存在',
+  'no_media_files_found': '未发现媒体文件：下载目录中没有扫描到可导入的视频',
   'already_indexed_path': '已在库中：该文件路径已登记，跳过重复导入',
   'duplicate_fingerprint': '内容重复：库中已存在相同内容的文件，跳过导入',
   'cloud115_file_censored': '115 已封禁：文件被 115 标记违规，已登记为失效（拿不到直链也播不了）',
   'cloud115_transfer_failed': '115 搬运失败：云端复制或对账阶段异常',
   'cloud115_rename_failed': '115 单文件改名未成功或查询到的实际名称不一致',
+  'cloud115_metadata_probe_failed': '115 媒体探测失败：无法在读取预算内解析视频技术信息',
   'cloud115_subtitle_download_failed': '字幕下载失败：影片已入库，但字幕从 115 下载失败（仅告警）',
+  'subtitle_movie_not_found': '影片不存在：库中没有该番号对应的影片，先导入影片或删除该字幕文件',
+  'subtitle_import_failed': '字幕导入失败：字幕文件复制或登记异常',
+  'no_subtitle_files_found': '未发现字幕文件：目录中没有可导入的 .srt 文件',
 };
 
 /// 返回失败/跳过原因的中文说明；未知 code 回落原值，空串落「未知原因」。

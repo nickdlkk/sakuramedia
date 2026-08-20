@@ -33,7 +33,9 @@ void main() {
     mediaApi = MediaApi(apiClient: apiClient);
     container = ProviderContainer(
       overrides: [
-        sessionStoreProvider.overrideWithValue(sessionStore),mediaApiProvider.overrideWithValue(mediaApi)],
+        sessionStoreProvider.overrideWithValue(sessionStore),
+        mediaApiProvider.overrideWithValue(mediaApi),
+      ],
       retry: (_, __) => null,
     );
   });
@@ -194,7 +196,7 @@ void main() {
     },
   );
 
-  test('selectAllLoaded / setSelected / clearSelection', () async {
+  test('toggleSelectAllLoaded / setSelected / clearSelection', () async {
     adapter.enqueueJson(
       method: 'GET',
       path: '/media',
@@ -207,21 +209,51 @@ void main() {
     await container.read(mediaBrowseProvider.future);
 
     final notifier = container.read(mediaBrowseProvider.notifier);
-    notifier.selectAllLoaded();
+    notifier.toggleSelectAllLoaded();
     expect(container.read(mediaBrowseProvider).requireValue.selectionCount, 2);
     expect(
       container.read(mediaBrowseProvider).requireValue.isSelected(10),
       isTrue,
     );
+    expect(
+      container.read(mediaBrowseProvider).requireValue.allLoadedSelected,
+      isTrue,
+    );
 
-    notifier.setSelected(10, false);
+    // 已全选时再点同一按钮 → 取消全选当前页。
+    notifier.toggleSelectAllLoaded();
+    expect(container.read(mediaBrowseProvider).requireValue.selectionCount, 0);
+    expect(
+      container.read(mediaBrowseProvider).requireValue.allLoadedSelected,
+      isFalse,
+    );
+
+    notifier.setSelected(10, true);
     expect(container.read(mediaBrowseProvider).requireValue.selectionCount, 1);
+    expect(
+      container.read(mediaBrowseProvider).requireValue.allLoadedSelected,
+      isFalse,
+      reason: '只选一项时不算全选',
+    );
+    notifier.toggleSelectAllLoaded();
+    expect(
+      container.read(mediaBrowseProvider).requireValue.selectionCount,
+      2,
+      reason: '部分选中时点全选应补全当前页',
+    );
+    expect(
+      container.read(mediaBrowseProvider).requireValue.isSelected(10),
+      isTrue,
+    );
+
+    notifier.toggleSelectAllLoaded();
+    expect(container.read(mediaBrowseProvider).requireValue.selectionCount, 0);
 
     notifier.clearSelection();
     expect(container.read(mediaBrowseProvider).requireValue.selectionCount, 0);
   });
 
-  test('selectAllLoaded whitelists safe rapid upload statuses '
+  test('toggleSelectAllLoaded whitelists safe rapid upload statuses '
       '(skips in_progress and unknown)', () async {
     // 白名单：null/notHit/failed/cleanupFailed 可批量选，in_progress 因后端
     // active_media_id 唯一约束必拒，未识别字符串（映射为 unknown）保守也拒——
@@ -242,13 +274,21 @@ void main() {
     );
     await container.read(mediaBrowseProvider.future);
 
-    container.read(mediaBrowseProvider.notifier).selectAllLoaded();
+    final notifier = container.read(mediaBrowseProvider.notifier);
+    notifier.toggleSelectAllLoaded();
     final state = container.read(mediaBrowseProvider).requireValue;
     expect(state.selectionCount, 2);
     expect(state.isSelected(10), isTrue);
     expect(state.isSelected(20), isFalse);
     expect(state.isSelected(30), isTrue);
     expect(state.isSelected(40), isFalse);
+
+    // 再点取消全选：只清空白名单内的已选条目，20/40 本就不在选中集合。
+    notifier.toggleSelectAllLoaded();
+    final cleared = container.read(mediaBrowseProvider).requireValue;
+    expect(cleared.selectionCount, 0);
+    expect(cleared.isSelected(10), isFalse);
+    expect(cleared.isSelected(30), isFalse);
   });
 }
 

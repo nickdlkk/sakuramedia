@@ -10,6 +10,7 @@ import 'package:sakuramedia/features/movies/presentation/actions/movie_collectio
 import 'package:sakuramedia/features/movies/presentation/providers/movie_summary_provider.dart';
 import 'package:sakuramedia/features/movies/presentation/providers/movie_summary_scope.dart';
 import 'package:sakuramedia/features/movies/presentation/providers/movie_summary_state.dart';
+import 'package:sakuramedia/features/shared/presentation/providers/paged_async_notifier.dart';
 import 'package:sakuramedia/features/playlists/presentation/controllers/playlist_filter_state.dart';
 import 'package:sakuramedia/features/playlists/presentation/providers/playlist_detail_provider.dart';
 import 'package:sakuramedia/features/playlists/presentation/providers/playlist_resolution_options_provider.dart';
@@ -145,39 +146,39 @@ class _PlaylistDetailContentState extends ConsumerState<PlaylistDetailContent>
             SliverToBoxAdapter(
               child: Padding(
                 padding: EdgeInsets.only(bottom: context.appSpacing.sm),
-                child:
-                    selectionMode
-                        ? buildBatchSelectionToolbar()
-                        : _buildListHeader(context, playlist.movieCount),
+                child: selectionMode
+                    ? buildBatchSelectionToolbar()
+                    : _buildListHeader(context, playlist.movieCount, paged),
               ),
             ),
-            MovieSummarySliver(
-              items: paged?.items ?? const [],
-              isLoading: moviesAsync.isLoading && movies == null,
-              errorMessage:
-                  moviesAsync.hasError && movies == null
-                      ? _scope.initialLoadErrorText
-                      : null,
-              onMovieTap: widget.onMovieTap,
-              onMovieMenuRequest:
-                  (movie, globalPosition) => requestMovieCollectionMenu(
-                    context,
-                    movie.movieNumber,
-                    globalPosition,
-                    isSubscribed: movie.isSubscribed,
-                  ),
-              onMovieSubscriptionTap:
-                  (movie) => _toggleMovieSubscription(movie.movieNumber),
-              isMovieSubscriptionUpdating:
-                  (movie) =>
-                      movies?.isSubscriptionUpdating(movie.movieNumber) ??
-                      false,
-              emptyMessage: _filterState.isDefault ? '暂无影片数据' : '当前筛选条件下暂无匹配影片',
-              selectionMode: selectionMode,
-              isMovieSelected: (movie) => isSelected(movie.movieNumber),
-              onMovieSelectedChanged:
-                  (movie, _) => toggleSelect(movie.movieNumber),
-            ),
+            if (!(paged?.filterUpdate.hasFailed ?? false) ||
+                (paged?.items.isNotEmpty ?? false))
+              MovieSummarySliver(
+                items: paged?.items ?? const [],
+                isLoading: moviesAsync.isLoading && movies == null,
+                errorMessage: moviesAsync.hasError && movies == null
+                    ? _scope.initialLoadErrorText
+                    : null,
+                onMovieTap: widget.onMovieTap,
+                onMovieMenuRequest: (movie, globalPosition) =>
+                    requestMovieCollectionMenu(
+                      context,
+                      movie.movieNumber,
+                      globalPosition,
+                      isSubscribed: movie.isSubscribed,
+                    ),
+                onMovieSubscriptionTap: (movie) =>
+                    _toggleMovieSubscription(movie.movieNumber),
+                isMovieSubscriptionUpdating: (movie) =>
+                    movies?.isSubscriptionUpdating(movie.movieNumber) ?? false,
+                emptyMessage: _filterState.isDefault
+                    ? '暂无影片数据'
+                    : '当前筛选条件下暂无匹配影片',
+                selectionMode: selectionMode,
+                isMovieSelected: (movie) => isSelected(movie.movieNumber),
+                onMovieSelectedChanged: (movie, _) =>
+                    toggleSelect(movie.movieNumber),
+              ),
             if (footer != null)
               SliverToBoxAdapter(
                 child: Padding(
@@ -187,10 +188,9 @@ class _PlaylistDetailContentState extends ConsumerState<PlaylistDetailContent>
               ),
           ];
           final scrollView = CustomScrollView(
-            physics:
-                widget.enablePullToRefresh
-                    ? const AlwaysScrollableScrollPhysics()
-                    : null,
+            physics: widget.enablePullToRefresh
+                ? const AlwaysScrollableScrollPhysics()
+                : null,
             controller: _scrollController,
             slivers: slivers,
           );
@@ -236,50 +236,56 @@ class _PlaylistDetailContentState extends ConsumerState<PlaylistDetailContent>
   /// 分辨率状态通过 [playlistResolutionOptionsProvider] 暴露（惰性加载，面板首次
   /// 打开才拉取），widgets 层通过纯值 [PlaylistResolutionOptionsState] 传入，
   /// 桌面/移动都实时跟随 provider 更新；抽屉里的重试按钮也能正确刷新。
-  Widget _buildListHeader(BuildContext context, int totalMovies) {
+  Widget _buildListHeader(
+    BuildContext context,
+    int totalMovies,
+    PagedListState<MovieListItemDto>? paged,
+  ) {
     final isMobile = AppPlatformScope.maybeOf(context) == AppPlatform.mobile;
     return AppListHeader(
       filterButtonKey: const Key('playlist-detail-filter-trigger'),
       filterLabel: _filterState.triggerLabel,
       filterPanelKey: const Key('playlist-detail-filter-panel'),
+      filterUpdate: paged?.filterUpdate ?? const FilterUpdateState.idle(),
+      hasPreviousFilterItems: paged?.items.isNotEmpty ?? false,
+      onRetryFilter: () => unawaited(
+        ref.read(movieSummaryProvider(_scope).notifier).retryFilter(),
+      ),
       onFilterTap: isMobile ? () => unawaited(_openFilterDrawer()) : null,
-      filterPanelBuilder:
-          isMobile
-              ? null
-              : (_) => Consumer(
-                builder: (context, ref, _) {
-                  final resolutionState = ref.watch(
-                    playlistResolutionOptionsProvider(widget.playlistId),
-                  );
-                  return PlaylistFilterSectionGroup(
-                    filterState: _filterState,
-                    onChanged: _applyFilter,
-                    resolutionState: resolutionState,
-                    onResolutionRetry:
-                        () => unawaited(
-                          ref
-                              .read(
-                                playlistResolutionOptionsProvider(
-                                  widget.playlistId,
-                                ).notifier,
-                              )
-                              .retry(),
-                        ),
-                  );
-                },
-              ),
-      onFilterPanelOpened:
-          isMobile
-              ? null
-              : () => unawaited(
-                ref
-                    .read(
-                      playlistResolutionOptionsProvider(
-                        widget.playlistId,
-                      ).notifier,
-                    )
-                    .ensureLoaded(),
-              ),
+      filterPanelBuilder: isMobile
+          ? null
+          : (_) => Consumer(
+              builder: (context, ref, _) {
+                final resolutionState = ref.watch(
+                  playlistResolutionOptionsProvider(widget.playlistId),
+                );
+                return PlaylistFilterSectionGroup(
+                  filterState: _filterState,
+                  onChanged: _applyFilter,
+                  resolutionState: resolutionState,
+                  onResolutionRetry: () => unawaited(
+                    ref
+                        .read(
+                          playlistResolutionOptionsProvider(
+                            widget.playlistId,
+                          ).notifier,
+                        )
+                        .retry(),
+                  ),
+                );
+              },
+            ),
+      onFilterPanelOpened: isMobile
+          ? null
+          : () => unawaited(
+              ref
+                  .read(
+                    playlistResolutionOptionsProvider(
+                      widget.playlistId,
+                    ).notifier,
+                  )
+                  .ensureLoaded(),
+            ),
       filterPanelFooter: AppFilterPanelFooter(
         isDefault: _filterState.isDefault,
         onReset: _resetFilters,
@@ -329,16 +335,13 @@ class _PlaylistDetailContentState extends ConsumerState<PlaylistDetailContent>
       context,
       current: _filterState,
       onChanged: _applyFilter,
-      resolutionStateBuilder:
-          (_) => ref.read(playlistResolutionOptionsProvider(widget.playlistId)),
-      onResolutionRetry:
-          () => unawaited(
-            ref
-                .read(
-                  playlistResolutionOptionsProvider(widget.playlistId).notifier,
-                )
-                .retry(),
-          ),
+      resolutionStateBuilder: (_) =>
+          ref.read(playlistResolutionOptionsProvider(widget.playlistId)),
+      onResolutionRetry: () => unawaited(
+        ref
+            .read(playlistResolutionOptionsProvider(widget.playlistId).notifier)
+            .retry(),
+      ),
     );
   }
 
@@ -377,8 +380,8 @@ class _PlaylistDetailContentState extends ConsumerState<PlaylistDetailContent>
 
     return Center(
       child: TextButton(
-        onPressed:
-            () => ref.read(movieSummaryProvider(_scope).notifier).loadMore(),
+        onPressed: () =>
+            ref.read(movieSummaryProvider(_scope).notifier).loadMore(),
         child: Text(paged.loadMoreErrorMessage!),
       ),
     );

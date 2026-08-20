@@ -154,7 +154,6 @@ class _DesktopOverviewPageState extends ConsumerState<DesktopOverviewPage> {
                 label: '外部数据源',
                 valueWidget: ExternalDataSourceStatusChips(
                   javdbHealthy: systemInfo.javdbHealthy,
-                  dmmHealthy: systemInfo.dmmHealthy,
                   isTesting: systemInfo.isTestingMetadataProviders,
                 ),
                 maxWidth: 260,

@@ -8,8 +8,8 @@ import 'package:sakuramedia/theme.dart';
 import 'package:sakuramedia/widgets/base/layout/scrolling/app_adaptive_refresh_scroll_view.dart';
 import 'package:sakuramedia/widgets/base/layout/scrolling/app_paged_load_more_footer.dart';
 import 'package:sakuramedia/widgets/domain/actors/actor_avatar.dart';
+import 'package:sakuramedia/widgets/domain/movies/subscription_heart_badge.dart';
 import 'package:sakuramedia/widgets/base/feedback/app_empty_state.dart';
-import 'package:sakuramedia/widgets/base/feedback/app_inline_spinner.dart';
 
 class MobileActorDetailPage extends StatefulWidget {
   const MobileActorDetailPage({super.key, required this.actorId});
@@ -28,10 +28,8 @@ class _MobileActorDetailPageState extends State<MobileActorDetailPage> {
       surfaceColor: context.appColors.surfaceCard,
       contentKey: const Key('mobile-actor-detail-page'),
       sectionSpacing: context.appSpacing.md,
-      onMovieTap:
-          (context, movieNumber) => MobileMovieDetailRouteData(
-            movieNumber: movieNumber,
-          ).push(context),
+      onMovieTap: (context, movieNumber) =>
+          MobileMovieDetailRouteData(movieNumber: movieNumber).push(context),
       headerBuilder:
           (
             context,
@@ -48,21 +46,19 @@ class _MobileActorDetailPageState extends State<MobileActorDetailPage> {
             onSubscriptionTap: onSubscriptionTap,
           ),
       loadingBuilder: (_) => const _MobileActorDetailLoadingSkeleton(),
-      errorBuilder:
-          (context, message, onRetry) => AppEmptyState(
-            key: const Key('mobile-actor-detail-error-state'),
-            message: message,
-            onRetry: onRetry,
-          ),
+      errorBuilder: (context, message, onRetry) => AppEmptyState(
+        key: const Key('mobile-actor-detail-error-state'),
+        message: message,
+        onRetry: onRetry,
+      ),
       footerBuilder: _buildLoadMoreFooter,
-      bodyBuilder:
-          (context, scrollController, child, onRefresh) =>
-              AppAdaptiveRefreshScrollView(
-                onRefresh: onRefresh!,
-                controller: scrollController,
-                physics: const AlwaysScrollableScrollPhysics(),
-                slivers: <Widget>[child],
-              ),
+      bodyBuilder: (context, scrollController, child, onRefresh) =>
+          AppAdaptiveRefreshScrollView(
+            onRefresh: onRefresh!,
+            controller: scrollController,
+            physics: const AlwaysScrollableScrollPhysics(),
+            slivers: <Widget>[child],
+          ),
       enableRefresh: true,
       onRefreshFailure: (_) => showToast('刷新失败'),
       // 与移动影片页同一套移动范式：筛选走底部抽屉，多选态顶栏只留退出/计数/
@@ -130,8 +126,11 @@ class _MobileActorDetailHeader extends StatelessWidget {
           ),
         ),
         SizedBox(width: context.appSpacing.md),
-        _MobileActorSubscriptionBadge(
-          actorId: actor.id,
+        SubscriptionHeartBadge(
+          key: Key('mobile-actor-detail-subscription-${actor.id}'),
+          loadingKey: Key(
+            'mobile-actor-detail-subscription-loading-${actor.id}',
+          ),
           isSubscribed: isSubscribed,
           isUpdating: isSubscriptionUpdating,
           onTap: onSubscriptionTap,
@@ -148,57 +147,6 @@ class _MobileActorDetailHeader extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-class _MobileActorSubscriptionBadge extends StatelessWidget {
-  const _MobileActorSubscriptionBadge({
-    required this.actorId,
-    required this.isSubscribed,
-    required this.isUpdating,
-    required this.onTap,
-  });
-
-  final int actorId;
-  final bool isSubscribed;
-  final bool isUpdating;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final componentTokens = context.appComponentTokens;
-    final colors = context.appColors;
-
-    final badge = SizedBox(
-      key: Key('mobile-actor-detail-subscription-$actorId'),
-      width: componentTokens.movieCardStatusBadgeSize,
-      height: componentTokens.movieCardStatusBadgeSize,
-      child: Center(
-        child:
-            isUpdating
-                ? AppInlineSpinner(
-                  key: Key('mobile-actor-detail-subscription-loading-$actorId'),
-                  color: colors.subscriptionHeartIcon,
-                )
-                : Icon(
-                  isSubscribed
-                      ? Icons.favorite_rounded
-                      : Icons.favorite_border_rounded,
-                  size: componentTokens.iconSizeXl,
-                  color: colors.subscriptionHeartIcon,
-                ),
-      ),
-    );
-
-    if (onTap == null || isUpdating) {
-      return badge;
-    }
-
-    return GestureDetector(
-      behavior: HitTestBehavior.translucent,
-      onTap: onTap,
-      child: badge,
     );
   }
 }

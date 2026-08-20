@@ -34,6 +34,7 @@ const String mobileDiscoverMomentsPath = '$mobileOverviewPath/discover/moments';
 const String mobilePlaylistDetailPathPrefix = '$mobileOverviewPath/playlists';
 const String mobileSystemOverviewPath = '/mobile/system/overview';
 const String mobileNotificationsPath = '/mobile/system/notifications';
+const String mobileMediaManagementPath = '/mobile/system/media';
 const String mobileSearchPath = '/mobile/search';
 const String mobileImageSearchPath = '/mobile/search/image';
 const String mobileMoviesPath = '/mobile/library/movies';
@@ -48,7 +49,6 @@ const String mobileSettingsMediaLibrariesPath =
     '/mobile/settings/media-libraries';
 const String mobileSettingsDownloadersPath = '/mobile/settings/downloaders';
 const String mobileSettingsIndexersPath = '/mobile/settings/indexers';
-const String mobileSettingsLlmPath = '/mobile/settings/llm';
 const String mobileSettingsPlaylistsPath = '/mobile/settings/playlists';
 const String mobileSettingsExternalPlayerPath =
     '/mobile/settings/external-player';

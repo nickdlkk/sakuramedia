@@ -1,10 +1,14 @@
+import 'package:expand_tap_area/expand_tap_area.dart';
 import 'package:flutter/material.dart';
 import 'package:sakuramedia/theme.dart';
+import 'package:sakuramedia/widgets/base/feedback/app_inline_spinner.dart';
 
-/// 订阅心形徽标(徽标区大小 + 中心心形/加载圈)。
+/// 订阅心形徽标：视觉图标固定 `iconSizeXl`（24），外层命中区使用
+/// `subscriptionHeartHitSize`（44）。布局盒保持 `movieCardStatusBadgeSize`
+/// （24），命中区经 `expand_tap_area` 外扩，不改变显示大小与相邻元素对齐。
 ///
-/// movie 卡片右上角 / actor 卡片右下角逐字相同,合并到此。
-/// 移动端 IconButton 变体不在这里(命中区不同)。
+/// movie / actor 摘要卡片、影片详情 hero、演员详情（桌面 / 移动）共用。
+/// 移动端 follow 卡片是 IconButton 变体（带水波纹），不在这里。
 class SubscriptionHeartBadge extends StatelessWidget {
   const SubscriptionHeartBadge({
     super.key,
@@ -24,28 +28,26 @@ class SubscriptionHeartBadge extends StatelessWidget {
     final componentTokens = context.appComponentTokens;
     final colors = context.appColors;
 
+    final badgeSize = componentTokens.movieCardStatusBadgeSize;
+    final hitPadding =
+        (componentTokens.subscriptionHeartHitSize - badgeSize) / 2;
+
     final badge = SizedBox(
-      width: componentTokens.movieCardStatusBadgeSize,
-      height: componentTokens.movieCardStatusBadgeSize,
+      width: badgeSize,
+      height: badgeSize,
       child: Center(
-        child:
-            isUpdating
-                ? SizedBox(
-                  width: componentTokens.movieCardLoaderSize,
-                  height: componentTokens.movieCardLoaderSize,
-                  child: CircularProgressIndicator(
-                    key: loadingKey,
-                    strokeWidth: componentTokens.movieCardLoaderStrokeWidth,
-                    color: colors.subscriptionHeartIcon,
-                  ),
-                )
-                : Icon(
-                  isSubscribed
-                      ? Icons.favorite_rounded
-                      : Icons.favorite_border_rounded,
-                  size: componentTokens.iconSizeXl,
-                  color: colors.subscriptionHeartIcon,
-                ),
+        child: isUpdating
+            ? AppInlineSpinner(
+                key: loadingKey,
+                color: colors.subscriptionHeartIcon,
+              )
+            : Icon(
+                isSubscribed
+                    ? Icons.favorite_rounded
+                    : Icons.favorite_border_rounded,
+                size: componentTokens.iconSizeXl,
+                color: colors.subscriptionHeartIcon,
+              ),
       ),
     );
 
@@ -53,13 +55,12 @@ class SubscriptionHeartBadge extends StatelessWidget {
       return badge;
     }
 
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        behavior: HitTestBehavior.translucent,
-        onTap: onTap,
-        child: badge,
-      ),
+    return ExpandTapWidget(
+      onTap: onTap!,
+      tapPadding: EdgeInsets.all(hitPadding),
+      // MouseRegion 的命中测试受自身布局尺寸限制，光标仍只在 24 图标区域内显示；
+      // 命中区本身由 ExpandTapWidget 外扩，不受影响。
+      child: MouseRegion(cursor: SystemMouseCursors.click, child: badge),
     );
   }
 }

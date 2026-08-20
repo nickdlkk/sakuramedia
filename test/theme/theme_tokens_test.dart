@@ -61,6 +61,11 @@ void main() {
     expect(colors.selectionSurface, const Color(0xFFF7ECEB));
     expect(colors.selectionBorder, const Color(0xFF6B2D2A));
     expect(colors.errorAccentForeground, const Color(0xFFF04438));
+    expect(kAppToastTextStyle.color, Colors.white);
+    expect(
+      kAppToastBackgroundColor,
+      AppTextPalette.defaults().primary.withValues(alpha: 0xDD / 0xFF),
+    );
     expect(textScale.s20, 20);
     expect(textScale.s18, 18);
     expect(textScale.s16, 16);
@@ -109,7 +114,11 @@ void main() {
     expect(componentTokens.buttonGapXs, 4);
     expect(componentTokens.buttonGap2xs, 4);
     expect(componentTokens.buttonGap3xs, 2);
+    expect(componentTokens.switchTrackWidth, 36);
+    expect(componentTokens.switchTrackHeight, 20);
+    expect(componentTokens.switchThumbDiameter, 16);
     expect(componentTokens.movieCardStatusBadgeSize, 24);
+    expect(componentTokens.subscriptionHeartHitSize, 44);
     expect(componentTokens.downloadTaskCoverWidth, 220);
     expect(componentTokens.downloadTaskCardMinHeight, 120);
     expect(componentTokens.downloadTaskProgressHeight, 6);
@@ -192,6 +201,9 @@ void main() {
     expect(sakuraMobileThemeData.appComponentTokens.buttonHeightSm, 36);
     expect(sakuraMobileThemeData.appComponentTokens.buttonHeight2xs, 28);
     expect(sakuraMobileThemeData.appComponentTokens.buttonHeight3xs, 24);
+    expect(sakuraMobileThemeData.appComponentTokens.switchTrackWidth, 44);
+    expect(sakuraMobileThemeData.appComponentTokens.switchTrackHeight, 24);
+    expect(sakuraMobileThemeData.appComponentTokens.switchThumbDiameter, 18);
     expect(
       sakuraMobileThemeData.appComponentTokens.movieDetailBottomBarMinHeight,
       48,

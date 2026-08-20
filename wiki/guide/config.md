@@ -16,9 +16,8 @@
 - `[database]`
 - `[auth]`
 - `[media]`
-- `[metadata]`（包含元数据代理）
-- `[movie_info_translation]`
-- `[plugins]`（可选插件，只能手改配置文件）
+- `[metadata]`（元数据抓取；外部站点代理见下文「代理配置」）
+- `[plugins]`（可选插件）
 - `[scheduler]`
 - `[downloads]`
 - `[media_import]`
@@ -160,9 +159,6 @@ media_clip_ffmpeg_timeout_seconds = 120
 ```toml
 [metadata]
 javdb_host = "jdforrepam.com"
-javdb_username = ""
-javdb_password = ""
-proxy = ""
 gfriends_filetree_url = "https://cdn.jsdelivr.net/gh/xinxin8816/gfriends/Filetree.json"
 gfriends_cdn_base_url = "https://cdn.jsdelivr.net/gh/xinxin8816/gfriends"
 gfriends_filetree_cache_path = "/data/cache/gfriends/gfriends-filetree.json"
@@ -175,71 +171,55 @@ import_metadata_max_workers = 3
 | 字段 | 作用 |
 |---|---|
 | `javdb_host` | JavDB API 域名，不带协议头 |
-| `javdb_username` | JavDB 账号，用于抓取需登录的 TOP250 榜单（全部 / 有码 / 无码 / FC2 / 各年度）；留空则不抓 TOP250 |
-| `javdb_password` | JavDB 账号密码，与 `javdb_username` 配套使用 |
-| `proxy` | DMM 与 GFriends 共用的 HTTP 代理地址，需要是一个日本节点的 HTTP 代理；JavDB 不会走代理。 |
 | `gfriends_filetree_url` | GFriends 文件树索引地址 |
 | `gfriends_cdn_base_url` | GFriends CDN 根地址 |
 | `gfriends_filetree_cache_path` | GFriends 文件树本地缓存路径 |
 | `gfriends_filetree_cache_ttl_hours` | 文件树缓存有效期，单位小时 |
 | `import_metadata_max_workers` | 导入本地影片时抓取元数据的并发线程数 |
 
-## `[movie_info_translation]`
+JavDB 排行榜账号不再属于 `[metadata]`。安装排行榜插件后，应在「系统设置 → 插件」
+中编辑插件私有配置，或写入对应的 `plugins.settings.<plugin_id>`；示例见下方
+`[plugins]` 章节。
 
-这一组控制影片信息翻译任务连接的外部 OpenAI 兼容大模型接口。
-当前它由“影片简介翻译”和“影片标题翻译”共用。
+### 代理配置（环境变量）
 
-```toml
-[movie_info_translation]
-enabled = false
-base_url = "https://ollama.com"
-api_key = "填入ollama的api key"
-model = "gemma4:31b-cloud"
-timeout_seconds = 300
-connect_timeout_seconds = 3
-```
+外部站点请求（JavDB API、JavDB 图片下载、GFriends）**不再支持 config 层代理**（`metadata.proxy` 已移除），统一通过容器环境变量 `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` 分流：
 
-字段说明：
+- 未设置环境变量时全部直连，与旧行为一致；设置后由部署方自行决定哪些请求走代理。
+- 典型用法：compose 里设 `HTTP_PROXY` 指向代理软件（如 clash 混合端口），`NO_PROXY` 排除需要直连的域名；也可以交给代理软件自身的规则引擎分流，项目代码不做任何判断。
+- `NO_PROXY` 遵循 curl 语义：`example.com`（不带点）排除该域自身及子域，`.example.com`（带点）只排除子域、不排除主域自身（如 `.jdbstatic.com` 不能排除 `jdbstatic.com` 本域）。
+- **迁移提醒**：旧配置里的 `metadata.proxy` 已被移除，依赖它的部署需改用上述环境变量，否则 GFriends 请求会转直连。
+- qbittorrent / torznab / cloud115 等下载与网盘链路不受影响，保持直连。
+- Linux 容器内访问宿主机代理端口，需在 compose 加 `extra_hosts: "host.docker.internal:host-gateway"`，或直接用宿主机局域网 IP。
 
-| 字段 | 作用 |
-|---|---|
-| `enabled` | 是否启用影片信息翻译任务 |
-| `base_url` | OpenAI 兼容大模型接口地址 |
-| `api_key` | 大模型接口 API Key |
-| `model` | 翻译使用的模型名称 |
-| `timeout_seconds` | 翻译请求总超时秒数 |
-| `connect_timeout_seconds` | 翻译请求建连超时秒数 |
-
-建议：
-
-- 如果你暂时不需要中文简介和中文标题，可以保持 `enabled = false`
-- 真正启用前，先用 [常用命令](/guide/commands) 里的 `test-trans` 验证这个 OpenAI 格式接口是否可用
-- 这组配置只影响影片信息翻译，不影响影片原文描述抓取
-- 旧配置名 `[movie_desc_translation]` 目前仍兼容，但新配置建议统一写成 `[movie_info_translation]`
-- 文档里的 `base_url` 示例当前统一写成 `https://ollama.com`，`model` 示例当前统一写成 `gemma4:31b-cloud`
+> JavDB 站点访问依托 `javdb_host` 自身的直连/反代能力。
 
 ## `[plugins]`
 
-这一组控制「仓库内插件」的启用。目前无可选插件，未来可能会有。
+这一组控制「仓库内插件」的目录、启用清单、任务 cron 覆盖和私有配置。常用配置如下：
 
 ```toml
 [plugins]
-enabled = ["示例插件ID"]
+root_dir = "/data/plugins"
+enabled = ["sakuramedia_javdb_ranking"]
 
-[plugins.job_crons.示例插件ID]
-示例任务名 = "0 5 * * 1"
+[plugins.job_crons.sakuramedia_javdb_ranking]
+sakuramedia_javdb_ranking_sync = "45 1 * * *"
 
-[plugins.settings.示例插件ID]
-# 由插件自己定义的配置
+[plugins.settings.sakuramedia_javdb_ranking]
+javdb_username = ""
+javdb_password = ""
 ```
 
-字段说明：
+- `root_dir`：插件根目录，默认 `/data/plugins`；
+- `enabled`：显式启用的插件 ID，不在清单中的插件不会被加载；
+- `job_crons.<plugin_id>.<task_key>`：覆盖插件任务的默认 cron；
+- `settings.<plugin_id>`：插件私有配置，插件通过 `context.settings` 只读读取。
 
-| 字段 | 作用 |
-|---|---|
-| `enabled` | 要启用的插件 ID 列表。**只有列在这里的插件才会被加载**，光有代码或光有配置都不会生效 |
-| `job_crons` | 按插件 ID 分组，覆盖该插件所注册任务的 cron；不写就用插件自带的默认 cron |
-| `settings` | 按插件 ID 分组的插件私有配置，具体字段由插件自己定义 |
+插件安装、启停和私有配置也可以通过「系统设置 → 插件」或插件管理 API 完成；这些操作
+修改后需要重启 api 与 aps。通用 `/config` API 不返回也不修改整个 `[plugins]` 节。
+完整契约见[插件化机制](/guide/plugins)。
+
 
 ## `[scheduler]`
 
@@ -257,12 +237,8 @@ download_small_file_cleanup_cron = "*/5 * * * *"
 movie_collection_sync_cron = "0 1 * * *"
 movie_heat_cron = "15 0 * * *"
 movie_interaction_sync_cron = "0 5 * * *"
-ranking_sync_cron = "45 1 * * *"
 hot_review_sync_cron = "20 1 * * *"
 media_file_scan_cron = "0 4 * * *"
-movie_desc_sync_cron = "0 4 * * *"
-movie_desc_translation_cron = "15 4 * * *"
-movie_title_translation_cron = "20 4 * * *"
 media_thumbnail_cron = "*/30 * * * *"
 image_search_index_cron = "0 0 * * *"
 image_search_optimize_cron = "0 3 * * *"
@@ -289,12 +265,8 @@ activity_notification_read_retention_days = 3
 | `movie_collection_sync_cron` | 合集影片同步频率 |
 | `movie_heat_cron` | 影片热度重算频率 |
 | `movie_interaction_sync_cron` | 影片互动数同步频率；当前默认每天 05:00 执行一次，任务跑起来之后哪些影片真正进入候选，还要看[分层刷新规则](/guide/tasks#影片互动数同步) |
-| `ranking_sync_cron` | 排行榜同步频率 |
 | `hot_review_sync_cron` | JavDB 热评同步频率 |
 | `media_file_scan_cron` | 媒体文件巡检频率 |
-| `movie_desc_sync_cron` | 影片原文描述回填频率 |
-| `movie_desc_translation_cron` | 影片中文简介翻译频率 |
-| `movie_title_translation_cron` | 影片标题翻译频率 |
 | `media_thumbnail_cron` | 缩略图生成频率 |
 | `image_search_index_cron` | 图片搜索索引生成频率 |
 | `image_search_optimize_cron` | 图片搜索索引优化频率 |
@@ -432,4 +404,3 @@ api_key = ""
 |---|---|
 | `url` | Qdrant HTTP API 地址；compose 部署时默认走容器内部服务名 `qdrant` |
 | `api_key` | Qdrant API Key；未启用鉴权时留空 |
-

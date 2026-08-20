@@ -147,7 +147,6 @@ class MobileSystemOverviewPage extends ConsumerWidget {
               label: '外部数据源',
               valueWidget: ExternalDataSourceStatusChips(
                 javdbHealthy: systemInfo.javdbHealthy,
-                dmmHealthy: systemInfo.dmmHealthy,
                 isTesting: systemInfo.isTestingMetadataProviders,
                 keyPrefix: 'mobile-system-overview',
               ),

@@ -35,7 +35,7 @@ final class DownloadPreferenceProvider
 }
 
 String _$downloadPreferenceHash() =>
-    r'fe2e3e6cc27797cc8f20efe0b904474f3c0e56c7';
+    r'fb8ba0a44956116ccbea4351a106931302491334';
 
 abstract class _$DownloadPreference
     extends $AsyncNotifier<DownloadPreferenceState> {

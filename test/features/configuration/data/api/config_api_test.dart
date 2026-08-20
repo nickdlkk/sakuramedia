@@ -140,9 +140,6 @@ Map<String, dynamic> _buildConfigResourceJson({
       },
       'metadata': <String, dynamic>{
         'javdb_host': 'jdforrepam.com',
-        'javdb_username': 'alice',
-        'javdb_password': '',
-        'proxy': 'http://127.0.0.1:7890',
       },
       'scheduler': <String, dynamic>{
         for (final key in AdvancedSchedulerConfigDto.cronKeys)

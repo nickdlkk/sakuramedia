@@ -8,12 +8,12 @@ import 'package:oktoast/oktoast.dart';
 import 'package:sakuramedia/core/session/session_store.dart';
 import 'package:sakuramedia/features/configuration/data/dto/config_dto.dart';
 import 'package:sakuramedia/features/configuration/presentation/pages/desktop/configuration_page.dart';
-import 'package:sakuramedia/features/configuration/presentation/widgets/shared/llm_settings_copy.dart';
 import 'package:sakuramedia/routes/app_navigation.dart';
 import 'package:sakuramedia/routes/app_router.dart';
 import 'package:sakuramedia/theme.dart';
 import 'package:sakuramedia/widgets/base/actions/app_button.dart';
 
+import '../../../../../support/logged_in_session_store.dart';
 import '../../../../../support/test_api_bundle.dart';
 
 void main() {
@@ -22,7 +22,7 @@ void main() {
     late TestApiBundle bundle;
 
     setUp(() async {
-      sessionStore = await _buildLoggedInSessionStore();
+      sessionStore = await buildLoggedInSessionStore();
       bundle = await createTestApiBundle(sessionStore);
     });
 
@@ -44,9 +44,9 @@ void main() {
           'configuration-tab-downloads',
           'configuration-tab-indexers',
           'configuration-tab-download-preference',
-          'configuration-tab-llm',
           'configuration-tab-playlists',
           'configuration-tab-advanced',
+          'configuration-tab-plugins',
         ];
         var previousTop = double.negativeInfinity;
         for (final key in categoryKeys) {
@@ -91,43 +91,10 @@ void main() {
       expect(find.text('还没有下载器配置'), findsOneWidget);
     });
 
-    testWidgets('loads llm settings section lazily', (
-      WidgetTester tester,
-    ) async {
-      _enqueueMediaLibraries(bundle);
-
-      await _pumpPage(tester, bundle, sessionStore: sessionStore);
-
-      expect(bundle.adapter.hitCount('GET', '/config'), 0);
-      await tester.tap(find.byKey(const Key('configuration-tab-llm')));
-      await tester.pumpAndSettle();
-
-      expect(find.byKey(const Key('llm-form-card')), findsOneWidget);
-      expect(find.text('LLM 配置'), findsWidgets);
-      expect(find.byKey(const Key('llm-base-url-field')), findsOneWidget);
-      expect(find.text('启用'), findsOneWidget);
-      expect(find.text('停用'), findsOneWidget);
-      expect(find.byKey(const Key('llm-test-button')), findsOneWidget);
-      expect(find.byKey(const Key('llm-save-button')), findsOneWidget);
-      expect(find.text('可保存'), findsOneWidget);
-      expect(find.text(LlmSettingsCopy.sharedUsageDescription), findsOneWidget);
-      expect(
-        find.text(LlmSettingsCopy.sharedEndpointDescription),
-        findsOneWidget,
-      );
-      expect(bundle.adapter.hitCount('GET', '/config'), 1);
-      expect(find.text(LlmSettingsCopy.baseUrlHelperText), findsOneWidget);
-      expect(find.text(LlmSettingsCopy.modelHintText), findsOneWidget);
-      expect(
-        find.text(LlmSettingsCopy.modelRecommendationText),
-        findsOneWidget,
-      );
-    });
-
     testWidgets('confirms before leaving dirty advanced settings tab', (
       WidgetTester tester,
     ) async {
-      _enqueueMediaLibraries(bundle, includeLlmSettings: false);
+      _enqueueMediaLibraries(bundle);
       _enqueueAdvancedConfig(bundle);
       _enqueuePlaylists(bundle, playlists: const []);
 
@@ -1583,7 +1550,7 @@ void main() {
     testWidgets('saves global download preference in its own tab', (
       WidgetTester tester,
     ) async {
-      _enqueueMediaLibraries(bundle, includeLlmSettings: false);
+      _enqueueMediaLibraries(bundle);
       _enqueueAdvancedConfig(bundle);
       _enqueueDownloadPreferencePatch(bundle);
 
@@ -1617,7 +1584,7 @@ void main() {
       await tester.pump(const Duration(seconds: 3));
     });
 
-    testWidgets('tests saved Jackett settings and shows the result', (
+    testWidgets('tests saved Torznab settings and shows the result', (
       WidgetTester tester,
     ) async {
       _enqueueMediaLibraries(bundle);
@@ -1650,7 +1617,7 @@ void main() {
         find.byKey(const Key('configuration-indexer-connection-test-result')),
         findsOneWidget,
       );
-      expect(find.text('Jackett 已连通，真实搜索已完成。'), findsOneWidget);
+      expect(find.text('Torznab 已连通，真实搜索已完成。'), findsOneWidget);
       expect(find.text('索引器：2 个'), findsOneWidget);
       expect(find.text('候选：5 条'), findsOneWidget);
       await tester.pump(const Duration(seconds: 3));
@@ -1710,20 +1677,19 @@ void main() {
         _enqueueIndexerSettings(bundle, indexers: const []);
         _enqueueDownloadClientsList(bundle, clients: _defaultDownloadClients);
         bundle.adapter.enqueueJson(
-          method: 'PATCH',
-          path: '/indexer-settings',
-          body: {
-            'type': 'jackett',
-            'api_key': 'secret-key',
-            'indexers': [
-              {
-                'id': 1,
-                'name': 'mteam',
-                'url': 'https://mirror.example.com/torznab',
-                'kind': 'pt',
-                'download_clients': [
-                  {'id': 1, 'name': 'client-a', 'kind': 'qbittorrent'},
-                ],
+        method: 'PATCH',
+        path: '/indexer-settings',
+        body: {
+          'indexers': [
+            {
+              'id': 1,
+              'name': 'mteam',
+              'url': 'https://mirror.example.com/torznab',
+              'kind': 'pt',
+              'api_key': 'secret-key',
+              'download_clients': [
+                {'id': 1, 'name': 'client-a', 'kind': 'qbittorrent'},
+              ],
               },
             ],
           },
@@ -1745,6 +1711,10 @@ void main() {
           find.byKey(const Key('indexer-entry-url-field')),
           'https://mirror.example.com/torznab',
         );
+        await tester.enterText(
+          find.byKey(const Key('indexer-entry-api-key-field')),
+          'secret-key',
+        );
         await tester.tap(find.byKey(const Key('indexer-download-client-1')));
         await tester.pumpAndSettle();
         await tester.tap(find.text('保存').last);
@@ -1761,6 +1731,7 @@ void main() {
         expect(patchRequest.body['indexers'][0]['download_client_ids'], <int>[
           1,
         ]);
+        expect(patchRequest.body['indexers'][0]['api_key'], 'secret-key');
         expect(find.textContaining('下载器: client-a'), findsOneWidget);
         await tester.pump(const Duration(seconds: 3));
       },
@@ -1825,14 +1796,13 @@ void main() {
         method: 'PATCH',
         path: '/indexer-settings',
         body: {
-          'type': 'jackett',
-          'api_key': 'secret-key',
           'indexers': [
             {
               'id': 1,
               'name': 'mteam',
               'url': 'https://mirror.example.com/torznab',
               'kind': 'pt',
+              'api_key': 'secret-key',
               'download_clients': [
                 {'id': 2, 'name': 'client-b', 'kind': 'qbittorrent'},
               ],
@@ -1864,6 +1834,7 @@ void main() {
             request.method == 'PATCH' && request.path == '/indexer-settings',
       );
       expect(patchRequest.body['indexers'][0]['download_client_ids'], <int>[2]);
+      expect(patchRequest.body['indexers'][0]['api_key'], 'secret-key');
       expect(find.textContaining('下载器: client-b'), findsOneWidget);
       await tester.pump(const Duration(seconds: 3));
     });
@@ -1924,7 +1895,7 @@ void main() {
   testWidgets('successful password change returns to login through router', (
     WidgetTester tester,
   ) async {
-    final sessionStore = await _buildLoggedInSessionStore();
+    final sessionStore = await buildLoggedInSessionStore();
     final bundle = await createTestApiBundle(sessionStore);
     addTearDown(bundle.dispose);
     _enqueueOverviewResponses(bundle);
@@ -2096,17 +2067,22 @@ void _enqueueIndexerSettings(
   TestApiBundle bundle, {
   List<Map<String, Object?>> indexers = const [],
 }) {
+  Map<String, Object?> withApiKey(Map<String, Object?> entry) {
+    return <String, Object?>{
+      ...entry,
+      'api_key': entry.containsKey('api_key') ? entry['api_key'] : 'secret-key',
+    };
+  }
+
   bundle.adapter.enqueueJson(
     method: 'GET',
     path: '/indexer-settings',
     body: {
-      'type': 'jackett',
-      'api_key': 'secret-key',
       'indexers': indexers
           .map((entry) {
-            if (entry.containsKey('download_clients')) return entry;
+            if (entry.containsKey('download_clients')) return withApiKey(entry);
             return <String, Object?>{
-              ...entry,
+              ...withApiKey(entry),
               'download_clients': <Map<String, Object?>>[
                 <String, Object?>{
                   'id': entry['download_client_id'],
@@ -2160,7 +2136,6 @@ void _enqueueAdvancedConfig(TestApiBundle bundle) {
 
 void _enqueueMediaLibraries(
   TestApiBundle bundle, {
-  bool includeLlmSettings = true,
   List<Map<String, Object?>> libraries = const [
     {
       'id': 1,
@@ -2176,9 +2151,6 @@ void _enqueueMediaLibraries(
     path: '/media-libraries',
     body: libraries,
   );
-  if (includeLlmSettings) {
-    _enqueueMovieDescTranslationSettings(bundle);
-  }
 }
 
 Map<String, dynamic> _buildAdvancedConfigResponseJson() {
@@ -2194,9 +2166,6 @@ Map<String, dynamic> _buildAdvancedConfigResponseJson() {
       },
       'metadata': <String, dynamic>{
         'javdb_host': 'jdforrepam.com',
-        'javdb_username': '',
-        'javdb_password': '',
-        'proxy': '',
       },
       'scheduler': <String, dynamic>{
         for (final key in AdvancedSchedulerConfigDto.cronKeys)
@@ -2218,41 +2187,6 @@ Map<String, dynamic> _buildAdvancedConfigResponseJson() {
   };
 }
 
-void _enqueueMovieDescTranslationSettings(
-  TestApiBundle bundle, {
-  bool enabled = false,
-  String baseUrl = 'http://llm.internal:8000',
-  String apiKey = '',
-  String model = 'gpt-4o-mini',
-  double timeoutSeconds = 300,
-  double connectTimeoutSeconds = 3,
-}) {
-  bundle.adapter.enqueueJson(
-    method: 'GET',
-    path: '/config',
-    body: _buildConfigResponseJson(
-      section: _buildMovieDescTranslationSettingsJson(
-        enabled: enabled,
-        baseUrl: baseUrl,
-        apiKey: apiKey,
-        model: model,
-        timeoutSeconds: timeoutSeconds,
-        connectTimeoutSeconds: connectTimeoutSeconds,
-      ),
-    ),
-  );
-}
-
-/// 构造 `GET /config` 响应壳，`section` 落到 `values.movie_info_translation`。
-Map<String, dynamic> _buildConfigResponseJson({
-  required Map<String, dynamic> section,
-}) {
-  return <String, dynamic>{
-    'values': <String, dynamic>{'movie_info_translation': section},
-    'effects': <String, dynamic>{'movie_info_translation': 'hot'},
-  };
-}
-
 void _enqueueDownloadPreferencePatch(TestApiBundle bundle) {
   bundle.adapter.enqueueJson(
     method: 'PATCH',
@@ -2268,35 +2202,6 @@ void _enqueueDownloadPreferencePatch(TestApiBundle bundle) {
       ],
     },
   );
-}
-
-Map<String, dynamic> _buildMovieDescTranslationSettingsJson({
-  bool enabled = false,
-  String baseUrl = 'http://llm.internal:8000',
-  String apiKey = '',
-  String model = 'gpt-4o-mini',
-  double timeoutSeconds = 300,
-  double connectTimeoutSeconds = 3,
-}) {
-  return <String, dynamic>{
-    'enabled': enabled,
-    'base_url': baseUrl,
-    'api_key': apiKey,
-    'model': model,
-    'timeout_seconds': timeoutSeconds,
-    'connect_timeout_seconds': connectTimeoutSeconds,
-  };
-}
-
-Future<SessionStore> _buildLoggedInSessionStore() async {
-  final store = SessionStore.inMemory();
-  await store.saveBaseUrl('https://api.example.com');
-  await store.saveTokens(
-    accessToken: 'access-token',
-    refreshToken: 'refresh-token',
-    expiresAt: DateTime.parse('2026-03-10T12:00:00Z'),
-  );
-  return store;
 }
 
 void _enqueueOverviewResponses(TestApiBundle bundle) {

@@ -16,7 +16,6 @@ import 'package:sakuramedia/features/configuration/presentation/forms/indexer_en
 import 'package:sakuramedia/features/configuration/presentation/widgets/shared/indexer_connection_test_panel.dart';
 import 'package:sakuramedia/theme.dart';
 import 'package:sakuramedia/widgets/base/actions/app_button.dart';
-import 'package:sakuramedia/widgets/base/forms/app_password_field.dart';
 import 'package:sakuramedia/widgets/base/actions/app_inline_action_button.dart';
 import 'package:sakuramedia/widgets/base/overlays/app_desktop_dialog.dart';
 import 'package:sakuramedia/widgets/base/layout/cards/app_content_card.dart';
@@ -37,16 +36,12 @@ class IndexerSettingsSection extends ConsumerStatefulWidget {
 
 class _IndexerSettingsSectionState
     extends ConsumerState<IndexerSettingsSection> {
-  static const List<String> _supportedTypes = <String>['jackett'];
-
-  final TextEditingController _apiKeyController = TextEditingController();
   final TextEditingController _searchController = TextEditingController();
 
   bool _isSaving = false;
   bool _initialized = false;
   bool _isLoading = false;
   String? _errorMessage;
-  String _selectedType = _supportedTypes.first;
   List<IndexerEntryDto> _indexers = <IndexerEntryDto>[];
   List<DownloadClientDto> _downloadClients = <DownloadClientDto>[];
   IndexerSettingsDto? _savedSettings;
@@ -56,7 +51,6 @@ class _IndexerSettingsSectionState
   void initState() {
     super.initState();
     _searchController.addListener(_handleSearchChanged);
-    _apiKeyController.addListener(_handleApiKeyChanged);
     if (widget.active) unawaited(_loadData());
   }
 
@@ -97,8 +91,6 @@ class _IndexerSettingsSectionState
 
   @override
   void dispose() {
-    _apiKeyController.removeListener(_handleApiKeyChanged);
-    _apiKeyController.dispose();
     _searchController.removeListener(_handleSearchChanged);
     _searchController.dispose();
     super.dispose();
@@ -111,21 +103,7 @@ class _IndexerSettingsSectionState
     setState(() {});
   }
 
-  void _handleApiKeyChanged() {
-    if (!mounted) {
-      return;
-    }
-    ref
-        .read(indexerConnectionTestProvider(_connectionTestScope).notifier)
-        .invalidate();
-  }
-
   void _applySettings(IndexerSettingsDto settings) {
-    _selectedType =
-        settings.type.isEmpty ? _supportedTypes.first : settings.type;
-    _apiKeyController.removeListener(_handleApiKeyChanged);
-    _apiKeyController.text = settings.apiKey;
-    _apiKeyController.addListener(_handleApiKeyChanged);
     _indexers = List<IndexerEntryDto>.from(settings.indexers);
     _savedSettings = settings;
     ref
@@ -138,9 +116,7 @@ class _IndexerSettingsSectionState
     if (saved == null) {
       return false;
     }
-    if (_selectedType.trim() != saved.type.trim() ||
-        _apiKeyController.text.trim() != saved.apiKey.trim() ||
-        _indexers.length != saved.indexers.length) {
+    if (_indexers.length != saved.indexers.length) {
       return true;
     }
     for (var index = 0; index < _indexers.length; index++) {
@@ -150,6 +126,7 @@ class _IndexerSettingsSectionState
           current.name != previous.name ||
           current.url != previous.url ||
           current.kind != previous.kind ||
+          current.apiKey != previous.apiKey ||
           !listEquals(current.downloadClientIds, previous.downloadClientIds)) {
         return true;
       }
@@ -172,17 +149,6 @@ class _IndexerSettingsSectionState
   }
 
   Future<void> _saveSettings() async {
-    final type = _selectedType.trim();
-    final apiKey = _apiKeyController.text.trim();
-
-    if (!_supportedTypes.contains(type)) {
-      showToast('索引器类型暂不支持');
-      return;
-    }
-    if (apiKey.isEmpty) {
-      showToast('请输入 API Key');
-      return;
-    }
     final duplicateNames = findDuplicateIndexerNames(_indexers);
     if (duplicateNames.isNotEmpty) {
       showToast('索引器名称重复: ${duplicateNames.first}');
@@ -209,7 +175,7 @@ class _IndexerSettingsSectionState
     try {
       final saved = await ref
           .read(indexerSettingsProvider.notifier)
-          .saveDraft(type: type, apiKey: apiKey, indexers: _indexers);
+          .saveDraft(indexers: _indexers);
       if (!mounted) {
         return;
       }
@@ -241,7 +207,7 @@ class _IndexerSettingsSectionState
     if (!mounted || result == null) {
       return;
     }
-    showToast(result.healthy ? 'Jackett 连通正常' : 'Jackett 连通性测试失败');
+    showToast(result.healthy ? 'Torznab 连通正常' : 'Torznab 连通性测试失败');
   }
 
   Future<void> _createIndexer() async {
@@ -319,7 +285,8 @@ class _IndexerSettingsSectionState
             : _indexers
                 .where((item) {
                   final source =
-                      '${item.name} ${item.url} ${item.kind} ${item.downloadClientNames}'
+                      '${item.name} ${item.url} ${item.kind} '
+                      '${item.apiKey ?? ''} ${item.downloadClientNames}'
                           .toLowerCase();
                   return source.contains(query);
                 })
@@ -330,7 +297,7 @@ class _IndexerSettingsSectionState
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         AppContentCard(
-          title: 'API 密钥',
+          title: 'Torznab 连通性',
           titleStyle: resolveAppTextStyle(
             context,
             size: AppTextSize.s16,
@@ -341,23 +308,6 @@ class _IndexerSettingsSectionState
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              AppPasswordField(
-                controller: _apiKeyController,
-                hintText: '请输入 Jackett API Key',
-                showLabel: '显示 API 密钥',
-                hideLabel: '隐藏 API 密钥',
-              ),
-              SizedBox(height: spacing.sm),
-              Text(
-                '该密钥用于与 Jackett 后端进行身份验证',
-                style: resolveAppTextStyle(
-                  context,
-                  size: AppTextSize.s12,
-                  weight: AppTextWeight.regular,
-                  tone: AppTextTone.muted,
-                ),
-              ),
-              SizedBox(height: spacing.lg),
               IndexerConnectionTestPanel(
                 key: const Key('configuration-indexer-connection-test-panel'),
                 isTesting: connectionTest.isTesting,
@@ -514,6 +464,18 @@ class IndexerEntryCard extends StatelessWidget {
                 ),
                 SizedBox(height: spacing.xs),
                 Text(
+                  'API Key: ${entry.hasApiKey ? '已配置' : '未配置'}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: resolveAppTextStyle(
+                    context,
+                    size: AppTextSize.s12,
+                    weight: AppTextWeight.regular,
+                    tone: AppTextTone.muted,
+                  ),
+                ),
+                SizedBox(height: spacing.xs),
+                Text(
                   '下载器: ${entry.downloadClientNames}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -566,6 +528,7 @@ class _IndexerEntryDialogState extends ConsumerState<IndexerEntryDialog> {
 
   late final TextEditingController _nameController;
   late final TextEditingController _urlController;
+  late final TextEditingController _apiKeyController;
   late String _kind;
   late List<int> _selectedDownloadClientIds;
 
@@ -578,6 +541,9 @@ class _IndexerEntryDialogState extends ConsumerState<IndexerEntryDialog> {
     _urlController = TextEditingController(
       text: widget.initialEntry?.url ?? '',
     );
+    _apiKeyController = TextEditingController(
+      text: widget.initialEntry?.apiKey ?? '',
+    );
     _kind = widget.initialEntry?.kind ?? 'pt';
     _selectedDownloadClientIds = List<int>.of(
       widget.initialEntry?.downloadClientIds ?? const <int>[],
@@ -588,6 +554,7 @@ class _IndexerEntryDialogState extends ConsumerState<IndexerEntryDialog> {
   void dispose() {
     _nameController.dispose();
     _urlController.dispose();
+    _apiKeyController.dispose();
     super.dispose();
   }
 
@@ -601,6 +568,9 @@ class _IndexerEntryDialogState extends ConsumerState<IndexerEntryDialog> {
         name: _nameController.text.trim(),
         url: _urlController.text.trim(),
         kind: _kind,
+        apiKey: _apiKeyController.text.trim().isEmpty
+            ? null
+            : _apiKeyController.text.trim(),
         downloadClients: _selectedDownloadClients(),
       ),
     );
@@ -654,6 +624,7 @@ class _IndexerEntryDialogState extends ConsumerState<IndexerEntryDialog> {
             IndexerEntryFormFields(
               nameController: _nameController,
               urlController: _urlController,
+              apiKeyController: _apiKeyController,
               kind: _kind,
               downloadClients: widget.downloadClients,
               selectedDownloadClientIds: _selectedDownloadClientIds,

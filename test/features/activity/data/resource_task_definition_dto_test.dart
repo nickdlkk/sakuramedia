@@ -5,7 +5,7 @@ void main() {
   group('ResourceTaskDefinitionDto.fromJson', () {
     test('maps all fields with full payload', () {
       final dto = ResourceTaskDefinitionDto.fromJson(<String, dynamic>{
-        'task_key': 'movie_desc_sync',
+        'task_key': 'movie_interaction_sync',
         'resource_type': 'movie',
         'display_name': '影片描述回填',
         'default_sort': 'last_attempted_at:desc',
@@ -18,7 +18,7 @@ void main() {
         },
       });
 
-      expect(dto.taskKey, 'movie_desc_sync');
+      expect(dto.taskKey, 'movie_interaction_sync');
       expect(dto.resourceType, 'movie');
       expect(dto.displayName, '影片描述回填');
       expect(dto.defaultSort, 'last_attempted_at:desc');
@@ -55,7 +55,7 @@ void main() {
 
     test('treats empty default_sort string as null', () {
       final dto = ResourceTaskDefinitionDto.fromJson(<String, dynamic>{
-        'task_key': 'movie_desc_sync',
+        'task_key': 'movie_interaction_sync',
         'default_sort': '   ',
       });
 

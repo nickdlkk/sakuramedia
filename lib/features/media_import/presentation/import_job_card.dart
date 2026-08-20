@@ -87,17 +87,17 @@ class ImportJobCard extends StatelessWidget {
               ),
               if (job.isCloud115)
                 const AppMetaChip(icon: Icons.cloud_outlined, label: '115 网盘'),
-              AppMetaChip(
-                icon: Icons.swap_horiz_rounded,
-                label: job.transferMode.label,
-              ),
+              if (job.importModeLabel case final importModeLabel?)
+                AppMetaChip(
+                  icon: Icons.swap_horiz_rounded,
+                  label: importModeLabel,
+                ),
               AppMetaChip(
                 icon: Icons.check_circle_outline_rounded,
                 label: '导入 ${job.importedCount}',
-                tone:
-                    job.importedCount > 0
-                        ? AppTextTone.success
-                        : AppTextTone.secondary,
+                tone: job.importedCount > 0
+                    ? AppTextTone.success
+                    : AppTextTone.secondary,
               ),
               AppMetaChip(
                 icon: Icons.skip_next_rounded,
@@ -106,10 +106,9 @@ class ImportJobCard extends StatelessWidget {
               AppMetaChip(
                 icon: Icons.error_outline_rounded,
                 label: '失败 ${job.failedCount}',
-                tone:
-                    job.failedCount > 0
-                        ? AppTextTone.error
-                        : AppTextTone.secondary,
+                tone: job.failedCount > 0
+                    ? AppTextTone.error
+                    : AppTextTone.secondary,
               ),
             ],
           ),
@@ -228,10 +227,9 @@ class ImportJobCard extends StatelessWidget {
                   key: Key('media-import-reimport-${job.id}'),
                   label: '重新导入',
                   size: AppButtonSize.small,
-                  variant:
-                      canRetryAll
-                          ? AppButtonVariant.secondary
-                          : AppButtonVariant.primary,
+                  variant: canRetryAll
+                      ? AppButtonVariant.secondary
+                      : AppButtonVariant.primary,
                   isLoading: isReimporting,
                   onPressed: onReimport,
                 ),
@@ -252,11 +250,10 @@ class ImportJobCard extends StatelessWidget {
             child: ListView.separated(
               key: Key('media-import-failed-file-list-${job.id}'),
               itemCount: loaded.failedFiles.length,
-              separatorBuilder:
-                  (context, index) => SizedBox(height: context.appSpacing.sm),
-              itemBuilder:
-                  (context, index) =>
-                      _buildFailedFileRow(loaded, loaded.failedFiles[index]),
+              separatorBuilder: (context, index) =>
+                  SizedBox(height: context.appSpacing.sm),
+              itemBuilder: (context, index) =>
+                  _buildFailedFileRow(loaded, loaded.failedFiles[index]),
             ),
           ),
       ],
@@ -273,10 +270,9 @@ class ImportJobCard extends StatelessWidget {
       canMutateSource: _canMutateSource,
       onRetry: () => onRetryFile(file.path),
       onDelete: _canMutateSource ? () => onDeleteFile!(file.path) : null,
-      onRename:
-          _canMutateSource
-              ? () => onRenameFile!(file.path, _sourceName(file.path))
-              : null,
+      onRename: _canMutateSource
+          ? () => onRenameFile!(file.path, _sourceName(file.path))
+          : null,
     );
   }
 
@@ -294,8 +290,9 @@ class ImportJobCard extends StatelessWidget {
       job.canMutateFailedSource && onDeleteFile != null && onRenameFile != null;
 
   String _sourceName(String path) {
-    final normalized =
-        path.endsWith('/') ? path.substring(0, path.length - 1) : path;
+    final normalized = path.endsWith('/')
+        ? path.substring(0, path.length - 1)
+        : path;
     final index = normalized.lastIndexOf('/');
     final name = index >= 0 ? normalized.substring(index + 1) : normalized;
     return name.isEmpty ? path : name;
@@ -311,10 +308,9 @@ class _ProgressBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final value = taskRun.progressValue;
     final text = taskRun.progressText;
-    final counts =
-        taskRun.hasDeterminateProgress
-            ? '${taskRun.progressCurrent}/${taskRun.progressTotal}'
-            : null;
+    final counts = taskRun.hasDeterminateProgress
+        ? '${taskRun.progressCurrent}/${taskRun.progressTotal}'
+        : null;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -334,9 +330,9 @@ class _ProgressBar extends StatelessWidget {
               ].join(' · ').trim().isEmpty
               ? '导入中…'
               : [
-                if (counts != null) counts,
-                if (text != null && text.trim().isNotEmpty) text,
-              ].join(' · '),
+                  if (counts != null) counts,
+                  if (text != null && text.trim().isNotEmpty) text,
+                ].join(' · '),
           style: resolveAppTextStyle(
             context,
             size: AppTextSize.s12,
@@ -483,10 +479,9 @@ class _KindTag extends StatelessWidget {
         context,
         size: AppTextSize.s12,
         weight: AppTextWeight.regular,
-        tone:
-            kind == FailedFileKind.file
-                ? AppTextTone.accent
-                : AppTextTone.muted,
+        tone: kind == FailedFileKind.file
+            ? AppTextTone.accent
+            : AppTextTone.muted,
       ),
     );
   }

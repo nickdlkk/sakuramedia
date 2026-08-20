@@ -77,7 +77,7 @@ void main() {
       1,
     );
     final record = find.byKey(
-      const Key('resource-task-record-movie_desc_sync/1001'),
+      const Key('resource-task-record-movie_interaction_sync/1001'),
     );
     expect(record, findsOneWidget);
     await tester.ensureVisible(record);
@@ -88,6 +88,123 @@ void main() {
       findsOneWidget,
     );
   });
+
+  testWidgets('带参数任务先打开参数表单，再把参数提交给后端', (tester) async {
+    _setDesktopViewport(tester);
+    _enqueueActivity(
+      bundle,
+      jobs: <Map<String, dynamic>>[
+        <String, dynamic>{
+          'task_key': 'sakuramedia_subtitlecat_fetch',
+          'log_name': 'subtitlecat-fetch',
+          'cli_name': 'fetch-subtitlecat',
+          'cli_help': '手动抓取单部影片的中文字幕',
+          'cron_setting': null,
+          'cron_expr': null,
+          'manual_trigger_allowed': true,
+          'params_schema': <String, dynamic>{
+            'type': 'object',
+            'properties': <String, dynamic>{
+              'movie_number': <String, dynamic>{
+                'type': 'string',
+                'title': '影片番号',
+              },
+              'period': <String, dynamic>{
+                'anyOf': <Map<String, dynamic>>[
+                  <String, dynamic>{'type': 'string'},
+                  <String, dynamic>{'type': 'null'},
+                ],
+                'default': null,
+                'title': '周期',
+              },
+            },
+            'required': <String>['movie_number'],
+          },
+          'last_task_run': null,
+        },
+      ],
+    );
+    bundle.adapter.enqueueJson(
+      method: 'POST',
+      path: '/system/jobs/sakuramedia_subtitlecat_fetch/run',
+      body: <String, dynamic>{
+        'task_run_id': 13,
+        'task_key': 'sakuramedia_subtitlecat_fetch',
+        'state': 'pending',
+      },
+    );
+    bundle.adapter.enqueueJson(
+      method: 'GET',
+      path: '/system/activity/bootstrap',
+      body: <String, dynamic>{
+        'latest_event_id': 121,
+        'notifications': const <String, dynamic>{
+          'items': <Map<String, dynamic>>[],
+          'page': 1,
+          'page_size': 20,
+          'total': 0,
+        },
+        'unread_count': 0,
+        'active_task_runs': <Map<String, dynamic>>[_taskJson(13)],
+        'task_runs': <String, dynamic>{
+          'items': <Map<String, dynamic>>[_taskJson(13)],
+          'page': 1,
+          'page_size': 20,
+          'total': 1,
+        },
+      },
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [activityApiProvider.overrideWithValue(bundle.activityApi)],
+        child: OKToast(
+          child: MaterialApp(
+            theme: sakuraThemeData,
+            home: const Scaffold(body: DesktopActivityPage()),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(
+        const Key('activity-job-trigger-sakuramedia_subtitlecat_fetch'),
+      ),
+      findsNothing,
+    );
+    await tester.tap(find.byKey(const Key('activity-jobs-toggle')));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const Key('activity-executable-jobs-dialog')),
+      findsOneWidget,
+    );
+    await tester.tap(
+      find.byKey(
+        const Key('activity-job-trigger-sakuramedia_subtitlecat_fetch'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('activity-job-params-dialog')), findsOneWidget);
+    expect(find.byKey(const Key('activity-job-param-period')), findsOneWidget);
+    await tester.enterText(
+      find.byKey(const Key('activity-job-param-movie_number')),
+      ' SSIS-123 ',
+    );
+    await tester.tap(
+      find.byKey(const Key('activity-job-params-submit-button')),
+    );
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(seconds: 3));
+
+    final request = bundle.adapter.requests.firstWhere(
+      (item) => item.path == '/system/jobs/sakuramedia_subtitlecat_fetch/run',
+    );
+    expect(request.body, <String, dynamic>{'movie_number': 'SSIS-123'});
+  });
 }
 
 void _setDesktopViewport(WidgetTester tester) {
@@ -97,12 +214,11 @@ void _setDesktopViewport(WidgetTester tester) {
   addTearDown(tester.view.resetDevicePixelRatio);
 }
 
-void _enqueueActivity(TestApiBundle bundle) {
-  bundle.adapter.enqueueJson(
-    method: 'GET',
-    path: '/system/jobs',
-    body: const <Map<String, dynamic>>[],
-  );
+void _enqueueActivity(
+  TestApiBundle bundle, {
+  List<Map<String, dynamic>> jobs = const <Map<String, dynamic>>[],
+}) {
+  bundle.adapter.enqueueJson(method: 'GET', path: '/system/jobs', body: jobs);
   bundle.adapter.enqueueJson(
     method: 'GET',
     path: '/system/activity/bootstrap',
@@ -138,7 +254,7 @@ void _enqueueResourceTasks(TestApiBundle bundle) {
     path: '/system/resource-task-states/definitions',
     body: const <Map<String, dynamic>>[
       <String, dynamic>{
-        'task_key': 'movie_desc_sync',
+        'task_key': 'movie_interaction_sync',
         'resource_type': 'movie',
         'display_name': '影片描述回填',
         'default_sort': 'last_attempted_at:desc',
@@ -167,8 +283,8 @@ void _enqueueResourceTasks(TestApiBundle bundle) {
 Map<String, dynamic> _taskJson(int id) {
   return <String, dynamic>{
     'id': id,
-    'task_key': 'ranking_sync',
-    'task_name': '榜单同步',
+    'task_key': 'example_plugin_sync',
+    'task_name': '插件任务执行',
     'trigger_type': 'manual',
     'state': 'completed',
     'progress_current': 1,
@@ -183,7 +299,7 @@ Map<String, dynamic> _taskJson(int id) {
 
 Map<String, dynamic> _resourceRecordJson(int id) {
   return <String, dynamic>{
-    'task_key': 'movie_desc_sync',
+    'task_key': 'movie_interaction_sync',
     'resource_type': 'movie',
     'resource_id': id,
     'state': 'failed',

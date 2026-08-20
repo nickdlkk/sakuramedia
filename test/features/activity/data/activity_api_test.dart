@@ -240,17 +240,26 @@ void main() {
       path: '/system/jobs',
       body: <Map<String, dynamic>>[
         <String, dynamic>{
-          'task_key': 'ranking_sync',
-          'log_name': 'ranking-sync',
-          'cli_name': 'sync-rankings',
-          'cli_help': '执行一次排行榜同步',
-          'cron_setting': 'ranking_sync_cron',
+          'task_key': 'example_plugin_sync',
+          'plugin_id': 'example_plugin',
+          'log_name': 'example-plugin-sync',
+          'cli_name': 'sync-example-plugin',
+          'cli_help': '执行一次插件任务',
+          'cron_setting':
+              'plugins.job_crons.example_plugin.example_plugin_sync',
           'cron_expr': '0 2 * * *',
           'manual_trigger_allowed': true,
+          'params_schema': <String, dynamic>{
+            'type': 'object',
+            'properties': <String, dynamic>{
+              'movie_number': <String, dynamic>{'type': 'string'},
+            },
+            'required': <String>['movie_number'],
+          },
           'last_task_run': <String, dynamic>{
             'id': 88,
-            'task_key': 'ranking_sync',
-            'task_name': '排行榜同步',
+            'task_key': 'example_plugin_sync',
+            'task_name': '插件任务执行',
             'trigger_type': 'manual',
             'state': 'completed',
             'created_at': '2026-03-26T09:10:00Z',
@@ -263,8 +272,12 @@ void main() {
     final jobs = await bundle.activityApi.getJobs();
 
     expect(jobs, hasLength(1));
-    expect(jobs.first.taskKey, 'ranking_sync');
+    expect(jobs.first.taskKey, 'example_plugin_sync');
     expect(jobs.first.manualTriggerAllowed, isTrue);
+    expect(
+      jobs.first.paramsSchema?['properties'],
+      containsPair('movie_number', containsPair('type', 'string')),
+    );
     expect(jobs.first.lastTaskRun?.id, 88);
     expect(bundle.adapter.hitCount('GET', '/system/jobs'), 1);
   });
@@ -272,22 +285,29 @@ void main() {
   test('triggerJob maps manual job run endpoint', () async {
     bundle.adapter.enqueueJson(
       method: 'POST',
-      path: '/system/jobs/ranking_sync/run',
+      path: '/system/jobs/example_plugin_sync/run',
       body: <String, dynamic>{
         'task_run_id': 13,
-        'task_key': 'ranking_sync',
+        'task_key': 'example_plugin_sync',
         'state': 'pending',
       },
     );
 
     final response = await bundle.activityApi.triggerJob(
-      taskKey: 'ranking_sync',
+      taskKey: 'example_plugin_sync',
+      params: <String, dynamic>{'movie_number': 'SSIS-123'},
     );
 
     expect(response.taskRunId, 13);
-    expect(response.taskKey, 'ranking_sync');
+    expect(response.taskKey, 'example_plugin_sync');
     expect(response.state, 'pending');
-    expect(bundle.adapter.hitCount('POST', '/system/jobs/ranking_sync/run'), 1);
+    expect(bundle.adapter.requests.single.body, <String, dynamic>{
+      'movie_number': 'SSIS-123',
+    });
+    expect(
+      bundle.adapter.hitCount('POST', '/system/jobs/example_plugin_sync/run'),
+      1,
+    );
   });
 
   test('applyResourceTaskAction posts resource ids and maps result', () async {
@@ -369,7 +389,7 @@ void main() {
       method: 'POST',
       path: '/system/resource-task-actions',
       body: <String, dynamic>{
-        'task_key': 'movie_desc_translation',
+        'task_key': 'movie_interaction_sync',
         'action': 'rerun',
         'task_run_id': 42,
         'accepted_resource_ids': <int>[11],
@@ -378,7 +398,7 @@ void main() {
     );
 
     final result = await bundle.activityApi.applyResourceTaskAction(
-      taskKey: 'movie_desc_translation',
+      taskKey: 'movie_interaction_sync',
       action: 'rerun',
       resourceIds: <int>[11],
     );
@@ -407,8 +427,9 @@ void main() {
       ],
     );
 
-    final events =
-        await bundle.activityApi.streamEvents(afterEventId: 120).toList();
+    final events = await bundle.activityApi
+        .streamEvents(afterEventId: 120)
+        .toList();
 
     expect(events[0].id, 121);
     expect(events[0].notification?.id, 101);

@@ -10,10 +10,7 @@ part of 'clips_overview_provider.dart';
 // ignore_for_file: type=lint, type=warning
 /// 我的切片首页分页列表（排序筛选驱动）。
 ///
-/// 视觉策略：`FilterReloadStrategy.preserveList`——切排序时**保留旧列表**
-/// 直到新数据回来，与迁移前 `ClipsOverviewController.setSort → load()` 一致
-/// （旧数据只在成功时被覆盖，失败时清空到 empty）。UI 侧当前无薄进度条，
-/// 首屏空态才走整页 spinner。
+/// 切排序时先更新控件并保留旧列表，防抖拉取的新结果成功后再原子替换。
 ///
 /// autoDispose：离开页面即释放，对齐迁移前控制器随 State 生灭。
 ///
@@ -25,10 +22,7 @@ final clipsOverviewProvider = ClipsOverviewProvider._();
 
 /// 我的切片首页分页列表（排序筛选驱动）。
 ///
-/// 视觉策略：`FilterReloadStrategy.preserveList`——切排序时**保留旧列表**
-/// 直到新数据回来，与迁移前 `ClipsOverviewController.setSort → load()` 一致
-/// （旧数据只在成功时被覆盖，失败时清空到 empty）。UI 侧当前无薄进度条，
-/// 首屏空态才走整页 spinner。
+/// 切排序时先更新控件并保留旧列表，防抖拉取的新结果成功后再原子替换。
 ///
 /// autoDispose：离开页面即释放，对齐迁移前控制器随 State 生灭。
 ///
@@ -38,10 +32,7 @@ final class ClipsOverviewProvider
     extends $AsyncNotifierProvider<ClipsOverview, ClipsOverviewState> {
   /// 我的切片首页分页列表（排序筛选驱动）。
   ///
-  /// 视觉策略：`FilterReloadStrategy.preserveList`——切排序时**保留旧列表**
-  /// 直到新数据回来，与迁移前 `ClipsOverviewController.setSort → load()` 一致
-  /// （旧数据只在成功时被覆盖，失败时清空到 empty）。UI 侧当前无薄进度条，
-  /// 首屏空态才走整页 spinner。
+  /// 切排序时先更新控件并保留旧列表，防抖拉取的新结果成功后再原子替换。
   ///
   /// autoDispose：离开页面即释放，对齐迁移前控制器随 State 生灭。
   ///
@@ -66,14 +57,11 @@ final class ClipsOverviewProvider
   ClipsOverview create() => ClipsOverview();
 }
 
-String _$clipsOverviewHash() => r'930ae41c2a5830153d575ba750251e14585249a3';
+String _$clipsOverviewHash() => r'640572ebc4e6e0dc5d86bed05d838255249dc5e7';
 
 /// 我的切片首页分页列表（排序筛选驱动）。
 ///
-/// 视觉策略：`FilterReloadStrategy.preserveList`——切排序时**保留旧列表**
-/// 直到新数据回来，与迁移前 `ClipsOverviewController.setSort → load()` 一致
-/// （旧数据只在成功时被覆盖，失败时清空到 empty）。UI 侧当前无薄进度条，
-/// 首屏空态才走整页 spinner。
+/// 切排序时先更新控件并保留旧列表，防抖拉取的新结果成功后再原子替换。
 ///
 /// autoDispose：离开页面即释放，对齐迁移前控制器随 State 生灭。
 ///

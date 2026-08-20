@@ -1,5 +1,6 @@
 import 'package:sakuramedia/core/json/json_parse.dart';
 import 'package:sakuramedia/features/movies/data/dto/listing/movie_list_item_dto.dart';
+import 'package:sakuramedia/features/media_import/data/failure_reason_descriptions.dart';
 import 'package:sakuramedia/features/subscriptions/data/dto/movie_subscription_status.dart';
 
 /// `GET /movie-subscriptions` 的单条订阅影片。
@@ -12,7 +13,6 @@ class MovieSubscriptionListItemDto {
     required this.movieId,
     required this.movieNumber,
     required this.title,
-    required this.titleZh,
     required this.status,
     this.coverImage,
     this.releaseDate,
@@ -35,7 +35,6 @@ class MovieSubscriptionListItemDto {
 
   final String movieNumber;
   final String title;
-  final String titleZh;
   final MovieImageDto? coverImage;
 
   /// 后端按 `YYYY-MM-DD` 下发，保持字符串原样展示（无需时区换算）。
@@ -49,7 +48,8 @@ class MovieSubscriptionListItemDto {
   /// UI 该展示「持续查询中」而不是次数进度。
   final bool isFresh;
 
-  /// 老片已查次数 / 上限（默认上限 3）。[isFresh] 为 true 时这对值无意义。
+  /// 老片本轮没找到资源的次数 / 放弃阈值（默认 3）。成功找到资源后后端清零，
+  /// 所以下载中 / 已入库等状态恒为 0。[isFresh] 为 true 时这对值无意义。
   final int attemptCount;
   final int attemptLimit;
 
@@ -63,7 +63,7 @@ class MovieSubscriptionListItemDto {
 
   final int mediaCount;
 
-  /// `import_failed` 档的可操作上下文：最新导入作业与后端计算的可用动作。
+  /// `import_failed`（未入库）档的可操作上下文：最新导入作业与后端计算的可用动作。
   final MovieSubscriptionImportOperationDto? importOperation;
 
   factory MovieSubscriptionListItemDto.fromJson(Map<String, dynamic> json) {
@@ -72,9 +72,9 @@ class MovieSubscriptionListItemDto {
       movieId: asInt(json['movie_id']),
       movieNumber: asStringOrNull(json['movie_number']) ?? '',
       title: asStringOrNull(json['title']) ?? '',
-      titleZh: asStringOrNull(json['title_zh']) ?? '',
-      coverImage:
-          coverImage == null ? null : MovieImageDto.fromJson(coverImage),
+      coverImage: coverImage == null
+          ? null
+          : MovieImageDto.fromJson(coverImage),
       releaseDate: asStringOrNull(json['release_date'], trim: true),
       subscribedAt: asDateTime(json['subscribed_at']),
       status: MovieSubscriptionStatusX.fromWire(json['status']),
@@ -91,15 +91,24 @@ class MovieSubscriptionListItemDto {
     );
   }
 
-  /// 列表主标题：中文标题优先，回落原标题，再回落番号。
+  /// 列表主标题：标题非空用标题，否则回落番号（title_zh 已随后端下线，
+  /// 中文标题收拢进 title，这里保留番号分支作为防御性兜底）。
   String get displayTitle {
-    final zh = titleZh.trim();
-    if (zh.isNotEmpty) {
-      return zh;
-    }
     final original = title.trim();
     return original.isNotEmpty ? original : movieNumber;
   }
+
+  /// 行内展示文案：后端的 `import_failed` 是一个操作桶，零产出需要和真正失败区分。
+  String get displayStatusLabel {
+    if (status != MovieSubscriptionStatus.importFailed) {
+      return status.label;
+    }
+    return importOperation?.isNoMedia == true ? '未产出媒体' : '导入失败';
+  }
+
+  bool get isNoMediaImport =>
+      status == MovieSubscriptionStatus.importFailed &&
+      importOperation?.isNoMedia == true;
 
   /// 重置查询状态对该条目是否有意义。
   ///
@@ -124,7 +133,6 @@ class MovieSubscriptionListItemDto {
       movieId: movieId,
       movieNumber: movieNumber,
       title: title,
-      titleZh: titleZh,
       coverImage: coverImage,
       releaseDate: releaseDate,
       subscribedAt: subscribedAt,
@@ -138,21 +146,31 @@ class MovieSubscriptionListItemDto {
   }
 }
 
-/// `import_failed` 档的最新导入作业上下文；`availableActions` 由后端计算，
+/// `import_failed`（未入库）档的最新导入作业上下文；`availableActions` 由后端计算，
 /// 前端只按枚举渲染（open_import_job / retry_failed_files / rerun_import）。
 class MovieSubscriptionImportOperationDto {
   const MovieSubscriptionImportOperationDto({
     required this.importJobId,
+    this.downloadTaskId,
     required this.state,
+    this.outcome = 'failed',
     this.importedCount = 0,
     this.skippedCount = 0,
     this.failedCount = 0,
     this.retryableFileCount = 0,
     this.availableActions = const <String>[],
+    this.failureReason,
+    this.failureDetail,
   });
 
   final int importJobId;
+
+  /// 失败导入关联的下载任务 id；手动目录导入的作业为 null。
+  final int? downloadTaskId;
   final String state;
+
+  /// `no_media` 表示作业完成但没有任何 Media 产出；`failed` 表示存在失败项。
+  final String outcome;
   final int importedCount;
   final int skippedCount;
   final int failedCount;
@@ -161,9 +179,51 @@ class MovieSubscriptionImportOperationDto {
   final int retryableFileCount;
   final List<String> availableActions;
 
+  /// 最新导入作业首条失败条目的 reason 原始码；无失败条目时为 null。
+  final String? failureReason;
+
+  /// 最新导入作业首条失败条目的 detail 文案（可能为空串）。
+  final String? failureDetail;
+
+  bool get isNoMedia => outcome == 'no_media';
+
   bool get canRetryFailedFiles =>
       availableActions.contains('retry_failed_files');
   bool get canRerun => availableActions.contains('rerun_import');
+  bool get canOpenImportJob => availableActions.contains('open_import_job');
+  bool get canDeleteFailedDownload =>
+      availableActions.contains('delete_failed_download') &&
+      downloadTaskId != null;
+
+  /// 订阅行直接展示的导入结果说明。
+  ///
+  /// 后端 reason 描述本身常已带 detail（如 no_media_files_found 的映射文案就
+  /// 包含"下载目录中没有扫描到可导入的视频"），detail 与描述重合时不重复拼接。
+  String? get importFailureMessage {
+    final reason = failureReason?.trim() ?? '';
+    final description = reason.isEmpty ? '' : describeFailureReason(reason);
+    final detail = failureDetail?.trim() ?? '';
+    final reasonMessage = reason.isEmpty
+        ? ''
+        : detail.isEmpty || description.contains(detail)
+        ? description
+        : '$description：$detail';
+
+    if (isNoMedia) {
+      final skippedMessage = skippedCount > 0 ? '跳过 $skippedCount 个文件' : '';
+      if (skippedMessage.isEmpty && reasonMessage.isEmpty) {
+        return '未产出媒体';
+      }
+      if (reasonMessage.isEmpty) {
+        return '未产出媒体：$skippedMessage';
+      }
+      if (skippedMessage.isEmpty) {
+        return '未产出媒体：$reasonMessage';
+      }
+      return '未产出媒体：$skippedMessage；$reasonMessage';
+    }
+    return reasonMessage.isEmpty ? null : reasonMessage;
+  }
 
   static MovieSubscriptionImportOperationDto? fromJsonOrNull(
     Map<String, dynamic>? json,
@@ -173,7 +233,9 @@ class MovieSubscriptionImportOperationDto {
     }
     return MovieSubscriptionImportOperationDto(
       importJobId: asInt(json['import_job_id']),
+      downloadTaskId: asIntOrNull(json['download_task_id']),
       state: asStringOrNull(json['state']) ?? '',
+      outcome: asStringOrNull(json['outcome']) ?? 'failed',
       importedCount: asInt(json['imported_count']),
       skippedCount: asInt(json['skipped_count']),
       failedCount: asInt(json['failed_count']),
@@ -182,6 +244,8 @@ class MovieSubscriptionImportOperationDto {
           (json['available_actions'] as List<dynamic>? ?? const [])
               .map((value) => value.toString())
               .toList(),
+      failureReason: asStringOrNull(json['failure_reason'], trim: true),
+      failureDetail: asStringOrNull(json['failure_detail'], trim: true),
     );
   }
 }

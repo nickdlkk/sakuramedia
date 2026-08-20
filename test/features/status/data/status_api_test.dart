@@ -211,32 +211,32 @@ void main() {
     () async {
       adapter.enqueueJson(
         method: 'GET',
-        path: '/status/metadata-providers/dmm/test',
+        path: '/status/metadata-providers/javdb/test',
         statusCode: 200,
         body: <String, dynamic>{
           'healthy': false,
           'checked_at': '2026-07-11T08:00:00Z',
-          'provider': 'dmm',
+          'provider': 'javdb',
           'movie_number': 'SSNI-888',
           'elapsed_ms': 1234,
           'error': <String, dynamic>{
             'type': 'metadata_not_found',
-            'message': 'DMM 未找到对应番号: SSNI-888',
-            'resource': 'movie_desc',
+            'message': 'movie not found: SSNI-888',
+            'resource': 'movie',
             'lookup_value': 'SSNI-888',
           },
         },
       );
 
-      final result = await statusApi.testMetadataProvider('dmm');
+      final result = await statusApi.testMetadataProvider('javdb');
 
       expect(result.healthy, isFalse);
-      expect(result.provider, 'dmm');
+      expect(result.provider, 'javdb');
       expect(result.movieNumber, 'SSNI-888');
       expect(result.elapsedMs, 1234);
       // type 是分派依据，以前整个被丢掉，只留 message 供关键字猜测。
       expect(result.error?.type, 'metadata_not_found');
-      expect(result.error?.resource, 'movie_desc');
+      expect(result.error?.resource, 'movie');
       expect(result.error?.lookupValue, 'SSNI-888');
     },
   );
@@ -432,19 +432,19 @@ void main() {
   test('testMetadataProvider parses unhealthy result', () async {
     adapter.enqueueJson(
       method: 'GET',
-      path: '/status/metadata-providers/dmm/test',
+      path: '/status/metadata-providers/javdb/test',
       statusCode: 200,
       body: <String, dynamic>{
         'healthy': false,
-        'provider': 'dmm',
+        'provider': 'javdb',
         'error': <String, dynamic>{'message': 'metadata request failed'},
       },
     );
 
-    final result = await statusApi.testMetadataProvider('dmm');
+    final result = await statusApi.testMetadataProvider('javdb');
 
     expect(result.healthy, isFalse);
-    expect(result.provider, 'dmm');
+    expect(result.provider, 'javdb');
     expect(result.error?.message, 'metadata request failed');
   });
 
@@ -456,7 +456,7 @@ void main() {
       body: <String, dynamic>{
         'error': <String, dynamic>{
           'code': 'invalid_metadata_provider',
-          'message': 'Metadata provider must be javdb or dmm',
+          'message': 'Metadata provider must be javdb',
         },
       },
     );

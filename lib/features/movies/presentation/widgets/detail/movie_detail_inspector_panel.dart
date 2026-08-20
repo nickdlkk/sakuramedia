@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:oktoast/oktoast.dart';
@@ -28,6 +27,7 @@ import 'package:sakuramedia/widgets/base/actions/app_button.dart';
 import 'package:sakuramedia/widgets/base/actions/app_icon_button.dart';
 import 'package:sakuramedia/widgets/base/actions/app_text_button.dart';
 import 'package:sakuramedia/widgets/base/feedback/app_empty_state.dart';
+import 'package:sakuramedia/widgets/base/feedback/app_filter_update_bar.dart';
 import 'package:sakuramedia/widgets/domain/clips/clip_selection_status_bar.dart';
 import 'package:sakuramedia/widgets/base/forms/app_select_field.dart';
 import 'package:sakuramedia/widgets/base/media/images/app_image_action_menu.dart';
@@ -86,8 +86,9 @@ class _MovieDetailInspectorPanelState
   MovieDetailMagnet get _magnetController =>
       ref.read(movieDetailMagnetProvider(widget.movieNumber).notifier);
   MovieDetailThumbnail get _thumbnailController => ref.read(
-    movieDetailThumbnailProvider(mediaId: widget.selectedMedia?.mediaId)
-        .notifier,
+    movieDetailThumbnailProvider(
+      mediaId: widget.selectedMedia?.mediaId,
+    ).notifier,
   );
   MovieDetailThumbnailState get _thumbnailState => ref.read(
     movieDetailThumbnailProvider(mediaId: widget.selectedMedia?.mediaId),
@@ -202,10 +203,9 @@ class _MovieDetailInspectorPanelState
       AppImageActionDescriptor(
         type: AppImageActionType.toggleMark,
         label: point == null ? '添加标记' : '删除标记',
-        icon:
-            point == null
-                ? Icons.bookmark_add_outlined
-                : Icons.bookmark_remove_outlined,
+        icon: point == null
+            ? Icons.bookmark_add_outlined
+            : Icons.bookmark_remove_outlined,
         enabled: hasMedia,
       ),
       AppImageActionDescriptor(
@@ -255,13 +255,14 @@ class _MovieDetailInspectorPanelState
         );
         break;
       case AppImageActionType.saveToLocal:
-        final result = await ImageSaveService(
-          fetchBytes: ref.read(apiClientProvider).getBytes,
-        ).saveImageFromUrl(
-          imageUrl: imageUrl,
-          fileName: fileName,
-          dialogTitle: '保存到本地',
-        );
+        final result =
+            await ImageSaveService(
+              fetchBytes: ref.read(apiClientProvider).getBytes,
+            ).saveImageFromUrl(
+              imageUrl: imageUrl,
+              fileName: fileName,
+              dialogTitle: '保存到本地',
+            );
         if (!mounted) {
           return;
         }
@@ -383,7 +384,6 @@ class _MovieDetailReviewTabState extends ConsumerState<_MovieDetailReviewTab> {
   static const double _loadMoreExtentAfterThreshold = 200;
   late final ScrollController _scrollController;
   int _lastAutoLoadTriggerItemCount = -1;
-  bool _isSortSwitchLoading = false;
 
   @override
   void initState() {
@@ -415,28 +415,15 @@ class _MovieDetailReviewTabState extends ConsumerState<_MovieDetailReviewTab> {
     _controller.loadMore();
   }
 
-  Future<void> _handleSortChange(MovieReviewSort sort) async {
-    if (_isSortSwitchLoading ||
-        _state.isInitialLoading ||
-        _state.sort == sort) {
+  void _handleSortChange(MovieReviewSort sort) {
+    if (_state.sort == sort) {
       return;
     }
     if (_scrollController.hasClients) {
       _scrollController.jumpTo(0);
     }
     _lastAutoLoadTriggerItemCount = -1;
-    setState(() {
-      _isSortSwitchLoading = true;
-    });
-    try {
-      await _controller.setSort(sort);
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isSortSwitchLoading = false;
-        });
-      }
-    }
+    unawaited(_controller.setSort(sort));
   }
 
   @override
@@ -460,12 +447,14 @@ class _MovieDetailReviewTabState extends ConsumerState<_MovieDetailReviewTab> {
                   label: sort.label,
                   size: AppTextButtonSize.xSmall,
                   isSelected: state.sort == sort,
-                  onPressed:
-                      _isSortSwitchLoading
-                          ? null
-                          : () => _handleSortChange(sort),
+                  onPressed: () => _handleSortChange(sort),
                 ),
             ],
+          ),
+          AppFilterUpdateBar(
+            state: state.filterUpdate,
+            hasPreviousItems: state.items.isNotEmpty,
+            onRetry: () => unawaited(_controller.retrySort()),
           ),
           SizedBox(height: context.appSpacing.sm),
           Expanded(child: _buildContent(context, state)),
@@ -475,8 +464,8 @@ class _MovieDetailReviewTabState extends ConsumerState<_MovieDetailReviewTab> {
   }
 
   Widget _buildContent(BuildContext context, MovieDetailReviewState state) {
-    if (_isSortSwitchLoading) {
-      return const Center(child: _ReviewSortSwitchLoadingIndicator());
+    if (state.filterUpdate.hasFailed && state.items.isEmpty) {
+      return const SizedBox.shrink();
     }
 
     if (state.isInitialLoading && state.items.isEmpty) {
@@ -517,8 +506,8 @@ class _MovieDetailReviewTabState extends ConsumerState<_MovieDetailReviewTab> {
       controller: _scrollController,
       key: const Key('movie-detail-review-list'),
       itemCount: state.items.length + 1,
-      separatorBuilder:
-          (context, index) => SizedBox(height: context.appSpacing.sm),
+      separatorBuilder: (context, index) =>
+          SizedBox(height: context.appSpacing.sm),
       itemBuilder: (context, index) {
         if (index < state.items.length) {
           return _MovieDetailReviewCard(review: state.items[index]);
@@ -532,32 +521,6 @@ class _MovieDetailReviewTabState extends ConsumerState<_MovieDetailReviewTab> {
   }
 }
 
-class _ReviewSortSwitchLoadingIndicator extends StatelessWidget {
-  const _ReviewSortSwitchLoadingIndicator();
-
-  @override
-  Widget build(BuildContext context) {
-    final platform = Theme.of(context).platform;
-    final useCupertino =
-        platform == TargetPlatform.iOS || platform == TargetPlatform.macOS;
-
-    return SizedBox(
-      key: const Key('movie-detail-review-sort-switch-loading-indicator'),
-      width: context.appComponentTokens.iconSizeLg,
-      height: context.appComponentTokens.iconSizeLg,
-      child:
-          useCupertino
-              ? const CupertinoActivityIndicator(
-                key: Key('movie-detail-review-sort-switch-loading-spinner'),
-              )
-              : const CircularProgressIndicator(
-                key: Key('movie-detail-review-sort-switch-loading-spinner'),
-                strokeWidth: 2,
-              ),
-    );
-  }
-}
-
 class _MovieDetailReviewCard extends StatelessWidget {
   const _MovieDetailReviewCard({required this.review});
 
@@ -565,10 +528,9 @@ class _MovieDetailReviewCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final reviewDate =
-        review.createdAt == null
-            ? '--/--/--'
-            : DateFormat('yy/MM/dd').format(review.createdAt!.toLocal());
+    final reviewDate = review.createdAt == null
+        ? '--/--/--'
+        : DateFormat('yy/MM/dd').format(review.createdAt!.toLocal());
     return Container(
       width: double.infinity,
       padding: EdgeInsets.all(context.appSpacing.md),
@@ -744,8 +706,8 @@ class _MovieDetailReviewLoadingList extends StatelessWidget {
         final itemCount = _resolveSkeletonCount(context, constraints);
         return ListView.separated(
           itemCount: itemCount,
-          separatorBuilder:
-              (context, index) => SizedBox(height: context.appSpacing.sm),
+          separatorBuilder: (context, index) =>
+              SizedBox(height: context.appSpacing.sm),
           itemBuilder: (context, index) {
             return Container(
               key: Key('movie-detail-review-skeleton-$index'),
@@ -820,7 +782,12 @@ class _MovieDetailMagnetTab extends ConsumerWidget {
                   children: [
                     Align(
                       alignment: Alignment.centerLeft,
-                      child: _buildSortActions(context, state, controller, compact: true),
+                      child: _buildSortActions(
+                        context,
+                        state,
+                        controller,
+                        compact: true,
+                      ),
                     ),
                     SizedBox(height: context.appSpacing.sm),
                     _buildSearchAction(
@@ -883,12 +850,11 @@ class _MovieDetailMagnetTab extends ConsumerWidget {
   }) {
     final nextDirectionLabel =
         state.selectedSortDirection == MovieDetailMagnetSortDirection.desc
-            ? '当前降序，点击切换为升序'
-            : '当前升序，点击切换为降序';
-    final selectWidth =
-        compact
-            ? context.appLayoutTokens.filterFieldWidthSm - context.appSpacing.xl
-            : context.appLayoutTokens.filterFieldWidthSm;
+        ? '当前降序，点击切换为升序'
+        : '当前升序，点击切换为降序';
+    final selectWidth = compact
+        ? context.appLayoutTokens.filterFieldWidthSm - context.appSpacing.xl
+        : context.appLayoutTokens.filterFieldWidthSm;
 
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -928,10 +894,9 @@ class _MovieDetailMagnetTab extends ConsumerWidget {
           semanticLabel: nextDirectionLabel,
           isSelected: true,
           size: AppIconButtonSize.mini,
-          icon:
-              state.selectedSortDirection.isAscending
-                  ? const Icon(Icons.arrow_upward_rounded)
-                  : const Icon(Icons.arrow_downward_rounded),
+          icon: state.selectedSortDirection.isAscending
+              ? const Icon(Icons.arrow_upward_rounded)
+              : const Icon(Icons.arrow_downward_rounded),
           onPressed: controller.toggleSortDirection,
         ),
       ],
@@ -989,8 +954,8 @@ class _MovieDetailMagnetTab extends ConsumerWidget {
 
     return ListView.separated(
       itemCount: items.length,
-      separatorBuilder:
-          (context, index) => SizedBox(height: context.appSpacing.md),
+      separatorBuilder: (context, index) =>
+          SizedBox(height: context.appSpacing.md),
       itemBuilder: (context, index) {
         final item = items[index];
         return _MovieDetailMagnetCandidateCard(
@@ -999,37 +964,34 @@ class _MovieDetailMagnetTab extends ConsumerWidget {
           isSubmitting: state.submittingCandidateKey == item.submitKey,
           copyButtonKey: Key('movie-detail-magnet-copy-$index'),
           submitButtonKey: Key('movie-detail-magnet-submit-$index'),
-          onSubmit:
-              item.hasDownloadSource
-                  ? (clientId) async {
-                    try {
-                      final response = await controller.submitCandidate(
-                        item,
-                        clientId: clientId,
-                      );
-                      if (!context.mounted) {
-                        return;
-                      }
-                      var selectedClientName = item.resolvedClientName;
-                      for (final client in item.selectableDownloadClients) {
-                        if (client.id == clientId) {
-                          selectedClientName = client.name;
-                          break;
-                        }
-                      }
-                      showToast(
-                        response.created
-                            ? '已提交到 $selectedClientName'
-                            : '下载任务已存在',
-                      );
-                    } catch (error) {
-                      if (!context.mounted) {
-                        return;
-                      }
-                      showToast(apiErrorMessage(error, fallback: '提交下载失败'));
+          onSubmit: item.hasDownloadSource
+              ? (clientId) async {
+                  try {
+                    final response = await controller.submitCandidate(
+                      item,
+                      clientId: clientId,
+                    );
+                    if (!context.mounted) {
+                      return;
                     }
+                    var selectedClientName = item.resolvedClientName;
+                    for (final client in item.selectableDownloadClients) {
+                      if (client.id == clientId) {
+                        selectedClientName = client.name;
+                        break;
+                      }
+                    }
+                    showToast(
+                      response.created ? '已提交到 $selectedClientName' : '下载任务已存在',
+                    );
+                  } catch (error) {
+                    if (!context.mounted) {
+                      return;
+                    }
+                    showToast(apiErrorMessage(error, fallback: '提交下载失败'));
                   }
-                  : null,
+                }
+              : null,
         );
       },
     );
@@ -1202,14 +1164,13 @@ class _MovieDetailMagnetCandidateCardState
                         ),
                       )
                       .toList(growable: false),
-                  onChanged:
-                      widget.isSubmitting
-                          ? null
-                          : (value) {
-                            if (value != null) {
-                              setState(() => _selectedClientId = value);
-                            }
-                          },
+                  onChanged: widget.isSubmitting
+                      ? null
+                      : (value) {
+                          if (value != null) {
+                            setState(() => _selectedClientId = value);
+                          }
+                        },
                 ),
               ),
               SizedBox(width: context.appSpacing.md),
@@ -1219,10 +1180,9 @@ class _MovieDetailMagnetCandidateCardState
                 label: candidate.hasDownloadSource ? '提交下载' : '资源地址缺失',
                 variant: AppButtonVariant.primary,
                 isLoading: widget.isSubmitting,
-                onPressed:
-                    widget.onSubmit == null
-                        ? null
-                        : () => widget.onSubmit!(_selectedClientId),
+                onPressed: widget.onSubmit == null
+                    ? null
+                    : () => widget.onSubmit!(_selectedClientId),
               ),
             ],
           ),
@@ -1284,10 +1244,9 @@ class _MovieDetailThumbnailTab extends ConsumerWidget {
           spacing: context.appSpacing.sm,
           targetWidth: context.appComponentTokens.movieThumbnailTargetWidth,
         );
-        final resolvedColumns =
-            state.usesAutoColumns
-                ? autoColumns
-                : (state.columns ?? autoColumns);
+        final resolvedColumns = state.usesAutoColumns
+            ? autoColumns
+            : (state.columns ?? autoColumns);
         if (state.usesAutoColumns && state.columns != autoColumns) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (context.mounted) {
@@ -1371,19 +1330,14 @@ class _MovieDetailThumbnailTab extends ConsumerWidget {
                           .map((item) => item.image)
                           .toList(growable: false),
                       initialIndex: index,
-                      onRequestImageMenu:
-                          onThumbnailMenuRequested == null
-                              ? null
-                              : (
-                                menuContext,
+                      onRequestImageMenu: onThumbnailMenuRequested == null
+                          ? null
+                          : (menuContext, previewIndex, globalPosition) async {
+                              onThumbnailMenuRequested!(
                                 previewIndex,
                                 globalPosition,
-                              ) async {
-                                onThumbnailMenuRequested!(
-                                  previewIndex,
-                                  globalPosition,
-                                );
-                              },
+                              );
+                            },
                       presentation: thumbnailPreviewPresentation,
                       thumbnailStripLayout:
                           MoviePlotPreviewThumbnailStripLayout.fixed,

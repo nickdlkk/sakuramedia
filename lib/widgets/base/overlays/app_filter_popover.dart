@@ -63,7 +63,7 @@ class AppFilterPopover extends StatefulWidget {
   /// 用于测试)。
   final Key? scrollViewKey;
 
-  /// 打开面板前的回调(movie 用来预取年份选项)。
+  /// 打开面板前的回调（如女优详情预取年份选项）。
   final VoidCallback? onOpened;
 
   final Size initialTriggerSize;
@@ -193,8 +193,9 @@ class _AppFilterPopoverState extends State<AppFilterPopover> {
     final mediaQuery = MediaQuery.of(overlayContext);
     final overlayWidth = overlayBox?.size.width ?? mediaQuery.size.width;
     final desiredWidth = _triggerSize.width + widget.panelExtraWidth;
-    final panelWidth =
-        desiredWidth.clamp(_triggerSize.width, overlayWidth).toDouble();
+    final panelWidth = desiredWidth
+        .clamp(_triggerSize.width, overlayWidth)
+        .toDouble();
     final overflow = (panelWidth - _triggerSize.width).clamp(0, overlayWidth);
     final horizontalOffset = switch (widget.alignment) {
       // 右对齐：面板右边缘贴 trigger 右边缘，多出的宽度向左延伸，最多延伸
@@ -217,11 +218,13 @@ class _AppFilterPopoverState extends State<AppFilterPopover> {
     final panelTop =
         _triggerOffsetInOverlay.dy + _triggerSize.height + _panelVerticalGap;
     final bottomMargin = mediaQuery.padding.bottom + context.appSpacing.lg;
-    final safeOverlayHeight =
-        (overlayHeight - bottomMargin).clamp(1.0, overlayHeight).toDouble();
+    final safeOverlayHeight = (overlayHeight - bottomMargin)
+        .clamp(1.0, overlayHeight)
+        .toDouble();
     final availablePanelHeight = safeOverlayHeight - panelTop;
-    final maxPanelHeight =
-        availablePanelHeight > 0 ? availablePanelHeight : safeOverlayHeight;
+    final maxPanelHeight = availablePanelHeight > 0
+        ? availablePanelHeight
+        : safeOverlayHeight;
 
     return Stack(
       children: [
@@ -284,25 +287,24 @@ class _AppFilterPopoverState extends State<AppFilterPopover> {
       link: _layerLink,
       child: KeyedSubtree(
         key: _triggerKey,
-        child:
-            customTrigger != null
-                ? customTrigger(
-                  context,
-                  _isOpen,
-                  widget.enabled ? _togglePanel : () {},
-                )
-                : AppTextButton(
-                  key: widget.triggerKey,
-                  label: widget.triggerLabel,
-                  labelKey: widget.labelKey,
-                  icon: const Icon(Icons.filter_alt_outlined),
-                  trailingIcon: Icon(
-                    _isOpen ? Icons.expand_less : Icons.expand_more,
-                  ),
-                  size: AppTextButtonSize.small,
-                  isSelected: highlight,
-                  onPressed: widget.enabled ? _togglePanel : null,
+        child: customTrigger != null
+            ? customTrigger(
+                context,
+                _isOpen,
+                widget.enabled ? _togglePanel : () {},
+              )
+            : AppTextButton(
+                key: widget.triggerKey,
+                label: widget.triggerLabel,
+                labelKey: widget.labelKey,
+                icon: const Icon(Icons.filter_alt_outlined),
+                trailingIcon: Icon(
+                  _isOpen ? Icons.expand_less : Icons.expand_more,
                 ),
+                size: AppTextButtonSize.small,
+                isSelected: highlight,
+                onPressed: widget.enabled ? _togglePanel : null,
+              ),
       ),
     );
   }
@@ -317,7 +319,7 @@ class AppFilterPanelFooter extends StatelessWidget {
     required this.isDefault,
     required this.onReset,
     this.defaultLabel = '当前使用默认筛选',
-    this.activeLabel = '筛选已即时生效',
+    this.activeLabel = '筛选条件已更新',
     this.resetLabel = '重置',
   });
 

@@ -3,11 +3,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:oktoast/oktoast.dart';
 import 'package:sakuramedia/core/network/api_client.dart';
+import 'package:sakuramedia/core/network/sse_event_stream_client.dart';
 import 'package:sakuramedia/core/session/providers/session_store_provider.dart';
 import 'package:sakuramedia/core/session/session_store.dart';
 import 'package:sakuramedia/features/activity/data/activity_api.dart';
 import 'package:sakuramedia/features/activity/data/activity_event_stream_client.dart';
 import 'package:sakuramedia/features/activity/presentation/providers/activity_api_provider.dart';
+import 'package:sakuramedia/features/downloads/data/downloads_api.dart';
+import 'package:sakuramedia/features/downloads/presentation/providers/downloads_api_provider.dart';
 import 'package:sakuramedia/features/movies/data/api/movies_api.dart';
 import 'package:sakuramedia/features/movies/presentation/providers/movies_api_provider.dart';
 import 'package:sakuramedia/features/movies/presentation/providers/mutation_events_provider.dart';
@@ -50,6 +53,15 @@ void main() {
             MovieSubscriptionsApi(apiClient: apiClient),
           ),
           moviesApiProvider.overrideWithValue(MoviesApi(apiClient: apiClient)),
+          downloadsApiProvider.overrideWithValue(
+            DownloadsApi(
+              apiClient: apiClient,
+              streamClient: createSseEventStreamClient(
+                apiClient: apiClient,
+                sessionStore: sessionStore,
+              ),
+            ),
+          ),
           activityApiProvider.overrideWithValue(
             ActivityApi(
               apiClient: apiClient,
@@ -76,9 +88,13 @@ void main() {
   }
 
   void enqueueCounts({
+    int imported = 5,
+    int downloading = 0,
+    int pending = 0,
     int missing = 2,
     int exhausted = 3,
     int importFailed = 0,
+    int failed = 0,
     int total = 10,
   }) {
     adapter.setFallbackJson(
@@ -86,13 +102,13 @@ void main() {
       path: '/movie-subscriptions/status-counts',
       body: <String, dynamic>{
         'total': total,
-        'imported': 5,
+        'imported': imported,
         'import_failed': importFailed,
-        'downloading': 0,
-        'pending': 0,
+        'downloading': downloading,
+        'pending': pending,
         'missing': missing,
         'exhausted': exhausted,
-        'failed': 0,
+        'failed': failed,
       },
     );
   }
@@ -131,7 +147,7 @@ void main() {
       find.byKey(const Key('movie-subscription-row-attempts-ABP-123')),
       findsOneWidget,
     );
-    expect(find.text('已查 2/3 次'), findsOneWidget);
+    expect(find.text('再尝试 1 次就放弃'), findsOneWidget);
     expect(
       find.byKey(const Key('movie-subscription-row-dead-ABP-123')),
       findsOneWidget,
@@ -159,7 +175,84 @@ void main() {
     expect(
       find.byKey(const Key('movie-subscription-row-attempts-NEW-001')),
       findsNothing,
-      reason: '新片 attempt_count 恒为 0，展示次数会被误读成「一次都没查过」',
+      reason: '新片每轮都查、永不放弃，不该展示放弃倒计时',
+    );
+  });
+
+  testWidgets('下载中不展示查询进度文案', (tester) async {
+    enqueueCounts(downloading: 1);
+    adapter.enqueueJson(
+      method: 'GET',
+      path: '/movie-subscriptions',
+      body: _page(<Map<String, dynamic>>[
+        _item(number: 'DL-001', status: 'downloading'),
+      ]),
+    );
+
+    await pumpPage(tester);
+
+    expect(
+      find.byKey(const Key('movie-subscription-row-attempts-DL-001')),
+      findsNothing,
+    );
+    expect(find.text('尚未查询'), findsNothing);
+    expect(
+      find.byKey(const Key('movie-subscription-row-number-DL-001')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('已放弃行展示已查询次数而不是倒计时', (tester) async {
+    enqueueCounts(exhausted: 1);
+    adapter.enqueueJson(
+      method: 'GET',
+      path: '/movie-subscriptions',
+      body: _page(<Map<String, dynamic>>[
+        _item(number: 'EX-001', status: 'exhausted', attemptCount: 3),
+      ]),
+    );
+
+    await pumpPage(tester);
+
+    expect(find.text('已查询过 3 次'), findsOneWidget);
+    expect(find.textContaining('再尝试'), findsNothing);
+  });
+
+  testWidgets('已入库的新片不展示「持续查询中」', (tester) async {
+    enqueueCounts(imported: 1);
+    adapter.enqueueJson(
+      method: 'GET',
+      path: '/movie-subscriptions',
+      body: _page(<Map<String, dynamic>>[
+        _item(number: 'IMP-001', status: 'imported', isFresh: true),
+      ]),
+    );
+
+    await pumpPage(tester);
+
+    expect(
+      find.byKey(const Key('movie-subscription-row-fresh-IMP-001')),
+      findsNothing,
+    );
+    expect(find.text('新片 · 持续查询中'), findsNothing);
+  });
+
+  testWidgets('待查行只展示尚未查询', (tester) async {
+    enqueueCounts(pending: 1);
+    adapter.enqueueJson(
+      method: 'GET',
+      path: '/movie-subscriptions',
+      body: _page(<Map<String, dynamic>>[
+        _item(number: 'P-001', status: 'pending'),
+      ]),
+    );
+
+    await pumpPage(tester);
+
+    expect(find.text('尚未查询'), findsOneWidget);
+    expect(
+      find.byKey(const Key('movie-subscription-row-attempts-P-001')),
+      findsNothing,
     );
   });
 
@@ -277,7 +370,58 @@ void main() {
       method: 'GET',
       path: '/movie-subscriptions',
       body: _page(<Map<String, dynamic>>[
-        _item(number: 'GACHI-1151', status: 'import_failed'),
+        _item(
+          number: 'GACHI-1151',
+          status: 'import_failed',
+          importOperation: <String, dynamic>{
+            'import_job_id': 525,
+            'download_task_id': 516,
+            'state': 'failed',
+            'imported_count': 0,
+            'skipped_count': 0,
+            'failed_count': 1,
+            'retryable_file_count': 0,
+            'available_actions': [
+              'open_import_job',
+              'rerun_import',
+              'delete_failed_download',
+            ],
+            'failure_reason': 'no_media_files_found',
+            'failure_detail': '下载目录中没有扫描到可导入的视频',
+          },
+        ),
+      ]),
+    );
+    adapter.enqueueJson(
+      method: 'DELETE',
+      path: '/download-tasks/516',
+      statusCode: 204,
+    );
+    // 删除成功后行内刷新会再打一次列表 GET。
+    adapter.enqueueJson(
+      method: 'GET',
+      path: '/movie-subscriptions',
+      body: _page(<Map<String, dynamic>>[
+        _item(
+          number: 'GACHI-1151',
+          status: 'import_failed',
+          importOperation: <String, dynamic>{
+            'import_job_id': 525,
+            'download_task_id': 516,
+            'state': 'failed',
+            'imported_count': 0,
+            'skipped_count': 0,
+            'failed_count': 1,
+            'retryable_file_count': 0,
+            'available_actions': [
+              'open_import_job',
+              'rerun_import',
+              'delete_failed_download',
+            ],
+            'failure_reason': 'no_media_files_found',
+            'failure_detail': '下载目录中没有扫描到可导入的视频',
+          },
+        ),
       ]),
     );
     await tester.tap(
@@ -297,6 +441,92 @@ void main() {
       find.byKey(const Key('movie-subscription-row-unsubscribe-GACHI-1151')),
     );
     expect(unsubscribeInk.onTap, isNotNull);
+    // 失败原因一行直接可见，且「查看导入作业」入口可用。
+    expect(
+      find.byKey(const Key('movie-subscription-row-import-error-GACHI-1151')),
+      findsOneWidget,
+    );
+    expect(find.text('未发现媒体文件：下载目录中没有扫描到可导入的视频'), findsOneWidget);
+    final openImportInk = tester.widget<InkWell>(
+      find.byKey(const Key('movie-subscription-row-open-import-GACHI-1151')),
+    );
+    expect(openImportInk.onTap, isNotNull);
+    // 删除下载记录入口可用：复用下载中心的删除任务逻辑，删掉后等 cron 重查。
+    final deleteDownloadInk = tester.widget<InkWell>(
+      find.byKey(
+        const Key('movie-subscription-row-delete-download-GACHI-1151'),
+      ),
+    );
+    expect(deleteDownloadInk.onTap, isNotNull);
+
+    await tester.tap(
+      find.byKey(
+        const Key('movie-subscription-row-delete-download-GACHI-1151'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(
+        const Key('movie-subscription-delete-download-dialog-GACHI-1151'),
+      ),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('删除记录'));
+    await tester.pumpAndSettle();
+
+    expect(
+      adapter.requests.where(
+        (request) =>
+            request.method == 'DELETE' && request.path == '/download-tasks/516',
+      ),
+      hasLength(1),
+    );
+    expect(find.text('已删除下载记录，等待自动下载重新找种'), findsOneWidget);
+    // 排掉 oktoast 的 ~2.3s 计时器，否则测试以「Pending timers」失败。
+    await tester.pump(const Duration(seconds: 3));
+  });
+
+  testWidgets('零产出导入显示未产出媒体而不是导入失败', (tester) async {
+    enqueueCounts(importFailed: 1);
+    adapter.enqueueJson(
+      method: 'GET',
+      path: '/movie-subscriptions',
+      body: _page(<Map<String, dynamic>>[
+        _item(number: 'ABP-123', status: 'missing'),
+      ]),
+    );
+    await pumpPage(tester);
+
+    adapter.enqueueJson(
+      method: 'GET',
+      path: '/movie-subscriptions',
+      body: _page(<Map<String, dynamic>>[
+        _item(
+          number: 'CWPBD-99',
+          status: 'import_failed',
+          importOperation: <String, dynamic>{
+            'import_job_id': 783,
+            'download_task_id': 787,
+            'state': 'completed',
+            'outcome': 'no_media',
+            'imported_count': 0,
+            'skipped_count': 6,
+            'failed_count': 0,
+            'available_actions': ['open_import_job', 'rerun_import'],
+            'failure_reason': 'file_too_small',
+          },
+        ),
+      ]),
+    );
+    await tester.tap(
+      find.byKey(const Key('movie-subscriptions-status-tab-import_failed')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('未入库'), findsOneWidget);
+    expect(find.text('未产出媒体'), findsWidgets);
+    expect(find.text('导入失败'), findsNothing);
+    expect(find.textContaining('未产出媒体：跳过 6 个文件'), findsOneWidget);
   });
 
   testWidgets('行内取消订阅移除该行并广播', (tester) async {
@@ -350,19 +580,20 @@ Map<String, dynamic> _item({
   int attemptCount = 0,
   int deadCount = 0,
   bool isFresh = false,
+  Map<String, dynamic>? importOperation,
 }) {
   return <String, dynamic>{
     // 页面测试不打重置请求，id 只需非零占位。
     'movie_id': number.hashCode.abs() % 100000 + 1,
     'movie_number': number,
     'title': 'Title $number',
-    'title_zh': '中文 $number',
     'status': status,
     'is_fresh': isFresh,
     'attempt_count': attemptCount,
     'attempt_limit': 3,
     'dead_download_task_count': deadCount,
     'media_count': 0,
+    if (importOperation != null) 'import_operation': importOperation,
   };
 }
 

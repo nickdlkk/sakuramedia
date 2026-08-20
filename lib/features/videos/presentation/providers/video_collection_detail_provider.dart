@@ -2,6 +2,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:sakuramedia/core/network/api_error_message.dart';
 import 'package:sakuramedia/features/shared/presentation/providers/async_notifier_dispose_guard.dart';
 import 'package:sakuramedia/features/shared/presentation/providers/optimistic_patch_mixin.dart';
+import 'package:sakuramedia/features/shared/presentation/providers/paged_async_notifier.dart';
 import 'package:sakuramedia/features/videos/data/dto/video_collection_dto.dart';
 import 'package:sakuramedia/features/videos/presentation/controllers/listing/video_filter_state.dart';
 import 'package:sakuramedia/features/videos/presentation/providers/video_collection_detail_state.dart';
@@ -30,10 +31,12 @@ class VideoCollectionDetail extends _$VideoCollectionDetail
         AsyncNotifierDisposeGuardMixin<VideoCollectionDetailState>,
         OptimisticPatchMixin<VideoCollectionDetailState> {
   static const Object _mutationKey = #videoCollectionDetailMutation;
+  late final DebouncedLatestRequest _sortRequests = DebouncedLatestRequest();
 
   @override
   Future<VideoCollectionDetailState> build(int collectionId) async {
     attachDisposeGuard();
+    ref.onDispose(_sortRequests.dispose);
     final api = ref.read(videoCollectionsApiProvider);
     final collection = await api.getCollection(collectionId: collectionId);
     final items = await api.getAllCollectionItems(
@@ -56,6 +59,7 @@ class VideoCollectionDetail extends _$VideoCollectionDetail
       ref.invalidateSelf();
       return;
     }
+    _sortRequests.cancel();
     try {
       final api = ref.read(videoCollectionsApiProvider);
       final collection = await api.getCollection(collectionId: collectionId);
@@ -66,7 +70,11 @@ class VideoCollectionDetail extends _$VideoCollectionDetail
       );
       if (isDisposed) return;
       state = AsyncData(
-        current.copyWith(collection: collection, items: items),
+        current.copyWith(
+          collection: collection,
+          items: items,
+          filterUpdate: const FilterUpdateState.idle(),
+        ),
       );
     } catch (error, stack) {
       if (isDisposed) return;
@@ -79,28 +87,63 @@ class VideoCollectionDetail extends _$VideoCollectionDetail
   Future<void> applySort({
     required VideoSortField? field,
     SortDirection? direction,
-  }) async {
+  }) {
+    final current = state.value;
+    if (current == null) return Future<void>.value();
+    final nextSort = current.sort.copyWith(field: field, direction: direction);
+    if (nextSort == current.sort) return Future<void>.value();
+    // 先写 sort（工具条与拖拽开关即时切换），保留旧 items 到新数据回来。
+    state = AsyncData(
+      current.copyWith(
+        sort: nextSort,
+        filterUpdate: const FilterUpdateState.loading(),
+      ),
+    );
+    return _sortRequests.schedule(
+      (requestId) => _loadSort(requestId, nextSort),
+    );
+  }
+
+  Future<void> retrySort() {
+    final current = state.value;
+    if (current == null) return Future<void>.value();
+    state = AsyncData(
+      current.copyWith(filterUpdate: const FilterUpdateState.loading()),
+    );
+    return _sortRequests.runNow(
+      (requestId) => _loadSort(requestId, current.sort),
+    );
+  }
+
+  Future<void> _loadSort(int requestId, VideoCollectionSort sort) async {
     final current = state.value;
     if (current == null) return;
-    final nextSort = current.sort.copyWith(
-      field: field,
-      direction: direction,
-    );
-    if (nextSort == current.sort) return;
-    // 先写 sort（工具条与拖拽开关即时切换），保留旧 items 到新数据回来。
-    state = AsyncData(current.copyWith(sort: nextSort));
     try {
-      final items = await ref.read(videoCollectionsApiProvider).getAllCollectionItems(
+      final items = await ref
+          .read(videoCollectionsApiProvider)
+          .getAllCollectionItems(
             collectionId: collectionId,
-            sort: nextSort.apiValue,
+            sort: sort.apiValue,
             includePlayUrl: true,
           );
-      if (isDisposed) return;
+      if (isDisposed || !_sortRequests.isCurrent(requestId)) return;
       final now = state.value ?? current;
-      state = AsyncData(now.copyWith(items: items));
-    } catch (_) {
-      // 与原 controller 语义一致：applySort 失败静默——保留已切 sort + 旧 items，
-      // 上层 UI 无 toast（原 UI 层调 applySort 也是 fire-and-forget）。
+      state = AsyncData(
+        now.copyWith(
+          items: items,
+          filterUpdate: const FilterUpdateState.idle(),
+        ),
+      );
+    } catch (error) {
+      if (isDisposed || !_sortRequests.isCurrent(requestId)) return;
+      final now = state.value ?? current;
+      state = AsyncData(
+        now.copyWith(
+          filterUpdate: FilterUpdateState.failed(
+            apiErrorMessage(error, fallback: '筛选结果更新失败，请重试'),
+          ),
+        ),
+      );
     }
   }
 
@@ -129,11 +172,15 @@ class VideoCollectionDetail extends _$VideoCollectionDetail
           return s.copyWith(items: next);
         },
         action: () async {
-          final applied = state.value?.items ?? const <VideoCollectionItemDto>[];
-          await ref.read(videoCollectionsApiProvider).reorderCollectionItems(
+          final applied =
+              state.value?.items ?? const <VideoCollectionItemDto>[];
+          await ref
+              .read(videoCollectionsApiProvider)
+              .reorderCollectionItems(
                 collectionId: collectionId,
-                orderedItemIds:
-                    applied.map((item) => item.itemId).toList(growable: false),
+                orderedItemIds: applied
+                    .map((item) => item.itemId)
+                    .toList(growable: false),
               );
         },
       );
@@ -149,16 +196,14 @@ class VideoCollectionDetail extends _$VideoCollectionDetail
       return await withOptimisticPatch<String?>(
         key: _mutationKey,
         apply: (s) => s.copyWith(
-          items:
-              s.items.where((item) => item.itemId != itemId).toList(
-                    growable: false,
-                  ),
+          items: s.items
+              .where((item) => item.itemId != itemId)
+              .toList(growable: false),
         ),
         action: () async {
-          await ref.read(videoCollectionsApiProvider).removeCollectionItem(
-                collectionId: collectionId,
-                itemId: itemId,
-              );
+          await ref
+              .read(videoCollectionsApiProvider)
+              .removeCollectionItem(collectionId: collectionId, itemId: itemId);
           return null;
         },
       );
@@ -175,10 +220,9 @@ class VideoCollectionDetail extends _$VideoCollectionDetail
       return await withOptimisticPatch<String?>(
         key: _mutationKey,
         apply: (s) => s.copyWith(
-          items:
-              s.items.where((item) => item.itemId != itemId).toList(
-                    growable: false,
-                  ),
+          items: s.items
+              .where((item) => item.itemId != itemId)
+              .toList(growable: false),
         ),
         action: () async {
           await ref.read(videosApiProvider).deleteVideo(videoId);

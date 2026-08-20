@@ -10,8 +10,7 @@ part of 'hot_reviews_provider.dart';
 // ignore_for_file: type=lint, type=warning
 /// 热评分页列表（周期筛选驱动,`FilterablePagedAsyncNotifierMixin` 首个采用者）。
 ///
-/// - 切周期走 [FilterReloadStrategy.spinner]（默认）:清列表闪骨架,与迁移前
-///   `setPeriod → reload()` 的视觉一致。
+/// - 切周期先更新条件并保留旧列表，防抖请求成功后再替换结果。
 /// - autoDispose:离开页面即释放,对齐迁移前控制器随页面 State 生灭。
 ///
 /// 迁移前对应:`PagedHotReviewController`(含「占位 fetchPage 抛
@@ -23,8 +22,7 @@ final hotReviewsProvider = HotReviewsProvider._();
 
 /// 热评分页列表（周期筛选驱动,`FilterablePagedAsyncNotifierMixin` 首个采用者）。
 ///
-/// - 切周期走 [FilterReloadStrategy.spinner]（默认）:清列表闪骨架,与迁移前
-///   `setPeriod → reload()` 的视觉一致。
+/// - 切周期先更新条件并保留旧列表，防抖请求成功后再替换结果。
 /// - autoDispose:离开页面即释放,对齐迁移前控制器随页面 State 生灭。
 ///
 /// 迁移前对应:`PagedHotReviewController`(含「占位 fetchPage 抛
@@ -34,8 +32,7 @@ final class HotReviewsProvider
     extends $AsyncNotifierProvider<HotReviews, HotReviewsState> {
   /// 热评分页列表（周期筛选驱动,`FilterablePagedAsyncNotifierMixin` 首个采用者）。
   ///
-  /// - 切周期走 [FilterReloadStrategy.spinner]（默认）:清列表闪骨架,与迁移前
-  ///   `setPeriod → reload()` 的视觉一致。
+  /// - 切周期先更新条件并保留旧列表，防抖请求成功后再替换结果。
   /// - autoDispose:离开页面即释放,对齐迁移前控制器随页面 State 生灭。
   ///
   /// 迁移前对应:`PagedHotReviewController`(含「占位 fetchPage 抛
@@ -64,8 +61,7 @@ String _$hotReviewsHash() => r'fc69e6d152b0146912498f2b5236057f2c10517f';
 
 /// 热评分页列表（周期筛选驱动,`FilterablePagedAsyncNotifierMixin` 首个采用者）。
 ///
-/// - 切周期走 [FilterReloadStrategy.spinner]（默认）:清列表闪骨架,与迁移前
-///   `setPeriod → reload()` 的视觉一致。
+/// - 切周期先更新条件并保留旧列表，防抖请求成功后再替换结果。
 /// - autoDispose:离开页面即释放,对齐迁移前控制器随页面 State 生灭。
 ///
 /// 迁移前对应:`PagedHotReviewController`(含「占位 fetchPage 抛

@@ -89,9 +89,21 @@ void main() {
     );
 
     await tester.tap(find.text('未订阅'));
+    await tester.pump();
+    await tester.pump();
+
+    // 控件与摘要先动，250ms 防抖窗口内不请求，旧列表/总数继续显示。
+    expect(bundle.adapter.hitCount('GET', '/actors'), 1);
+    expect(find.text('3 位'), findsOneWidget);
+    expect(find.text('正在更新筛选结果'), findsOneWidget);
+    final pendingEntry = tester.widget<AppFilterEntryButton>(
+      find.byType(AppFilterEntryButton),
+    );
+    expect(pendingEntry.label, '未订阅');
+
     await tester.pumpAndSettle();
 
-    // 即时生效：不需要「确定」，选中当场触发带新参数的重新拉取。
+    // 防抖结束后只用新条件拉取并替换结果。
     final lastRequest = bundle.adapter.requests.last;
     expect(lastRequest.path, '/actors');
     expect(

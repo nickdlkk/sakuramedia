@@ -11,6 +11,7 @@ import 'package:sakuramedia/features/activity/presentation/activity_filter_state
 import 'package:sakuramedia/features/activity/presentation/providers/activity_api_provider.dart';
 import 'package:sakuramedia/features/activity/presentation/providers/notification_center_state.dart';
 import 'package:sakuramedia/features/shared/presentation/providers/sse_channel.dart';
+import 'package:sakuramedia/features/shared/presentation/providers/paged_async_notifier.dart';
 
 part 'notification_center_provider.g.dart';
 
@@ -24,13 +25,15 @@ class NotificationCenter extends _$NotificationCenter {
 
   SessionStore? _sessionStore;
   bool _lastHasSession = false;
+
   /// SSE 连接状态机：重连退避 / unsupported 轮询兜底 / 长断线补拉 / 微任务
   /// 合批全部由它承担，本 provider 只负责「事件怎么改状态」。
   SseChannel<ActivityStreamEvent>? _channel;
   int _lastEventId = 0;
   int _nextPage = 1;
-  int _refreshRequestId = 0;
+  late final DebouncedLatestRequest _filterRequests = DebouncedLatestRequest();
   int _lifecycleGeneration = 0;
+  int _notificationFilterGeneration = 0;
   final Set<int> _pendingReadIds = <int>{};
   final Set<int> _inFlightReadIds = <int>{};
   Timer? _readDebounce;
@@ -44,6 +47,7 @@ class NotificationCenter extends _$NotificationCenter {
     ref.onDispose(() {
       sessionStore.removeListener(_handleSessionChanged);
       _readDebounce?.cancel();
+      _filterRequests.dispose();
       unawaited(_shutdownChannel());
     });
     if (_lastHasSession) {
@@ -77,13 +81,15 @@ class NotificationCenter extends _$NotificationCenter {
 
   Future<void> reloadAll() async {
     final generation = ++_lifecycleGeneration;
-    _refreshRequestId += 1;
+    _filterRequests.cancel();
+    _notificationFilterGeneration++;
     // 先同步落 busy，避免 build 安排的自动 initialize 与页面显式 initialize
     // 在第一个 await 处交错，导致后发请求把先发调用提前判 stale。
     state = state.copyWith(
       isInitialLoading: true,
       initialErrorMessage: null,
       refreshErrorMessage: null,
+      filterUpdate: const FilterUpdateState.idle(),
       connectionState: NotificationConnectionState.connecting,
       connectionMessage: '正在同步通知',
     );
@@ -116,23 +122,35 @@ class NotificationCenter extends _$NotificationCenter {
     }
   }
 
-  Future<void> applyNotificationFilter(
-    ActivityNotificationFilterState next,
-  ) async {
+  Future<void> applyNotificationFilter(ActivityNotificationFilterState next) {
     if (state.filter == next) {
-      return;
+      return Future<void>.value();
     }
-    state = state.copyWith(filter: next);
-    await refreshNotifications();
-  }
-
-  Future<void> refreshNotifications() async {
-    final requestId = ++_refreshRequestId;
+    _notificationFilterGeneration++;
     state = state.copyWith(
+      filter: next,
+      filterUpdate: const FilterUpdateState.loading(),
       isRefreshing: true,
+      isLoadingMore: false,
       refreshErrorMessage: null,
       loadMoreErrorMessage: null,
     );
+    return _filterRequests.schedule(_refreshNotifications);
+  }
+
+  Future<void> refreshNotifications() {
+    _notificationFilterGeneration++;
+    state = state.copyWith(
+      isRefreshing: true,
+      isLoadingMore: false,
+      filterUpdate: const FilterUpdateState.loading(),
+      refreshErrorMessage: null,
+      loadMoreErrorMessage: null,
+    );
+    return _filterRequests.runNow(_refreshNotifications);
+  }
+
+  Future<void> _refreshNotifications(int requestId) async {
     try {
       final response = await ref
           .read(activityApiProvider)
@@ -141,7 +159,7 @@ class NotificationCenter extends _$NotificationCenter {
             pageSize: _pageSize,
             category: state.filter.category,
           );
-      if (!ref.mounted || requestId != _refreshRequestId) {
+      if (!ref.mounted || !_filterRequests.isCurrent(requestId)) {
         return;
       }
       final notifications = _sortNotifications(response.items);
@@ -151,26 +169,33 @@ class NotificationCenter extends _$NotificationCenter {
         hasMore: notifications.length < response.total,
         loadMoreErrorMessage: null,
         refreshErrorMessage: null,
+        filterUpdate: const FilterUpdateState.idle(),
       );
     } catch (error) {
-      if (!ref.mounted || requestId != _refreshRequestId) {
+      if (!ref.mounted || !_filterRequests.isCurrent(requestId)) {
         return;
       }
+      final message = apiErrorMessage(error, fallback: '通知筛选刷新失败，请重试');
       state = state.copyWith(
-        refreshErrorMessage: apiErrorMessage(error, fallback: '通知筛选刷新失败，请重试'),
+        refreshErrorMessage: message,
+        filterUpdate: FilterUpdateState.failed(message),
       );
     } finally {
-      if (ref.mounted && requestId == _refreshRequestId) {
+      if (ref.mounted && _filterRequests.isCurrent(requestId)) {
         state = state.copyWith(isRefreshing: false);
       }
     }
   }
 
   Future<void> loadMoreNotifications() async {
-    if (state.isLoadingMore || state.isRefreshing || !state.hasMore) {
+    if (state.isLoadingMore ||
+        state.isRefreshing ||
+        !state.filterUpdate.isIdle ||
+        !state.hasMore) {
       return;
     }
     state = state.copyWith(isLoadingMore: true, loadMoreErrorMessage: null);
+    final filterGeneration = _notificationFilterGeneration;
     try {
       final response = await ref
           .read(activityApiProvider)
@@ -179,7 +204,7 @@ class NotificationCenter extends _$NotificationCenter {
             pageSize: _pageSize,
             category: state.filter.category,
           );
-      if (!ref.mounted) {
+      if (!ref.mounted || filterGeneration != _notificationFilterGeneration) {
         return;
       }
       final existingIds = state.notifications.map((item) => item.id).toSet();
@@ -194,7 +219,7 @@ class NotificationCenter extends _$NotificationCenter {
         loadMoreErrorMessage: null,
       );
     } catch (error) {
-      if (ref.mounted) {
+      if (ref.mounted && filterGeneration == _notificationFilterGeneration) {
         state = state.copyWith(
           loadMoreErrorMessage: apiErrorMessage(
             error,
@@ -203,7 +228,7 @@ class NotificationCenter extends _$NotificationCenter {
         );
       }
     } finally {
-      if (ref.mounted) {
+      if (ref.mounted && filterGeneration == _notificationFilterGeneration) {
         state = state.copyWith(isLoadingMore: false);
       }
     }
@@ -273,8 +298,9 @@ class NotificationCenter extends _$NotificationCenter {
     );
 
     try {
-      final result =
-          await ref.read(activityApiProvider).markAllNotificationsRead();
+      final result = await ref
+          .read(activityApiProvider)
+          .markAllNotificationsRead();
       if (ref.mounted) {
         state = state.copyWith(unreadCount: result.unreadCount);
       }
@@ -294,7 +320,8 @@ class NotificationCenter extends _$NotificationCenter {
 
   void _teardown() {
     _lifecycleGeneration += 1;
-    _refreshRequestId += 1;
+    _notificationFilterGeneration += 1;
+    _filterRequests.cancel();
     _readDebounce?.cancel();
     unawaited(_shutdownChannel());
     _pendingReadIds.clear();
@@ -340,35 +367,30 @@ class NotificationCenter extends _$NotificationCenter {
     final channel = SseChannel<ActivityStreamEvent>(
       // afterEventId 由本 provider 自持的 _lastEventId 决定（连流那一刻才读，
       // 重连时自然带上断线期间已消费到的最大事件 id）。
-      connect:
-          ({String? afterEventId}) => ref
-              .read(activityApiProvider)
-              .streamEvents(afterEventId: _lastEventId),
+      connect: ({String? afterEventId}) => ref
+          .read(activityApiProvider)
+          .streamEvents(afterEventId: _lastEventId),
       mergeMode: SseMergeMode.microtask,
       pollingInterval: _pollingInterval,
       longDisconnectThreshold: _longDisconnectThreshold,
-      onStateChanged:
-          (next) => _applyChannelState(next, generation: generation),
-      onPollingTick:
-          () => unawaited(_refreshFromBootstrap(generation: generation)),
-      onLongDisconnectRecover:
-          () => _refreshFromBootstrap(generation: generation),
+      onStateChanged: (next) =>
+          _applyChannelState(next, generation: generation),
+      onPollingTick: () =>
+          unawaited(_refreshFromBootstrap(generation: generation)),
+      onLongDisconnectRecover: () =>
+          _refreshFromBootstrap(generation: generation),
     );
     _channel = channel;
     await channel.start(
       // microtask 合批模式下事件走 onBatch；onEvent 只是模式改变时的等价兜底。
-      onEvent:
-          (event) => _applyStreamEvents(<ActivityStreamEvent>[
-            event,
-          ], generation: generation),
+      onEvent: (event) => _applyStreamEvents(<ActivityStreamEvent>[
+        event,
+      ], generation: generation),
       onBatch: (events) => _applyStreamEvents(events, generation: generation),
     );
   }
 
-  void _applyChannelState(
-    SseChannelState next, {
-    required int generation,
-  }) {
+  void _applyChannelState(SseChannelState next, {required int generation}) {
     if (!ref.mounted || generation != _lifecycleGeneration) {
       return;
     }
@@ -407,10 +429,17 @@ class NotificationCenter extends _$NotificationCenter {
 
   /// 轮询 tick 与长断线补拉共用：重新 bootstrap 一次覆盖本地快照。
   Future<void> _refreshFromBootstrap({required int generation}) async {
+    final filterGeneration = _notificationFilterGeneration;
     try {
       final bootstrap = await _loadBootstrapState();
       if (ref.mounted && generation == _lifecycleGeneration) {
-        _applyBootstrapState(bootstrap);
+        if (filterGeneration != _notificationFilterGeneration ||
+            !state.filterUpdate.isIdle) {
+          _lastEventId = bootstrap.latestEventId;
+          state = state.copyWith(unreadCount: bootstrap.unreadCount);
+        } else {
+          _applyBootstrapState(bootstrap);
+        }
       }
     } catch (_) {}
   }
@@ -419,9 +448,7 @@ class NotificationCenter extends _$NotificationCenter {
     List<ActivityStreamEvent> events, {
     required int generation,
   }) {
-    if (!ref.mounted ||
-        generation != _lifecycleGeneration ||
-        events.isEmpty) {
+    if (!ref.mounted || generation != _lifecycleGeneration || events.isEmpty) {
       return;
     }
     for (final event in events) {
@@ -443,14 +470,18 @@ class NotificationCenter extends _$NotificationCenter {
           );
           changed = true;
         }
-      } else if (event.isNotificationCreated && event.notification != null) {
+      } else if (state.filterUpdate.isIdle &&
+          event.isNotificationCreated &&
+          event.notification != null) {
         next = _applyNotificationSnapshot(
           next,
           event.notification!,
           insertAtFrontIfMissing: true,
         );
         changed = true;
-      } else if (event.isNotificationUpdated && event.notification != null) {
+      } else if (state.filterUpdate.isIdle &&
+          event.isNotificationUpdated &&
+          event.notification != null) {
         next = _applyNotificationSnapshot(next, event.notification!);
         changed = true;
       } else if (event.isNotificationsRead) {
@@ -571,5 +602,4 @@ class NotificationCenter extends _$NotificationCenter {
     });
     return sorted;
   }
-
 }

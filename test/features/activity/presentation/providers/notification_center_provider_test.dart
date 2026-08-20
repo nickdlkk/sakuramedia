@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sakuramedia/core/session/session_store.dart';
 import 'package:sakuramedia/features/activity/data/activity_api.dart';
 import 'package:sakuramedia/features/activity/data/activity_notification_dto.dart';
+import 'package:sakuramedia/features/activity/presentation/activity_filter_state.dart';
 import 'package:sakuramedia/features/activity/presentation/providers/notification_center_provider.dart';
 import 'package:sakuramedia/features/activity/presentation/providers/notification_center_state.dart';
 
@@ -83,6 +84,43 @@ void main() {
     expect(controller.initialized, isFalse);
   });
 
+  test('筛选条件同步更新，防抖期间保留旧通知', () async {
+    _enqueueBootstrap(
+      bundle,
+      notifications: <Map<String, dynamic>>[_notificationJson(id: 101)],
+    );
+    _enqueueStream(bundle);
+    bundle.adapter.enqueueJson(
+      method: 'GET',
+      path: '/system/notifications',
+      body: <String, dynamic>{
+        'items': <Map<String, dynamic>>[
+          _notificationJson(id: 202, category: 'system'),
+        ],
+        'page': 1,
+        'page_size': 20,
+        'total': 1,
+      },
+    );
+
+    final controller = _NotificationCenterHarness(bundle);
+    addTearDown(controller.dispose);
+    await controller.initialize();
+
+    final update = controller.applyFilter(
+      const ActivityNotificationFilterState(category: 'system'),
+    );
+
+    expect(controller.filter.category, 'system');
+    expect(controller.filterUpdateLoading, isTrue);
+    expect(controller.notifications.single.id, 101);
+    expect(bundle.adapter.hitCount('GET', '/system/notifications'), 0);
+
+    await update;
+    expect(controller.notifications.single.id, 202);
+    expect(controller.filterUpdateLoading, isFalse);
+  });
+
   test(
     'onNotificationDisplayed debounces and batch-marks displayed ids read',
     () async {
@@ -112,12 +150,9 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 500));
 
       expect(bundle.adapter.hitCount('POST', '/system/notifications/read'), 1);
-      final body =
-          bundle.adapter.requests
-              .firstWhere(
-                (request) => request.path == '/system/notifications/read',
-              )
-              .body;
+      final body = bundle.adapter.requests
+          .firstWhere((request) => request.path == '/system/notifications/read')
+          .body;
       expect(body, <String, dynamic>{
         'ids': <int>[101, 102],
       });
@@ -303,10 +338,7 @@ void main() {
       );
       await pumpEventQueue();
 
-      expect(
-        harness.connectionState,
-        NotificationConnectionState.reconnecting,
-      );
+      expect(harness.connectionState, NotificationConnectionState.reconnecting);
     });
 
     test('流被服务端关闭 → 进重连态', () async {
@@ -315,10 +347,7 @@ void main() {
       sseClient.closeAll();
       await pumpEventQueue();
 
-      expect(
-        harness.connectionState,
-        NotificationConnectionState.reconnecting,
-      );
+      expect(harness.connectionState, NotificationConnectionState.reconnecting);
     });
 
     test('端不支持 SSE（Web）→ 切 30 秒轮询兜底，不再重连', () async {
@@ -341,13 +370,12 @@ class _NotificationCenterHarness {
     FakeSseEventStreamClient? sseClient,
   }) : container = ProviderContainer(
          overrides: bundle.riverpodOverrides(
-           activityApi:
-               sseClient == null
-                   ? null
-                   : ActivityApi(
-                     apiClient: bundle.apiClient,
-                     streamClient: FakeActivityEventStreamClient(sseClient),
-                   ),
+           activityApi: sseClient == null
+               ? null
+               : ActivityApi(
+                   apiClient: bundle.apiClient,
+                   streamClient: FakeActivityEventStreamClient(sseClient),
+                 ),
          ),
          retry: null,
        ) {
@@ -370,10 +398,14 @@ class _NotificationCenterHarness {
   int get unreadCount => _state.unreadCount;
   bool get initialized => _state.initialized;
   NotificationConnectionState get connectionState => _state.connectionState;
+  ActivityNotificationFilterState get filter => _state.filter;
+  bool get filterUpdateLoading => _state.filterUpdate.isLoading;
 
   Future<void> initialize() => _notifier.initialize();
   void onNotificationDisplayed(int id) => _notifier.onNotificationDisplayed(id);
   Future<void> markAllRead() => _notifier.markAllRead();
+  Future<void> applyFilter(ActivityNotificationFilterState next) =>
+      _notifier.applyNotificationFilter(next);
 
   void dispose() {
     _subscription.close();

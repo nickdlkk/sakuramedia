@@ -68,8 +68,9 @@ class _MobilePornboxPageState extends ConsumerState<MobilePornboxPage>
         .obtain(
           key: mobilePornboxPageCacheKey(),
           resolveLinks: () {
-            final link =
-                ref.read(videoSummaryProvider(_scope).notifier).cacheLink;
+            final link = ref
+                .read(videoSummaryProvider(_scope).notifier)
+                .cacheLink;
             return link == null ? const [] : [link];
           },
         );
@@ -152,10 +153,9 @@ class _MobilePornboxPageState extends ConsumerState<MobilePornboxPage>
       onAddToCollection: () => _addToCollection(video),
       onDelete: () => _deleteVideo(video),
       collections: video.collections,
-      onCollectionTap:
-          (ref) => MobileVideoCollectionDetailRouteData(
-            collectionId: ref.id,
-          ).push(context),
+      onCollectionTap: (ref) => MobileVideoCollectionDetailRouteData(
+        collectionId: ref.id,
+      ).push(context),
     );
   }
 
@@ -163,11 +163,10 @@ class _MobilePornboxPageState extends ConsumerState<MobilePornboxPage>
     // 用根 Navigator 推全屏页，覆盖底部导航。
     Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute<void>(
-        builder:
-            (_) => MobileVideoPlayerPage(
-              videoId: video.id,
-              title: video.preferredTitle,
-            ),
+        builder: (_) => MobileVideoPlayerPage(
+          videoId: video.id,
+          title: video.preferredTitle,
+        ),
       ),
     );
   }
@@ -242,11 +241,8 @@ class _MobilePornboxPageState extends ConsumerState<MobilePornboxPage>
       context,
       title: '正在加入「${target.name}」',
       items: selected,
-      action:
-          (video) => api.addCollectionItem(
-            collectionId: target.id,
-            videoItemId: video.id,
-          ),
+      action: (video) =>
+          api.addCollectionItem(collectionId: target.id, videoItemId: video.id),
     );
     if (!mounted) {
       return;
@@ -351,6 +347,7 @@ class _MobilePornboxPageState extends ConsumerState<MobilePornboxPage>
                 SliverToBoxAdapter(
                   child: _buildVideosHeader(
                     context,
+                    paged: paged,
                     videos: paged.items,
                     filter: filter,
                     total: paged.total,
@@ -360,10 +357,9 @@ class _MobilePornboxPageState extends ConsumerState<MobilePornboxPage>
                   context,
                   paged: paged,
                   isInitialLoading: videosAsync.isLoading && summary == null,
-                  initialErrorMessage:
-                      videosAsync.hasError && summary == null
-                          ? '视频列表加载失败，请稍后重试'
-                          : null,
+                  initialErrorMessage: videosAsync.hasError && summary == null
+                      ? '视频列表加载失败，请稍后重试'
+                      : null,
                 ),
                 SliverToBoxAdapter(child: _buildFooter(context, paged)),
               ],
@@ -449,9 +445,11 @@ class _MobilePornboxPageState extends ConsumerState<MobilePornboxPage>
       );
     }
     if (async.isLoading && collections.isEmpty) {
-      return const SizedBox(
-        height: 60,
-        child: Center(child: CircularProgressIndicator()),
+      return CollectionCardSkeletonRow(
+        key: const Key('mobile-pornbox-collections-skeleton-row'),
+        height: 116,
+        itemWidth: 116,
+        itemSpacing: spacing.sm,
       );
     }
     if (collections.isEmpty) {
@@ -474,10 +472,9 @@ class _MobilePornboxPageState extends ConsumerState<MobilePornboxPage>
             child: CollectionCard.video(
               key: Key('mobile-video-collection-card-${collection.id}'),
               collection: collection,
-              onTap:
-                  () => MobileVideoCollectionDetailRouteData(
-                    collectionId: collection.id,
-                  ).push(context),
+              onTap: () => MobileVideoCollectionDetailRouteData(
+                collectionId: collection.id,
+              ).push(context),
             ),
           );
         },
@@ -489,6 +486,7 @@ class _MobilePornboxPageState extends ConsumerState<MobilePornboxPage>
 
   Widget _buildVideosHeader(
     BuildContext context, {
+    required PagedListState<VideoItemListItemDto> paged,
     required List<VideoItemListItemDto> videos,
     required VideoFilterState filter,
     required int total,
@@ -520,6 +518,11 @@ class _MobilePornboxPageState extends ConsumerState<MobilePornboxPage>
       filterTooltip: '排序筛选',
       filterLabel: filter.sortField.label,
       onFilterTap: _openSortDrawer,
+      filterUpdate: paged.filterUpdate,
+      hasPreviousFilterItems: videos.isNotEmpty,
+      onRetryFilter: () => unawaited(
+        ref.read(videoSummaryProvider(_scope).notifier).retryFilter(),
+      ),
       informationSlots: [
         AppListHeaderInfo(
           key: const Key('mobile-pornbox-total'),
@@ -545,6 +548,9 @@ class _MobilePornboxPageState extends ConsumerState<MobilePornboxPage>
     required bool isInitialLoading,
     required String? initialErrorMessage,
   }) {
+    if (paged.filterUpdate.hasFailed && paged.items.isEmpty) {
+      return const SliverToBoxAdapter(child: SizedBox.shrink());
+    }
     if (isInitialLoading && paged.items.isEmpty) {
       return const SliverToBoxAdapter(
         child: AppMobileSkeletonList(key: Key('mobile-pornbox-loading')),
@@ -587,24 +593,22 @@ class _MobilePornboxPageState extends ConsumerState<MobilePornboxPage>
               aspectRatio: aspect,
               // Builder 是为了拿到**这一张卡自己**的 RenderBox，长按浮层要盖住它。
               child: Builder(
-                builder:
-                    (cardContext) => GestureDetector(
-                      onLongPressStart:
-                          selectionMode
-                              ? null
-                              : (details) => _openCardMenu(
-                                cardContext,
-                                video,
-                                details.globalPosition,
-                              ),
-                      child: VideoSummaryCard(
-                        video: video,
-                        onTap: selectionMode ? null : () => _openSheet(video),
-                        selectionMode: selectionMode,
-                        isSelected: isSelected(video.id),
-                        onSelectedChanged: (_) => toggleSelect(video.id),
-                      ),
-                    ),
+                builder: (cardContext) => GestureDetector(
+                  onLongPressStart: selectionMode
+                      ? null
+                      : (details) => _openCardMenu(
+                          cardContext,
+                          video,
+                          details.globalPosition,
+                        ),
+                  child: VideoSummaryCard(
+                    video: video,
+                    onTap: selectionMode ? null : () => _openSheet(video),
+                    selectionMode: selectionMode,
+                    isSelected: isSelected(video.id),
+                    onSelectedChanged: (_) => toggleSelect(video.id),
+                  ),
+                ),
               ),
             );
           },
@@ -703,8 +707,8 @@ class _MobilePornboxPageState extends ConsumerState<MobilePornboxPage>
       child: AppPagedLoadMoreFooter(
         isLoading: paged.isLoadingMore,
         errorMessage: paged.loadMoreErrorMessage,
-        onRetry:
-            () => ref.read(videoSummaryProvider(_scope).notifier).loadMore(),
+        onRetry: () =>
+            ref.read(videoSummaryProvider(_scope).notifier).loadMore(),
       ),
     );
   }

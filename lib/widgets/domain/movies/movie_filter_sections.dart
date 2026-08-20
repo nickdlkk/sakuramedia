@@ -3,7 +3,7 @@ import 'package:sakuramedia/features/movies/presentation/controllers/listing/mov
 import 'package:sakuramedia/theme.dart';
 import 'package:sakuramedia/widgets/base/actions/app_text_button.dart';
 
-/// 影片筛选的所有 section（状态 / 合集类型 / 番号来源 / 年份 / 排序）的纵向 Column。
+/// 影片筛选的所有 section（状态 / 合集类型 / 番号来源 / 热度范围 / 年份 / 排序）的纵向 Column。
 ///
 /// 桌面 `AppListHeader` 的就地浮层 panel 和移动 `MobileMovieFilterDrawer` 都用它，
 /// 避免双份维护。底栏/重置按钮由调用方自己附加。
@@ -12,7 +12,7 @@ class MovieFilterSectionGroup extends StatelessWidget {
     super.key,
     required this.filterState,
     required this.onChanged,
-    this.yearOptions = const <MovieFilterYearOption>[],
+    this.yearOptions,
     this.isYearOptionsLoading = false,
     this.yearOptionsErrorMessage,
     this.onYearOptionsRetry,
@@ -20,19 +20,25 @@ class MovieFilterSectionGroup extends StatelessWidget {
 
   final MovieFilterState filterState;
   final ValueChanged<MovieFilterState> onChanged;
-  final List<MovieFilterYearOption> yearOptions;
+
+  /// `null` 表示普通影片库，使用前端生成的 2008 年至当前年的固定范围；
+  /// 女优详情传入非空列表，以展示接口返回的影片数量。
+  final List<MovieFilterYearOption>? yearOptions;
   final bool isYearOptionsLoading;
   final String? yearOptionsErrorMessage;
   final VoidCallback? onYearOptionsRetry;
 
   bool get _shouldShowYearSection =>
-      yearOptions.isNotEmpty ||
+      yearOptions == null ||
+      yearOptions!.isNotEmpty ||
       isYearOptionsLoading ||
       yearOptionsErrorMessage != null ||
       filterState.year != null;
 
   @override
   Widget build(BuildContext context) {
+    final resolvedYearOptions =
+        yearOptions ?? buildDefaultMovieFilterYearOptions();
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -50,8 +56,8 @@ class MovieFilterSectionGroup extends StatelessWidget {
           options: MovieCollectionTypeFilter.values,
           selectedValue: filterState.collectionType,
           labelBuilder: (value) => value.label,
-          onSelected:
-              (value) => onChanged(filterState.copyWith(collectionType: value)),
+          onSelected: (value) =>
+              onChanged(filterState.copyWith(collectionType: value)),
         ),
         SizedBox(height: context.appSpacing.lg),
         MovieFilterChoiceSection<MovieNumberSourceFilter>(
@@ -59,13 +65,21 @@ class MovieFilterSectionGroup extends StatelessWidget {
           options: MovieNumberSourceFilter.values,
           selectedValue: filterState.numberSource,
           labelBuilder: (value) => value.label,
-          onSelected:
-              (value) => onChanged(filterState.copyWith(numberSource: value)),
+          onSelected: (value) =>
+              onChanged(filterState.copyWith(numberSource: value)),
+        ),
+        SizedBox(height: context.appSpacing.lg),
+        MovieHeatRangeFilterSection(
+          heatMin: filterState.heatMin,
+          heatMax: filterState.heatMax,
+          onChanged: (range) => onChanged(
+            filterState.copyWith(heatMin: range.$1, heatMax: range.$2),
+          ),
         ),
         if (_shouldShowYearSection) ...[
           SizedBox(height: context.appSpacing.lg),
           MovieYearFilterSection(
-            options: yearOptions,
+            options: resolvedYearOptions,
             selectedYear: filterState.year,
             isLoading: isYearOptionsLoading,
             errorMessage: yearOptionsErrorMessage,
@@ -76,10 +90,10 @@ class MovieFilterSectionGroup extends StatelessWidget {
         SizedBox(height: context.appSpacing.lg),
         MovieSortSection(
           filterState: filterState,
-          onSortFieldChanged:
-              (value) => onChanged(filterState.copyWith(sortField: value)),
-          onSortDirectionChanged:
-              (value) => onChanged(filterState.copyWith(sortDirection: value)),
+          onSortFieldChanged: (value) =>
+              onChanged(filterState.copyWith(sortField: value)),
+          onSortDirectionChanged: (value) =>
+              onChanged(filterState.copyWith(sortDirection: value)),
         ),
       ],
     );
@@ -142,7 +156,156 @@ class MovieFilterChoiceSection<T> extends StatelessWidget {
   }
 }
 
-class MovieYearFilterSection extends StatelessWidget {
+/// 热度范围双滑块筛选：0 ~ [movieFilterHeatSliderMax]（2w）。
+///
+/// - 左滑块拖到 0 = 下限不限；右滑块拖到顶 = 无上界（2w 及以上都包含），
+///   两者都映射为接口参数的 `null`（不传），语义对齐后端 `heat_min` / `heat_max`。
+/// - 拖动中只更新面板内的值显示，松手（onChangeEnd）才应用请求，
+///   避免拖动过程打出一串列表请求。
+class MovieHeatRangeFilterSection extends StatefulWidget {
+  const MovieHeatRangeFilterSection({
+    super.key,
+    required this.heatMin,
+    required this.heatMax,
+    required this.onChanged,
+  });
+
+  final int? heatMin;
+  final int? heatMax;
+  final ValueChanged<(int?, int?)> onChanged;
+
+  @override
+  State<MovieHeatRangeFilterSection> createState() =>
+      _MovieHeatRangeFilterSectionState();
+}
+
+class _MovieHeatRangeFilterSectionState
+    extends State<MovieHeatRangeFilterSection> {
+  late RangeValues _values;
+
+  @override
+  void initState() {
+    super.initState();
+    _values = _valuesFrom(widget.heatMin, widget.heatMax);
+  }
+
+  @override
+  void didUpdateWidget(covariant MovieHeatRangeFilterSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.heatMin != widget.heatMin ||
+        oldWidget.heatMax != widget.heatMax) {
+      // 外部状态变化（重置筛选 / 其他入口改条件）时同步滑块位置；
+      // onChangeEnd 应用后回传的值与此处推导一致，不会闪烁。
+      _values = _valuesFrom(widget.heatMin, widget.heatMax);
+    }
+  }
+
+  static RangeValues _valuesFrom(int? heatMin, int? heatMax) => RangeValues(
+    (heatMin ?? 0).toDouble(),
+    (heatMax ?? movieFilterHeatSliderMax).toDouble(),
+  );
+
+  void _apply(RangeValues values) {
+    final heatMin = movieHeatMinFromSlider(values.start.round());
+    final heatMax = movieHeatMaxFromSlider(values.end.round());
+    if (heatMin != widget.heatMin || heatMax != widget.heatMax) {
+      widget.onChanged((heatMin, heatMax));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final heatMin = movieHeatMinFromSlider(_values.start.round());
+    final heatMax = movieHeatMaxFromSlider(_values.end.round());
+    final colorScheme = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              '热度',
+              key: const Key('movie-filter-heat-section-title'),
+              style: resolveAppTextStyle(
+                context,
+                size: AppTextSize.s14,
+                weight: AppTextWeight.regular,
+                tone: AppTextTone.primary,
+              ),
+            ),
+            Text(
+              movieHeatRangeLabel(heatMin, heatMax),
+              key: const Key('movie-filter-heat-range-label'),
+              style: resolveAppTextStyle(
+                context,
+                size: AppTextSize.s12,
+                weight: AppTextWeight.regular,
+                tone: AppTextTone.muted,
+              ),
+            ),
+          ],
+        ),
+        SizedBox(height: context.appSpacing.xs),
+        // 桌面筛选面板内的滑块保持克制的体量：3px 细轨道 + 小扁平 thumb，
+        // 拖动反馈用 10% 品牌色的浅晕圈；默认 M3 的 20px thumb + 4px 轨道
+        // 在面板里显得过重。颜色全部走品牌/divider token，几何参数为
+        // 组件内部实现细节。
+        SliderTheme(
+          data: SliderTheme.of(context).copyWith(
+            trackHeight: 3,
+            activeTrackColor: colorScheme.primary,
+            inactiveTrackColor: context.appColors.divider,
+            rangeThumbShape: const RoundRangeSliderThumbShape(
+              enabledThumbRadius: 7,
+              disabledThumbRadius: 7,
+              elevation: 0,
+            ),
+            overlayShape: const RoundSliderOverlayShape(overlayRadius: 16),
+            overlayColor: colorScheme.primary.withValues(alpha: 0.10),
+          ),
+          child: RangeSlider(
+            key: const Key('movie-filter-heat-slider'),
+            min: 0,
+            max: movieFilterHeatSliderMax.toDouble(),
+            values: _values,
+            onChanged: (values) => setState(() => _values = values),
+            onChangeEnd: _apply,
+          ),
+        ),
+        // 两端刻度与 thumb 中心对齐（轨道两端各内缩一个 overlay 半径）。
+        Padding(
+          padding: EdgeInsets.symmetric(horizontal: context.appSpacing.lg),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                '0',
+                style: resolveAppTextStyle(
+                  context,
+                  size: AppTextSize.s10,
+                  weight: AppTextWeight.regular,
+                  tone: AppTextTone.muted,
+                ),
+              ),
+              Text(
+                '2w',
+                style: resolveAppTextStyle(
+                  context,
+                  size: AppTextSize.s10,
+                  weight: AppTextWeight.regular,
+                  tone: AppTextTone.muted,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class MovieYearFilterSection extends StatefulWidget {
   const MovieYearFilterSection({
     super.key,
     required this.options,
@@ -161,6 +324,87 @@ class MovieYearFilterSection extends StatelessWidget {
   final ValueChanged<int?> onSelected;
 
   @override
+  State<MovieYearFilterSection> createState() => _MovieYearFilterSectionState();
+}
+
+class _MovieYearFilterSectionState extends State<MovieYearFilterSection> {
+  static const int _collapsedRowCount = 2;
+
+  late bool _isExpanded;
+
+  @override
+  void initState() {
+    super.initState();
+    // 当前已选年份可能在两行之外；首次打开时直接展开，避免筛选条件不可见。
+    _isExpanded = widget.selectedYear != null;
+  }
+
+  @override
+  void didUpdateWidget(covariant MovieYearFilterSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.selectedYear != oldWidget.selectedYear &&
+        widget.selectedYear != null) {
+      _isExpanded = true;
+    }
+  }
+
+  List<_MovieYearChoice> get _choices => <_MovieYearChoice>[
+    const _MovieYearChoice(value: null, label: '全部年份'),
+    for (final option in widget.options)
+      _MovieYearChoice(value: option.year, label: option.label),
+  ];
+
+  int _collapsedChoiceCount(
+    BuildContext context,
+    List<_MovieYearChoice> choices,
+    double maxWidth,
+  ) {
+    if (!maxWidth.isFinite || maxWidth <= 0) {
+      return choices.length;
+    }
+
+    final componentTokens = context.appComponentTokens;
+    final gap = context.appSpacing.sm;
+    final labelStyle = resolveAppTextStyle(
+      context,
+      size: AppTextSize.s12,
+      tone: AppTextTone.muted,
+    );
+    final textScaler = MediaQuery.textScalerOf(context);
+    final textDirection = Directionality.of(context);
+    var visibleCount = 0;
+    var row = 1;
+    var rowWidth = 0.0;
+
+    for (final choice in choices) {
+      final painter = TextPainter(
+        text: TextSpan(text: choice.label, style: labelStyle),
+        textDirection: textDirection,
+        textScaler: textScaler,
+        maxLines: 1,
+      )..layout();
+      final choiceWidth =
+          (painter.width + componentTokens.buttonHorizontalPaddingXs * 2)
+              .clamp(0.0, maxWidth)
+              .toDouble();
+      final nextWidth = rowWidth == 0
+          ? choiceWidth
+          : rowWidth + gap + choiceWidth;
+      if (rowWidth > 0 && nextWidth > maxWidth) {
+        row += 1;
+        if (row > _collapsedRowCount) {
+          break;
+        }
+        rowWidth = choiceWidth;
+      } else {
+        rowWidth = nextWidth;
+      }
+      visibleCount += 1;
+    }
+    return visibleCount;
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -175,7 +419,7 @@ class MovieYearFilterSection extends StatelessWidget {
           ),
         ),
         SizedBox(height: context.appSpacing.sm),
-        if (isLoading)
+        if (widget.isLoading)
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -199,12 +443,12 @@ class MovieYearFilterSection extends StatelessWidget {
               ),
             ],
           )
-        else if (errorMessage != null)
+        else if (widget.errorMessage != null)
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                errorMessage!,
+                widget.errorMessage!,
                 style: resolveAppTextStyle(
                   context,
                   size: AppTextSize.s12,
@@ -216,33 +460,75 @@ class MovieYearFilterSection extends StatelessWidget {
               AppTextButton(
                 label: '重试',
                 size: AppTextButtonSize.xSmall,
-                onPressed: onRetry,
+                onPressed: widget.onRetry,
               ),
             ],
           )
         else
-          Wrap(
-            spacing: context.appSpacing.sm,
-            runSpacing: context.appSpacing.sm,
-            children: [
-              AppTextButton(
-                label: '全部年份',
-                size: AppTextButtonSize.xSmall,
-                isSelected: selectedYear == null,
-                onPressed: () => onSelected(null),
-              ),
-              for (final option in options)
-                AppTextButton(
-                  label: option.label,
-                  size: AppTextButtonSize.xSmall,
-                  isSelected: option.year == selectedYear,
-                  onPressed: () => onSelected(option.year),
-                ),
-            ],
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final choices = _choices;
+              final collapsedCount = _collapsedChoiceCount(
+                context,
+                choices,
+                constraints.maxWidth,
+              );
+              final hasHiddenChoices = choices.length > collapsedCount;
+              final visibleChoices = _isExpanded || !hasHiddenChoices
+                  ? choices
+                  : choices.take(collapsedCount);
+
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Wrap(
+                    spacing: context.appSpacing.sm,
+                    runSpacing: context.appSpacing.sm,
+                    children: [
+                      for (final choice in visibleChoices)
+                        AppTextButton(
+                          key: Key(
+                            choice.value == null
+                                ? 'movie-filter-year-all'
+                                : 'movie-filter-year-${choice.value}',
+                          ),
+                          label: choice.label,
+                          size: AppTextButtonSize.xSmall,
+                          isSelected: choice.value == widget.selectedYear,
+                          onPressed: () => widget.onSelected(choice.value),
+                        ),
+                    ],
+                  ),
+                  if (hasHiddenChoices) ...[
+                    SizedBox(height: context.appSpacing.sm),
+                    AppTextButton(
+                      key: const Key('movie-filter-year-expand-toggle'),
+                      label: _isExpanded ? '收起年份' : '展开全部年份',
+                      size: AppTextButtonSize.xSmall,
+                      trailingIcon: Icon(
+                        _isExpanded
+                            ? Icons.keyboard_arrow_up
+                            : Icons.keyboard_arrow_down,
+                      ),
+                      onPressed: () => setState(() {
+                        _isExpanded = !_isExpanded;
+                      }),
+                    ),
+                  ],
+                ],
+              );
+            },
           ),
       ],
     );
   }
+}
+
+class _MovieYearChoice {
+  const _MovieYearChoice({required this.value, required this.label});
+
+  final int? value;
+  final String label;
 }
 
 class MovieSortSection extends StatelessWidget {

@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:sakuramedia/features/activity/data/job_metadata_dto.dart';
 import 'package:sakuramedia/features/activity/data/task_run_dto.dart';
 import 'package:sakuramedia/features/activity/presentation/activity_filter_state.dart';
+import 'package:sakuramedia/features/shared/presentation/providers/paged_async_notifier.dart';
 
 enum ActivityTab { tasks, resourceTasks, downloadTasks }
 
@@ -17,6 +18,7 @@ class ActivityCenterState {
     this.connectionState = ActivityConnectionState.connecting,
     this.connectionMessage,
     this.taskFilter = ActivityTaskFilterState.initial,
+    this.taskFilterUpdate = const FilterUpdateState.idle(),
     List<TaskRunDto> activeTaskRuns = const <TaskRunDto>[],
     List<TaskRunDto> taskRuns = const <TaskRunDto>[],
     List<JobMetadataDto> jobs = const <JobMetadataDto>[],
@@ -44,6 +46,7 @@ class ActivityCenterState {
   final ActivityConnectionState connectionState;
   final String? connectionMessage;
   final ActivityTaskFilterState taskFilter;
+  final FilterUpdateState taskFilterUpdate;
   final List<TaskRunDto> activeTaskRuns;
   final List<TaskRunDto> taskRuns;
   final List<JobMetadataDto> jobs;
@@ -82,6 +85,7 @@ class ActivityCenterState {
     ActivityConnectionState? connectionState,
     Object? connectionMessage = _unset,
     ActivityTaskFilterState? taskFilter,
+    FilterUpdateState? taskFilterUpdate,
     List<TaskRunDto>? activeTaskRuns,
     List<TaskRunDto>? taskRuns,
     List<JobMetadataDto>? jobs,
@@ -99,17 +103,16 @@ class ActivityCenterState {
     return ActivityCenterState(
       initialized: initialized ?? this.initialized,
       isInitialLoading: isInitialLoading ?? this.isInitialLoading,
-      initialErrorMessage:
-          identical(initialErrorMessage, _unset)
-              ? this.initialErrorMessage
-              : initialErrorMessage as String?,
+      initialErrorMessage: identical(initialErrorMessage, _unset)
+          ? this.initialErrorMessage
+          : initialErrorMessage as String?,
       activeTab: activeTab ?? this.activeTab,
       connectionState: connectionState ?? this.connectionState,
-      connectionMessage:
-          identical(connectionMessage, _unset)
-              ? this.connectionMessage
-              : connectionMessage as String?,
+      connectionMessage: identical(connectionMessage, _unset)
+          ? this.connectionMessage
+          : connectionMessage as String?,
       taskFilter: taskFilter ?? this.taskFilter,
+      taskFilterUpdate: taskFilterUpdate ?? this.taskFilterUpdate,
       activeTaskRuns: activeTaskRuns ?? this.activeTaskRuns,
       taskRuns: taskRuns ?? this.taskRuns,
       jobs: jobs ?? this.jobs,
@@ -118,23 +121,19 @@ class ActivityCenterState {
       isLoadingJobs: isLoadingJobs ?? this.isLoadingJobs,
       isRefreshingTaskHistory:
           isRefreshingTaskHistory ?? this.isRefreshingTaskHistory,
-      taskLoadMoreErrorMessage:
-          identical(taskLoadMoreErrorMessage, _unset)
-              ? this.taskLoadMoreErrorMessage
-              : taskLoadMoreErrorMessage as String?,
-      jobErrorMessage:
-          identical(jobErrorMessage, _unset)
-              ? this.jobErrorMessage
-              : jobErrorMessage as String?,
-      taskRefreshErrorMessage:
-          identical(taskRefreshErrorMessage, _unset)
-              ? this.taskRefreshErrorMessage
-              : taskRefreshErrorMessage as String?,
+      taskLoadMoreErrorMessage: identical(taskLoadMoreErrorMessage, _unset)
+          ? this.taskLoadMoreErrorMessage
+          : taskLoadMoreErrorMessage as String?,
+      jobErrorMessage: identical(jobErrorMessage, _unset)
+          ? this.jobErrorMessage
+          : jobErrorMessage as String?,
+      taskRefreshErrorMessage: identical(taskRefreshErrorMessage, _unset)
+          ? this.taskRefreshErrorMessage
+          : taskRefreshErrorMessage as String?,
       triggeringTaskKeys: triggeringTaskKeys ?? this.triggeringTaskKeys,
-      highlightedTaskRunId:
-          identical(highlightedTaskRunId, _unset)
-              ? this.highlightedTaskRunId
-              : highlightedTaskRunId as int?,
+      highlightedTaskRunId: identical(highlightedTaskRunId, _unset)
+          ? this.highlightedTaskRunId
+          : highlightedTaskRunId as int?,
       taskNextPage: taskNextPage ?? this.taskNextPage,
     );
   }

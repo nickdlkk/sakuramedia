@@ -4,7 +4,6 @@ import 'package:sakuramedia/features/configuration/data/dto/cloud115_qr_login_dt
 import 'package:sakuramedia/features/configuration/data/dto/download_client_dto.dart';
 import 'package:sakuramedia/features/configuration/data/dto/indexer_settings_dto.dart';
 import 'package:sakuramedia/features/configuration/data/dto/media_library_dto.dart';
-import 'package:sakuramedia/features/configuration/data/dto/movie_desc_translation_settings_dto.dart';
 
 import '../../support/test_api_bundle.dart';
 
@@ -684,14 +683,13 @@ void main() {
         method: 'GET',
         path: '/indexer-settings',
         body: {
-          'type': 'jackett',
-          'api_key': 'secret-key',
           'indexers': [
             {
               'id': 1,
               'name': 'mteam',
               'url': 'https://example.com/torznab',
               'kind': 'pt',
+              'api_key': 'secret-key',
               'download_clients': [
                 {'id': 2, 'name': 'qb-main', 'kind': 'qbittorrent'},
               ],
@@ -703,14 +701,13 @@ void main() {
         method: 'PATCH',
         path: '/indexer-settings',
         body: {
-          'type': 'jackett',
-          'api_key': 'updated-key',
           'indexers': [
             {
               'id': 1,
               'name': 'mteam',
               'url': 'https://example.com/torznab',
               'kind': 'pt',
+              'api_key': 'updated-key',
               'download_clients': [
                 {'id': 2, 'name': 'qb-main', 'kind': 'qbittorrent'},
               ],
@@ -722,14 +719,13 @@ void main() {
       final settings = await bundle.indexerSettingsApi.getSettings();
       final updated = await bundle.indexerSettingsApi.updateSettings(
         const UpdateIndexerSettingsPayload(
-          type: 'jackett',
-          apiKey: 'updated-key',
           indexers: [
             IndexerEntryDto(
               id: 0,
               name: 'mteam',
               url: 'https://example.com/torznab',
               kind: 'pt',
+              apiKey: 'updated-key',
               downloadClients: [
                 IndexerBoundClientDto(
                   id: 2,
@@ -742,13 +738,18 @@ void main() {
         ),
       );
 
-      expect(settings.apiKey, 'secret-key');
       expect(settings.indexers.single.id, 1);
+      expect(settings.indexers.single.apiKey, 'secret-key');
       expect(settings.indexers.single.downloadClientIds, [2]);
       expect(settings.indexers.single.downloadClientNames, 'qb-main');
-      expect(updated.apiKey, 'updated-key');
+      expect(updated.indexers.single.apiKey, 'updated-key');
       expect(updated.indexers.single.downloadClientNames, 'qb-main');
-      expect(bundle.adapter.requests[1].body['api_key'], 'updated-key');
+      expect(bundle.adapter.requests[1].body.containsKey('type'), isFalse);
+      expect(bundle.adapter.requests[1].body.containsKey('api_key'), isFalse);
+      expect(
+        bundle.adapter.requests[1].body['indexers'][0]['api_key'],
+        'updated-key',
+      );
       expect(
         bundle.adapter.requests[1].body['indexers'][0]['download_client_ids'],
         [2],
@@ -802,7 +803,7 @@ void main() {
             'result_count': 0,
             'elapsed_ms': 30,
             'error': <String, dynamic>{
-              'type': 'jackett_request_error',
+              'type': 'torznab_request_error',
               'message': 'connection refused',
             },
           },
@@ -821,7 +822,7 @@ void main() {
         expect(healthy.error, isNull);
         expect(noIndexers.healthy, isFalse);
         expect(noIndexers.error?.type, 'no_indexers_configured');
-        expect(requestError.error?.type, 'jackett_request_error');
+        expect(requestError.error?.type, 'torznab_request_error');
         expect(requestError.error?.message, 'connection refused');
         expect(bundle.adapter.hitCount('GET', '/indexer-settings/test'), 3);
       },
@@ -843,173 +844,12 @@ void main() {
         });
 
         expect(settings.indexers.single.id, 0);
+        expect(settings.indexers.single.apiKey, isNull);
         expect(settings.indexers.single.downloadClientIds, isEmpty);
         expect(settings.indexers.single.downloadClientNames, '');
       },
     );
 
-    test(
-      'movie desc translation settings api reads via /config and keeps /test endpoint',
-      () async {
-        final sessionStore = await _buildLoggedInSessionStore();
-        final bundle = await createTestApiBundle(sessionStore);
-        addTearDown(bundle.dispose);
-
-        const initialSection = <String, dynamic>{
-          'enabled': false,
-          'base_url': 'http://llm.internal:8000',
-          'api_key': 'secret-token',
-          'model': 'gpt-4o-mini',
-          'timeout_seconds': 300.0,
-          'connect_timeout_seconds': 3.0,
-        };
-        const updatedSection = <String, dynamic>{
-          'enabled': true,
-          'base_url': 'http://127.0.0.1:8000',
-          'api_key': '',
-          'model': 'gpt-4o-mini',
-          'timeout_seconds': 180.0,
-          'connect_timeout_seconds': 9.0,
-        };
-
-        bundle.adapter.enqueueJson(
-          method: 'GET',
-          path: '/config',
-          body: <String, dynamic>{
-            'values': <String, dynamic>{
-              'movie_info_translation': initialSection,
-              'metadata': <String, dynamic>{'proxy': null},
-            },
-            'effects': <String, dynamic>{'movie_info_translation': 'hot'},
-          },
-        );
-        bundle.adapter.enqueueJson(
-          method: 'PATCH',
-          path: '/config',
-          body: <String, dynamic>{
-            'values': <String, dynamic>{
-              'movie_info_translation': updatedSection,
-              'metadata': <String, dynamic>{'proxy': null},
-            },
-            'applied': <String>[
-              'movie_info_translation.enabled',
-              'movie_info_translation.base_url',
-              'movie_info_translation.timeout_seconds',
-              'movie_info_translation.connect_timeout_seconds',
-            ],
-            'pending_restart': <dynamic>[],
-          },
-        );
-        bundle.adapter.enqueueJson(
-          method: 'POST',
-          path: '/movie-desc-translation-settings/test',
-          body: const <String, dynamic>{'ok': true},
-        );
-
-        final settings =
-            await bundle.movieDescTranslationSettingsApi.getSettings();
-        final updated = await bundle.movieDescTranslationSettingsApi
-            .updateSettings(
-              const UpdateMovieDescTranslationSettingsPayload(
-                enabled: true,
-                baseUrl: 'http://127.0.0.1:8000',
-                apiKey: '',
-                model: 'gpt-4o-mini',
-                timeoutSeconds: 180,
-                connectTimeoutSeconds: 9,
-              ),
-            );
-        final ok = await bundle.movieDescTranslationSettingsApi.testSettings(
-          const TestMovieDescTranslationSettingsPayload(
-            enabled: true,
-            baseUrl: 'http://127.0.0.1:8000',
-            apiKey: '',
-            model: 'gpt-4o-mini',
-            timeoutSeconds: 180,
-            connectTimeoutSeconds: 9,
-          ),
-        );
-
-        expect(settings.enabled, isFalse);
-        expect(settings.baseUrl, 'http://llm.internal:8000');
-        expect(settings.model, 'gpt-4o-mini');
-        expect(settings.timeoutSeconds, 300);
-        expect(updated.enabled, isTrue);
-        expect(updated.connectTimeoutSeconds, 9);
-        expect(ok, isTrue);
-        final patchRequest = bundle.adapter.requests[1];
-        expect(patchRequest.method, 'PATCH');
-        expect(patchRequest.path, '/config');
-        expect(
-          patchRequest.body['movie_info_translation']['base_url'],
-          'http://127.0.0.1:8000',
-        );
-        expect(
-          patchRequest.body['movie_info_translation']['timeout_seconds'],
-          180.0,
-        );
-        expect(bundle.adapter.hitCount('GET', '/config'), 1);
-        expect(bundle.adapter.hitCount('PATCH', '/config'), 1);
-        expect(
-          bundle.adapter.hitCount(
-            'POST',
-            '/movie-desc-translation-settings/test',
-          ),
-          1,
-        );
-      },
-    );
-
-    test(
-      'movie desc translation settings api throws when /config lacks movie_info_translation',
-      () async {
-        // 目的：section 缺失时 API 层必须抛，让 UI 走 error state + 重试按钮；
-        // 一旦沉默返回默认 DTO，用户会看到「配置全空」的假象，随手保存即把
-        // 服务器上的配置踩踏成空。
-        final sessionStore = await _buildLoggedInSessionStore();
-        final bundle = await createTestApiBundle(sessionStore);
-        addTearDown(bundle.dispose);
-
-        bundle.adapter.enqueueJson(
-          method: 'GET',
-          path: '/config',
-          body: <String, dynamic>{
-            'values': <String, dynamic>{
-              'metadata': <String, dynamic>{'proxy': null},
-            },
-            'effects': <String, dynamic>{'metadata': 'hot'},
-          },
-        );
-
-        await expectLater(
-          bundle.movieDescTranslationSettingsApi.getSettings(),
-          throwsA(isA<FormatException>()),
-        );
-      },
-    );
-
-    test(
-      'movie desc translation settings api throws when /config values is not an object',
-      () async {
-        final sessionStore = await _buildLoggedInSessionStore();
-        final bundle = await createTestApiBundle(sessionStore);
-        addTearDown(bundle.dispose);
-
-        bundle.adapter.enqueueJson(
-          method: 'GET',
-          path: '/config',
-          body: <String, dynamic>{
-            'values': 'not-an-object',
-            'effects': <String, dynamic>{},
-          },
-        );
-
-        await expectLater(
-          bundle.movieDescTranslationSettingsApi.getSettings(),
-          throwsA(isA<FormatException>()),
-        );
-      },
-    );
   });
 }
 

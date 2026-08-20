@@ -56,68 +56,65 @@ void main() {
     expect(decoration.border, isA<Border>());
   });
 
-  testWidgets('thumbnail grid provides decode size hints for masked images', (
+  testWidgets(
+    'thumbnail grid decodes landscape images at the fixed long edge',
+    (WidgetTester tester) async {
+      tester.view.devicePixelRatio = 2;
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await _pumpGrid(tester, thumbnails: _thumbnails());
+      await tester.pump();
+
+      final maskedImageFinder = find.descendant(
+        of: find.byKey(const Key('movie-media-thumb-0')),
+        matching: find.byType(MaskedImage),
+      );
+      final maskedImage = tester.widget<MaskedImage>(maskedImageFinder);
+      expect(maskedImage.memCacheWidth, kMoviePlayerThumbnailDecodeLongEdge);
+      expect(maskedImage.memCacheHeight, isNull);
+    },
+  );
+
+  testWidgets(
+    'thumbnail grid decode hint is independent of device pixel ratio',
+    (WidgetTester tester) async {
+      tester.view.devicePixelRatio = 3.5;
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await _pumpGrid(tester, thumbnails: _thumbnails());
+      await tester.pump();
+
+      final maskedImageFinder = find.descendant(
+        of: find.byKey(const Key('movie-media-thumb-0')),
+        matching: find.byType(MaskedImage),
+      );
+      final maskedImage = tester.widget<MaskedImage>(maskedImageFinder);
+      expect(maskedImage.memCacheWidth, kMoviePlayerThumbnailDecodeLongEdge);
+      expect(maskedImage.memCacheHeight, isNull);
+    },
+  );
+
+  testWidgets('thumbnail grid decodes portrait images at the fixed long edge', (
     WidgetTester tester,
   ) async {
-    tester.view.devicePixelRatio = 2;
-    addTearDown(tester.view.resetDevicePixelRatio);
-
-    await _pumpGrid(tester, thumbnails: _thumbnails());
-    await tester.pump();
-
-    final maskedImageFinder = find.descendant(
-      of: find.byKey(const Key('movie-media-thumb-0')),
-      matching: find.byType(MaskedImage),
-    );
-    final maskedImage = tester.widget<MaskedImage>(maskedImageFinder);
-    final renderedSize = tester.getSize(maskedImageFinder);
-
-    expect(
-      maskedImage.memCacheWidth,
-      _expectedDecodeDimension(extent: renderedSize.width, devicePixelRatio: 2),
-    );
-    // 只按宽给解码提示（保宽高比、不拉伸），不给高。
-    expect(maskedImage.memCacheHeight, isNull);
-  });
-
-  testWidgets('thumbnail grid caps decode hints at 2x device pixel ratio', (
-    WidgetTester tester,
-  ) async {
-    tester.view.devicePixelRatio = 3.5;
-    addTearDown(tester.view.resetDevicePixelRatio);
-
-    await _pumpGrid(tester, thumbnails: _thumbnails());
-    await tester.pump();
-
-    final maskedImageFinder = find.descendant(
-      of: find.byKey(const Key('movie-media-thumb-0')),
-      matching: find.byType(MaskedImage),
-    );
-    final maskedImage = tester.widget<MaskedImage>(maskedImageFinder);
-    final renderedSize = tester.getSize(maskedImageFinder);
-
-    expect(
-      maskedImage.memCacheWidth,
-      _expectedDecodeDimension(
-        extent: renderedSize.width,
-        devicePixelRatio: 3.5,
-      ),
-    );
-    expect(maskedImage.memCacheHeight, isNull);
-  });
-
-  testWidgets('thumbnail grid caps decode hints to 1024 upper bound', (
-    WidgetTester tester,
-  ) async {
-    tester.view.devicePixelRatio = 2;
-    addTearDown(tester.view.resetDevicePixelRatio);
-
     await _pumpGrid(
       tester,
-      thumbnails: _thumbnails(),
-      columns: 1,
-      width: 2200,
-      height: 1400,
+      thumbnails: <MovieMediaThumbnailDto>[
+        MovieMediaThumbnailDto(
+          thumbnailId: 1,
+          mediaId: 100,
+          offsetSeconds: 10,
+          image: const MovieImageDto(
+            id: 10,
+            origin: 'relative/portrait.webp',
+            small: 'relative/portrait.webp',
+            medium: 'relative/portrait.webp',
+            large: 'relative/portrait.webp',
+          ),
+          width: 1080,
+          height: 1920,
+        ),
+      ],
     );
     await tester.pump();
 
@@ -128,9 +125,53 @@ void main() {
       ),
     );
 
-    expect(maskedImage.memCacheWidth, 1024);
-    expect(maskedImage.memCacheHeight, isNull);
+    expect(maskedImage.memCacheWidth, isNull);
+    expect(maskedImage.memCacheHeight, kMoviePlayerThumbnailDecodeLongEdge);
+    expect(maskedImage.fit, BoxFit.contain);
   });
+
+  testWidgets(
+    'thumbnail grid keeps decode hints stable across column and width changes',
+    (WidgetTester tester) async {
+      final thumbnails = <MovieMediaThumbnailDto>[
+        MovieMediaThumbnailDto(
+          thumbnailId: 1,
+          mediaId: 100,
+          offsetSeconds: 10,
+          image: const MovieImageDto(
+            id: 10,
+            origin: 'relative/thumb.webp',
+            small: 'relative/thumb.webp',
+            medium: 'relative/thumb.webp',
+            large: 'relative/thumb.webp',
+          ),
+          width: 1920,
+          height: 1080,
+        ),
+      ];
+
+      await _pumpGrid(tester, thumbnails: thumbnails, columns: 2, width: 360);
+      final firstHint = tester.widget<MaskedImage>(
+        find.descendant(
+          of: find.byKey(const Key('movie-media-thumb-0')),
+          matching: find.byType(MaskedImage),
+        ),
+      );
+
+      await _pumpGrid(tester, thumbnails: thumbnails, columns: 5, width: 960);
+      final secondHint = tester.widget<MaskedImage>(
+        find.descendant(
+          of: find.byKey(const Key('movie-media-thumb-0')),
+          matching: find.byType(MaskedImage),
+        ),
+      );
+
+      expect(firstHint.memCacheWidth, kMoviePlayerThumbnailDecodeLongEdge);
+      expect(firstHint.memCacheHeight, isNull);
+      expect(secondHint.memCacheWidth, firstHint.memCacheWidth);
+      expect(secondHint.memCacheHeight, firstHint.memCacheHeight);
+    },
+  );
 
   testWidgets('thumbnail grid shows retry action when loading fails', (
     WidgetTester tester,
@@ -579,6 +620,52 @@ void main() {
     });
   });
 
+  group('stable thumbnail decode hints', () {
+    test('landscape and missing dimensions use a fixed width', () {
+      expect(
+        resolveMoviePlayerThumbnailDecodeHint(
+          imageWidth: 1920,
+          imageHeight: 1080,
+        ),
+        (width: kMoviePlayerThumbnailDecodeLongEdge, height: null),
+      );
+      expect(
+        resolveMoviePlayerThumbnailDecodeHint(
+          imageWidth: null,
+          imageHeight: null,
+        ),
+        (width: kMoviePlayerThumbnailDecodeLongEdge, height: null),
+      );
+    });
+
+    test('portrait dimensions use a fixed height', () {
+      expect(
+        resolveMoviePlayerThumbnailDecodeHint(
+          imageWidth: 1080,
+          imageHeight: 1920,
+        ),
+        (width: null, height: kMoviePlayerThumbnailDecodeLongEdge),
+      );
+    });
+
+    test('aspect ratio uses valid metadata only', () {
+      expect(
+        resolveMoviePlayerThumbnailAspectRatio(
+          imageWidth: 1920,
+          imageHeight: 1080,
+        ),
+        closeTo(16 / 9, 0.0001),
+      );
+      expect(
+        resolveMoviePlayerThumbnailAspectRatio(
+          imageWidth: 0,
+          imageHeight: 1080,
+        ),
+        isNull,
+      );
+    });
+  });
+
   testWidgets('thumbnail image defaults to cover before ratio resolves', (
     WidgetTester tester,
   ) async {
@@ -776,11 +863,10 @@ void main() {
       expect(find.byType(GridView), findsNothing);
 
       // 两个 AspectRatio 分别对应横/竖 → 高度差异应大约 16/9 vs 9/16。
-      final aspectRatios =
-          tester
-              .widgetList<AspectRatio>(find.byType(AspectRatio))
-              .map((w) => w.aspectRatio)
-              .toList();
+      final aspectRatios = tester
+          .widgetList<AspectRatio>(find.byType(AspectRatio))
+          .map((w) => w.aspectRatio)
+          .toList();
       expect(aspectRatios, contains(closeTo(16 / 9, 0.0001)));
       expect(aspectRatios, contains(closeTo(1080 / 1920, 0.0001)));
     },
@@ -809,11 +895,10 @@ void main() {
       ],
     );
 
-    final aspectRatios =
-        tester
-            .widgetList<AspectRatio>(find.byType(AspectRatio))
-            .map((w) => w.aspectRatio)
-            .toList();
+    final aspectRatios = tester
+        .widgetList<AspectRatio>(find.byType(AspectRatio))
+        .map((w) => w.aspectRatio)
+        .toList();
     expect(aspectRatios, contains(closeTo(16 / 9, 0.0001)));
   });
 }
@@ -916,12 +1001,4 @@ List<MovieMediaThumbnailDto> _manyThumbnails(
 double _scrollOffset(WidgetTester tester, Finder scrollableFinder) {
   final state = tester.state<ScrollableState>(scrollableFinder);
   return state.position.pixels;
-}
-
-int _expectedDecodeDimension({
-  required double extent,
-  required double devicePixelRatio,
-}) {
-  final effectivePixelRatio = devicePixelRatio > 2 ? 2.0 : devicePixelRatio;
-  return (extent * effectivePixelRatio).round().clamp(1, 1024);
 }

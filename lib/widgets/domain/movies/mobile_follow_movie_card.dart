@@ -1,7 +1,9 @@
+import 'package:expand_tap_area/expand_tap_area.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:sakuramedia/features/movies/data/dto/listing/movie_list_item_dto.dart';
 import 'package:sakuramedia/theme.dart';
+import 'package:sakuramedia/widgets/base/feedback/app_inline_spinner.dart';
 import 'package:sakuramedia/widgets/base/media/images/masked_image.dart';
 
 class MobileFollowMovieCard extends StatefulWidget {
@@ -69,10 +71,9 @@ class _MobileFollowMovieCardState extends State<MobileFollowMovieCard> {
       topLeft: Radius.circular(context.appRadius.md),
       topRight: Radius.circular(context.appRadius.md),
     );
-    final titleText =
-        widget.detailSummary?.trim().isNotEmpty ?? false
-            ? widget.detailSummary!.trim()
-            : widget.movie.title;
+    final titleText = widget.detailSummary?.trim().isNotEmpty ?? false
+        ? widget.detailSummary!.trim()
+        : widget.movie.title;
     final coverImage = _resolveFollowCoverImage(
       detailThinCoverUrl: widget.detailThinCoverUrl,
       listThinCoverImage: widget.movie.thinCoverImage,
@@ -153,14 +154,15 @@ class _MobileFollowMovieCardState extends State<MobileFollowMovieCard> {
                         key: Key(
                           'mobile-follow-movie-card-number-${widget.movie.movieNumber}',
                         ),
-                        style: resolveAppTextStyle(
-                          context,
-                          size: AppTextSize.s14,
-                          weight: AppTextWeight.regular,
-                          tone: AppTextTone.primary,
-                        ).copyWith(
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
+                        style:
+                            resolveAppTextStyle(
+                              context,
+                              size: AppTextSize.s14,
+                              weight: AppTextWeight.regular,
+                              tone: AppTextTone.primary,
+                            ).copyWith(
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
                       ),
                       Text(
                         _formatReleaseDate(widget.movie.releaseDate),
@@ -183,14 +185,16 @@ class _MobileFollowMovieCardState extends State<MobileFollowMovieCard> {
                             SizedBox(width: spacing.xs),
                             Text(
                               '可播放',
-                              style: resolveAppTextStyle(
-                                context,
-                                size: AppTextSize.s12,
-                                weight: AppTextWeight.regular,
-                                tone: AppTextTone.muted,
-                              ).copyWith(
-                                color: colors.movieCardPlayableBadgeBackground,
-                              ),
+                              style:
+                                  resolveAppTextStyle(
+                                    context,
+                                    size: AppTextSize.s12,
+                                    weight: AppTextWeight.regular,
+                                    tone: AppTextTone.muted,
+                                  ).copyWith(
+                                    color:
+                                        colors.movieCardPlayableBadgeBackground,
+                                  ),
                             ),
                           ],
                         ),
@@ -236,23 +240,57 @@ class _FollowThinCover extends StatelessWidget {
     final componentTokens = context.appComponentTokens;
     final coverWidth = componentTokens.mobileFollowMovieThinCoverWidth;
     final cardHeight = componentTokens.mobileFollowMovieCardHeight;
+
+    // 视觉按钮保持 30×30，命中区经 ExpandTapWidget 外扩到 44，布局不变。
+    const subscriptionHeartSize = 30.0;
+    final subscriptionHitPadding =
+        (componentTokens.subscriptionHeartHitSize - subscriptionHeartSize) / 2;
+
+    final subscriptionButton = SizedBox(
+      width: subscriptionHeartSize,
+      height: subscriptionHeartSize,
+      child: isSubscriptionUpdating
+          ? Center(
+              child: AppInlineSpinner(
+                key: Key(
+                  'mobile-follow-movie-card-subscription-loading-$movieNumber',
+                ),
+                color: colors.subscriptionHeartIcon,
+              ),
+            )
+          : IconButton(
+              key: Key('mobile-follow-movie-card-subscription-$movieNumber'),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+              visualDensity: VisualDensity.compact,
+              splashRadius: 18,
+              onPressed: onSubscriptionTap,
+              icon: Icon(
+                isSubscribed
+                    ? Icons.favorite_rounded
+                    : Icons.favorite_border_rounded,
+                color: colors.subscriptionHeartIcon,
+                size: componentTokens.iconSizeXl,
+              ),
+            ),
+    );
+
     final cover = SizedBox(
       width: coverWidth,
       height: cardHeight,
-      child:
-          imageUrl == null || imageUrl!.isEmpty
-              ? DecoratedBox(
-                key: Key(
-                  'mobile-follow-movie-card-cover-placeholder-$movieNumber',
-                ),
-                decoration: BoxDecoration(color: colors.surfaceMuted),
-                child: Icon(
-                  Icons.movie_creation_outlined,
-                  size: componentTokens.iconSize2xl,
-                  color: context.appTextPalette.muted,
-                ),
-              )
-              : MaskedImage(url: imageUrl!, fit: fit),
+      child: imageUrl == null || imageUrl!.isEmpty
+          ? DecoratedBox(
+              key: Key(
+                'mobile-follow-movie-card-cover-placeholder-$movieNumber',
+              ),
+              decoration: BoxDecoration(color: colors.surfaceMuted),
+              child: Icon(
+                Icons.movie_creation_outlined,
+                size: componentTokens.iconSize2xl,
+                color: context.appTextPalette.muted,
+              ),
+            )
+          : MaskedImage(url: imageUrl!, fit: fit),
     );
 
     return Stack(
@@ -261,41 +299,13 @@ class _FollowThinCover extends StatelessWidget {
         Positioned(
           top: context.appSpacing.xs,
           left: context.appSpacing.xs,
-          child: SizedBox(
-            width: 30,
-            height: 30,
-            child:
-                isSubscriptionUpdating
-                    ? Padding(
-                      padding: EdgeInsets.all(
-                        context.appLayoutTokens.inlineIconPadding,
-                      ),
-                      child: CircularProgressIndicator(
-                        key: Key(
-                          'mobile-follow-movie-card-subscription-loading-$movieNumber',
-                        ),
-                        strokeWidth: componentTokens.movieCardLoaderStrokeWidth,
-                        color: colors.subscriptionHeartIcon,
-                      ),
-                    )
-                    : IconButton(
-                      key: Key(
-                        'mobile-follow-movie-card-subscription-$movieNumber',
-                      ),
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                      visualDensity: VisualDensity.compact,
-                      splashRadius: 18,
-                      onPressed: onSubscriptionTap,
-                      icon: Icon(
-                        isSubscribed
-                            ? Icons.favorite_rounded
-                            : Icons.favorite_border_rounded,
-                        color: colors.subscriptionHeartIcon,
-                        size: componentTokens.iconSizeXl,
-                      ),
-                    ),
-          ),
+          child: isSubscriptionUpdating
+              ? subscriptionButton
+              : ExpandTapWidget(
+                  onTap: onSubscriptionTap,
+                  tapPadding: EdgeInsets.all(subscriptionHitPadding),
+                  child: subscriptionButton,
+                ),
         ),
       ],
     );

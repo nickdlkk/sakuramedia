@@ -46,8 +46,8 @@ MovieSubscriptionEvents resolveMovieSubscriptionNotifier(BuildContext context) {
   ).read(movieSubscriptionEventsProvider.notifier);
 }
 
-/// 翻译 / 互动同步走统一 action（整数 movie id 寻址）；[movieId] 缺省 0 表示
-/// 详情还没加载出 id（或老后端不下发），这两个动作会以失败 toast 兜底。
+/// 互动同步走统一 action（整数 movie id 寻址）；[movieId] 缺省 0 表示
+/// 详情还没加载出 id（或老后端不下发），该动作会以失败 toast 兜底。
 MovieDetailRemoteActionSpec? movieDetailRemoteActionSpecFor({
   required MovieDetailActionType action,
   required String movieNumber,
@@ -80,17 +80,6 @@ MovieDetailRemoteActionSpec? movieDetailRemoteActionSpecFor({
         },
         successMessage: '互动数同步任务已提交，完成后刷新可见',
         failureMessage: '提交互动数同步失败',
-      );
-    case MovieDetailActionType.translateDescription:
-      return MovieDetailRemoteActionSpec(
-        request: (api) async {
-          await api.translateMovieDescription(
-            movieId: _requireMovieId(movieId),
-          );
-          return null;
-        },
-        successMessage: '翻译任务已提交，完成后刷新可见',
-        failureMessage: '提交翻译任务失败',
       );
   }
 }

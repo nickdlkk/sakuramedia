@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sakuramedia/features/rankings/presentation/providers/ranking_summary_provider.dart';
@@ -9,24 +11,25 @@ import 'package:sakuramedia/features/rankings/presentation/widgets/ranking_filte
 
 /// 弹出移动端榜单筛选底部抽屉。
 ///
-/// 与影片/演员 tab 不同，榜单是「即时生效」——chip 改变立刻 reload。
-/// 抽屉里改也是即时（回调直接走 page state 的方法），「确定」只是关闭抽屉的语法。
+/// chip 选中态即时更新；榜单结果由 Provider 统一防抖刷新。
+/// 抽屉没有“确定”按钮，关闭仅靠下拉或点遮罩。
 /// [initialAnchor] 用于 chip 点击后定位到对应 section（source/board/period/sort）。
 ///
 Future<void> showMobileRankingFilterDrawer(
   BuildContext context, {
   required RankingSummaryScope scope,
   RankingFilterAnchor? initialAnchor,
+  VoidCallback? onFilterChanged,
 }) {
   return showAppBottomDrawer<void>(
     context: context,
     drawerKey: const Key('mobile-rankings-filter-drawer'),
     maxHeightFactor: 0.6,
-    builder:
-        (sheetContext) => _MobileRankingFilterDrawerContent(
-          scope: scope,
-          initialAnchor: initialAnchor,
-        ),
+    builder: (sheetContext) => _MobileRankingFilterDrawerContent(
+      scope: scope,
+      initialAnchor: initialAnchor,
+      onFilterChanged: onFilterChanged,
+    ),
   );
 }
 
@@ -34,10 +37,12 @@ class _MobileRankingFilterDrawerContent extends ConsumerStatefulWidget {
   const _MobileRankingFilterDrawerContent({
     required this.scope,
     required this.initialAnchor,
+    required this.onFilterChanged,
   });
 
   final RankingSummaryScope scope;
   final RankingFilterAnchor? initialAnchor;
+  final VoidCallback? onFilterChanged;
 
   @override
   ConsumerState<_MobileRankingFilterDrawerContent> createState() =>
@@ -82,24 +87,51 @@ class _MobileRankingFilterDrawerContentState
         boards: filters.boards,
         selectedBoard: filters.selectedBoard,
         selectedPeriod: filters.selectedPeriod,
-        onSourceChanged:
-            (value) => ref
+        onSourceChanged: (value) {
+          if (filters.selectedSource?.sourceKey == value.sourceKey) {
+            return;
+          }
+          widget.onFilterChanged?.call();
+          unawaited(
+            ref
                 .read(rankingSummaryProvider(widget.scope).notifier)
                 .selectSource(value),
-        onBoardChanged:
-            (value) => ref
+          );
+        },
+        onBoardChanged: (value) {
+          if (filters.selectedBoard?.boardKey == value.boardKey) {
+            return;
+          }
+          widget.onFilterChanged?.call();
+          unawaited(
+            ref
                 .read(rankingSummaryProvider(widget.scope).notifier)
                 .selectBoard(value),
-        onPeriodChanged:
-            (value) => ref
+          );
+        },
+        onPeriodChanged: (value) {
+          if (filters.selectedPeriod == value) return;
+          widget.onFilterChanged?.call();
+          unawaited(
+            ref
                 .read(rankingSummaryProvider(widget.scope).notifier)
                 .selectPeriod(value),
+          );
+        },
         selectedSortField: filters.selectedSortField,
         selectedSortDirection: filters.selectedSortDirection,
-        onSortChanged:
-            (field, direction) => ref
+        onSortChanged: (field, direction) {
+          if (filters.selectedSortField == field &&
+              filters.selectedSortDirection == direction) {
+            return;
+          }
+          widget.onFilterChanged?.call();
+          unawaited(
+            ref
                 .read(rankingSummaryProvider(widget.scope).notifier)
                 .selectSort(field, direction),
+          );
+        },
         sectionKeys: _sectionKeys,
       ),
     );

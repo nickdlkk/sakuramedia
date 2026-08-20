@@ -39,11 +39,11 @@ class DesktopDiscoverPage extends ConsumerStatefulWidget {
 
 class _DesktopDiscoverPageState extends ConsumerState<DesktopDiscoverPage> {
   // discovery 三腿均由 provider 驱动；本 State 只保留页面交互与导航职责。
-  static const int _dailyPageSize = 6;
-  static const int _momentPageSize = 8;
+  // 桌面发现页保留两行预览的缓冲数据，窗口变化只重排，不重新请求。
+  static const int _previewPageSize = 24;
 
   static const _followScope = MovieSummaryScope.subscribedActorsLatest(
-    pageSize: 6,
+    pageSize: _previewPageSize,
     initialLoadErrorText: '女优上新加载失败，请稍后重试',
   );
 
@@ -62,10 +62,10 @@ class _DesktopDiscoverPageState extends ConsumerState<DesktopDiscoverPage> {
   Future<void> _refreshDiscovery() async {
     await Future.wait(<Future<void>>[
       ref
-          .read(discoveryDailyPreviewProvider(_dailyPageSize).notifier)
+          .read(discoveryDailyPreviewProvider(_previewPageSize).notifier)
           .refresh(),
       ref
-          .read(discoveryMomentPreviewProvider(_momentPageSize).notifier)
+          .read(discoveryMomentPreviewProvider(_previewPageSize).notifier)
           .refresh(),
     ]);
   }
@@ -79,8 +79,8 @@ class _DesktopDiscoverPageState extends ConsumerState<DesktopDiscoverPage> {
 
   @override
   Widget build(BuildContext context) {
-    final daily = ref.watch(discoveryDailyPreviewProvider(_dailyPageSize));
-    final moment = ref.watch(discoveryMomentPreviewProvider(_momentPageSize));
+    final daily = ref.watch(discoveryDailyPreviewProvider(_previewPageSize));
+    final moment = ref.watch(discoveryMomentPreviewProvider(_previewPageSize));
     final follow = ref.watch(movieSummaryProvider(_followScope));
     return AppPageRefreshScope(
       onRefresh: _handleRefresh,
@@ -124,25 +124,25 @@ class _DesktopDiscoverPageState extends ConsumerState<DesktopDiscoverPage> {
         MovieSummaryGrid(
           items: paged?.items ?? const [],
           isLoading: followAsync.isLoading && follow == null,
-          errorMessage:
-              followAsync.hasError && follow == null
-                  ? _followScope.initialLoadErrorText
-                  : null,
+          errorMessage: followAsync.hasError && follow == null
+              ? _followScope.initialLoadErrorText
+              : null,
           onMovieTap: (movie) => _openMovieDetail(movie.movieNumber),
-          onMovieMenuRequest:
-              (movie, globalPosition) => requestMovieCollectionMenu(
+          onMovieMenuRequest: (movie, globalPosition) =>
+              requestMovieCollectionMenu(
                 context,
                 movie.movieNumber,
                 globalPosition,
                 isSubscribed: movie.isSubscribed,
               ),
-          onMovieSubscriptionTap:
-              (movie) => _toggleFollowSubscription(movie.movieNumber),
-          isMovieSubscriptionUpdating:
-              (movie) =>
-                  follow?.isSubscriptionUpdating(movie.movieNumber) ?? false,
+          onMovieSubscriptionTap: (movie) =>
+              _toggleFollowSubscription(movie.movieNumber),
+          isMovieSubscriptionUpdating: (movie) =>
+              follow?.isSubscriptionUpdating(movie.movieNumber) ?? false,
           emptyMessage: '暂无女优上新，先订阅感兴趣的女优，等定时任务同步后展示',
-          placeholderCount: 6,
+          placeholderCount: _previewPageSize,
+          maxRows: 2,
+          maxColumns: 10,
         ),
       ],
     );
@@ -182,15 +182,16 @@ class _DesktopDiscoverPageState extends ConsumerState<DesktopDiscoverPage> {
       items: daily.items.map((item) => item.movie).toList(growable: false),
       isLoading: daily.isLoading,
       emptyMessage: '暂无每日推荐，去搜索看看吧',
-      placeholderCount: 6,
+      placeholderCount: _previewPageSize,
+      maxRows: 2,
+      maxColumns: 10,
       onMovieTap: (movie) => _openMovieDetail(movie.movieNumber),
-      onMovieMenuRequest:
-          (movie, globalPosition) => requestMovieCollectionMenu(
-            context,
-            movie.movieNumber,
-            globalPosition,
-            isSubscribed: movie.isSubscribed,
-          ),
+      onMovieMenuRequest: (movie, globalPosition) => requestMovieCollectionMenu(
+        context,
+        movie.movieNumber,
+        globalPosition,
+        isSubscribed: movie.isSubscribed,
+      ),
     );
   }
 
@@ -242,6 +243,8 @@ class _DesktopDiscoverPageState extends ConsumerState<DesktopDiscoverPage> {
           .map((item) => item.toMomentListItem())
           .toList(growable: false),
       onItemTap: _openMomentPreview,
+      maxRows: 2,
+      maxColumns: 6,
     );
   }
 

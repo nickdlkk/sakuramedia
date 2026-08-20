@@ -8,6 +8,7 @@ import 'package:sakuramedia/features/activity/presentation/providers/activity_ap
 import 'package:sakuramedia/features/activity/presentation/providers/resource_task_center_state.dart';
 import 'package:sakuramedia/features/activity/presentation/resource_task_filter_state.dart';
 import 'package:sakuramedia/features/shared/presentation/providers/async_notifier_dispose_guard.dart';
+import 'package:sakuramedia/features/shared/presentation/providers/paged_async_notifier.dart';
 
 part 'resource_task_center_provider.g.dart';
 
@@ -17,6 +18,7 @@ class ResourceTaskCenter extends _$ResourceTaskCenter
   static const int _pageSize = 20;
   static const String kMediaThumbnailTaskKey = 'media_thumbnail_generation';
   static const int maxBatchResetCount = 200;
+  late final DebouncedLatestRequest _filterRequests = DebouncedLatestRequest();
 
   ResourceTaskCenterState get current =>
       state.value ?? ResourceTaskCenterState.initial;
@@ -24,13 +26,15 @@ class ResourceTaskCenter extends _$ResourceTaskCenter
   @override
   Future<ResourceTaskCenterState> build() async {
     attachDisposeGuard();
+    ref.onDispose(_filterRequests.dispose);
     return _loadInitialState();
   }
 
   Future<ResourceTaskCenterState> _loadInitialState() async {
     try {
-      final definitions =
-          await ref.read(activityApiProvider).getResourceTaskDefinitions();
+      final definitions = await ref
+          .read(activityApiProvider)
+          .getResourceTaskDefinitions();
       if (isDisposed) return ResourceTaskCenterState.initial;
       if (definitions.isEmpty) {
         return ResourceTaskCenterState.initial.copyWith(initialized: true);
@@ -94,8 +98,9 @@ class ResourceTaskCenter extends _$ResourceTaskCenter
       ),
     );
     try {
-      final definitions =
-          await ref.read(activityApiProvider).getResourceTaskDefinitions();
+      final definitions = await ref
+          .read(activityApiProvider)
+          .getResourceTaskDefinitions();
       if (isDisposed) return;
       var key = current.activeTaskKey;
       if (key != null && definitions.every((item) => item.taskKey != key)) {
@@ -145,11 +150,12 @@ class ResourceTaskCenter extends _$ResourceTaskCenter
     }
   }
 
-  Future<void> applyFilter(ResourceTaskRecordFilterState next) async {
+  Future<void> applyFilter(ResourceTaskRecordFilterState next) {
     final key = current.activeTaskKey;
-    if (key == null) return;
+    if (key == null) return Future<void>.value();
     final bucket = _bucketFor(key);
-    if (bucket.filter == next) return;
+    if (bucket.filter == next) return Future<void>.value();
+    final requestId = bucket.loadRequestId + 1;
     state = AsyncData(
       _replaceBucket(
         current.copyWith(
@@ -157,10 +163,21 @@ class ResourceTaskCenter extends _$ResourceTaskCenter
           selectedResourceIds: const <int>{},
         ),
         key,
-        bucket.copyWith(filter: next),
+        bucket.copyWith(
+          filter: next,
+          loadRequestId: requestId,
+          isLoading: false,
+          isLoadingMore: false,
+          loadErrorMessage: null,
+          loadMoreErrorMessage: null,
+          filterUpdate: const FilterUpdateState.loading(),
+        ),
       ),
     );
-    await _loadFirstPage(key);
+    return _filterRequests.schedule(
+      (filterRequestId) =>
+          _loadFilteredFirstPage(key, requestId, filterRequestId),
+    );
   }
 
   void enterSelectionMode() {
@@ -222,10 +239,9 @@ class ResourceTaskCenter extends _$ResourceTaskCenter
       if (isDisposed) return result;
       final resetIds = result.acceptedResourceIds.toSet();
       var next = _applySuccessfulReset(current, resetIds, result.acceptedCount);
-      final keepSelected =
-          next.selectedResourceIds
-              .where((id) => !resetIds.contains(id))
-              .toSet();
+      final keepSelected = next.selectedResourceIds
+          .where((id) => !resetIds.contains(id))
+          .toSet();
       next = next.copyWith(
         isResetting: false,
         selectedResourceIds: keepSelected,
@@ -256,8 +272,9 @@ class ResourceTaskCenter extends _$ResourceTaskCenter
     final accepted = result.acceptedCount;
     final skipped = result.skippedCount;
     await Future.wait(<Future<void>>[refreshRecords(), refreshDefinitions()]);
-    final suffix =
-        result.taskRunId != null ? '，已生成任务 #${result.taskRunId}' : '';
+    final suffix = result.taskRunId != null
+        ? '，已生成任务 #${result.taskRunId}'
+        : '';
     return skipped == 0
         ? '已受理 $accepted 项$suffix'
         : '已受理 $accepted 项、跳过 $skipped 项$suffix';
@@ -265,7 +282,27 @@ class ResourceTaskCenter extends _$ResourceTaskCenter
 
   Future<void> refreshRecords() async {
     final key = current.activeTaskKey;
-    if (key != null) await _loadFirstPage(key);
+    if (key == null) return;
+    final bucket = _bucketFor(key);
+    final requestId = bucket.loadRequestId + 1;
+    state = AsyncData(
+      _replaceBucket(
+        current,
+        key,
+        bucket.copyWith(
+          loadRequestId: requestId,
+          isLoading: false,
+          isLoadingMore: false,
+          loadErrorMessage: null,
+          loadMoreErrorMessage: null,
+          filterUpdate: const FilterUpdateState.loading(),
+        ),
+      ),
+    );
+    await _filterRequests.runNow(
+      (filterRequestId) =>
+          _loadFilteredFirstPage(key, requestId, filterRequestId),
+    );
   }
 
   Future<void> loadMoreRecords() async {
@@ -275,6 +312,7 @@ class ResourceTaskCenter extends _$ResourceTaskCenter
     if (!bucket.hasMore ||
         bucket.isLoading ||
         bucket.isLoadingMore ||
+        !bucket.filterUpdate.isIdle ||
         !bucket.hasLoadedOnce) {
       return;
     }
@@ -345,6 +383,7 @@ class ResourceTaskCenter extends _$ResourceTaskCenter
   }
 
   Future<void> _loadFirstPage(String taskKey) async {
+    _filterRequests.cancel();
     final bucket = _bucketFor(taskKey);
     final requestId = bucket.loadRequestId + 1;
     state = AsyncData(
@@ -356,6 +395,7 @@ class ResourceTaskCenter extends _$ResourceTaskCenter
           isLoading: true,
           loadErrorMessage: null,
           loadMoreErrorMessage: null,
+          filterUpdate: const FilterUpdateState.idle(),
         ),
       ),
     );
@@ -384,6 +424,50 @@ class ResourceTaskCenter extends _$ResourceTaskCenter
             loadErrorMessage: apiErrorMessage(
               error,
               fallback: '资源任务记录加载失败，请稍后重试',
+            ),
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _loadFilteredFirstPage(
+    String taskKey,
+    int requestId,
+    int filterRequestId,
+  ) async {
+    final bucket = _bucketFor(taskKey);
+    try {
+      final response = await _fetchRecordsPage(
+        taskKey,
+        page: 1,
+        bucket: bucket,
+      );
+      if (_isStaleRequest(taskKey, requestId) ||
+          !_filterRequests.isCurrent(filterRequestId)) {
+        return;
+      }
+      state = AsyncData(
+        _replaceBucket(
+          current,
+          taskKey,
+          _initialLoadSuccess(_bucketFor(taskKey), response),
+        ),
+      );
+    } catch (error) {
+      if (_isStaleRequest(taskKey, requestId) ||
+          !_filterRequests.isCurrent(filterRequestId)) {
+        return;
+      }
+      final latest = _bucketFor(taskKey);
+      state = AsyncData(
+        _replaceBucket(
+          current,
+          taskKey,
+          latest.copyWith(
+            isLoading: false,
+            filterUpdate: FilterUpdateState.failed(
+              apiErrorMessage(error, fallback: '筛选结果更新失败，请重试'),
             ),
           ),
         ),
@@ -422,6 +506,7 @@ class ResourceTaskCenter extends _$ResourceTaskCenter
       isLoading: false,
       hasLoadedOnce: true,
       loadErrorMessage: null,
+      filterUpdate: const FilterUpdateState.idle(),
     );
   }
 
@@ -466,27 +551,25 @@ class ResourceTaskCenter extends _$ResourceTaskCenter
         next,
         kMediaThumbnailTaskKey,
         bucket.copyWith(
-          records:
-              bucket.records
-                  .where((record) => !resetIds.contains(record.resourceId))
-                  .toList(),
+          records: bucket.records
+              .where((record) => !resetIds.contains(record.resourceId))
+              .toList(),
         ),
       );
     }
     if (resetCount <= 0) return next;
-    final definitions =
-        next.definitions.map((definition) {
-          if (definition.taskKey != kMediaThumbnailTaskKey) return definition;
-          final counts = definition.stateCounts;
-          final delta = resetCount > counts.failed ? counts.failed : resetCount;
-          if (delta <= 0) return definition;
-          return definition.copyWith(
-            stateCounts: counts.copyWith(
-              failed: counts.failed - delta,
-              pending: counts.pending + delta,
-            ),
-          );
-        }).toList();
+    final definitions = next.definitions.map((definition) {
+      if (definition.taskKey != kMediaThumbnailTaskKey) return definition;
+      final counts = definition.stateCounts;
+      final delta = resetCount > counts.failed ? counts.failed : resetCount;
+      if (delta <= 0) return definition;
+      return definition.copyWith(
+        stateCounts: counts.copyWith(
+          failed: counts.failed - delta,
+          pending: counts.pending + delta,
+        ),
+      );
+    }).toList();
     return next.copyWith(definitions: definitions);
   }
 
@@ -508,6 +591,8 @@ class ResourceTaskCenter extends _$ResourceTaskCenter
   String? get recordsLoadErrorMessage => current.recordsLoadErrorMessage;
   String? get recordsLoadMoreErrorMessage =>
       current.recordsLoadMoreErrorMessage;
+  FilterUpdateState get filterUpdate =>
+      current.activeBucket?.filterUpdate ?? const FilterUpdateState.idle();
   ResourceTaskRecordDto? get selectedRecord => current.selectedRecord;
   bool get isDetailOpen => current.isDetailOpen;
   bool get selectionMode => current.selectionMode;

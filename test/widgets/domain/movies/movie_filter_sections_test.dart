@@ -11,11 +11,21 @@ import 'package:sakuramedia/widgets/domain/movies/movie_filter_sections.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  test('普通影片库年份固定覆盖当前年到 2008 年且不带统计数量', () {
+    final options = buildDefaultMovieFilterYearOptions(currentYear: 2026);
+
+    expect(options.first.year, 2026);
+    expect(options.last.year, movieFilterEarliestYear);
+    expect(options, hasLength(19));
+    expect(options.first.movieCount, isNull);
+    expect(options.first.label, '2026');
+  });
+
   Widget wrapHeader({
     required MovieFilterState filterState,
     required ValueChanged<MovieFilterState> onChanged,
     required VoidCallback onReset,
-    List<MovieFilterYearOption> yearOptions = const <MovieFilterYearOption>[],
+    List<MovieFilterYearOption>? yearOptions,
   }) {
     return MaterialApp(
       theme: sakuraThemeData,
@@ -27,12 +37,11 @@ void main() {
             filterLabel: filterState.triggerLabel,
             filterPanelKey: const Key('movies-filter-panel'),
             filterPanelExtraWidth: 260,
-            filterPanelBuilder:
-                (_) => MovieFilterSectionGroup(
-                  filterState: filterState,
-                  onChanged: onChanged,
-                  yearOptions: yearOptions,
-                ),
+            filterPanelBuilder: (_) => MovieFilterSectionGroup(
+              filterState: filterState,
+              onChanged: onChanged,
+              yearOptions: yearOptions,
+            ),
             filterPanelFooter: AppFilterPanelFooter(
               isDefault: filterState.isDefault,
               onReset: onReset,
@@ -43,12 +52,12 @@ void main() {
     );
   }
 
-  testWidgets('影片筛选面板约束长年份列表且重置始终可见', (WidgetTester tester) async {
+  testWidgets('影片筛选面板将长年份列表收为两行并可展开', (WidgetTester tester) async {
     final yearOptions = List<MovieFilterYearOption>.generate(
       30,
       (index) => MovieFilterYearOption(year: 2026 - index, movieCount: 1),
     );
-    var filterState = MovieFilterState.initial.copyWith(year: 2026);
+    var filterState = MovieFilterState.initial;
     MovieFilterState? changedState;
     var resetCount = 0;
 
@@ -59,19 +68,18 @@ void main() {
 
     await tester.pumpWidget(
       StatefulBuilder(
-        builder:
-            (context, setState) => wrapHeader(
-              filterState: filterState,
-              yearOptions: yearOptions,
-              onChanged: (nextState) {
-                changedState = nextState;
-                setState(() => filterState = nextState);
-              },
-              onReset: () {
-                resetCount += 1;
-                setState(() => filterState = MovieFilterState.initial);
-              },
-            ),
+        builder: (context, setState) => wrapHeader(
+          filterState: filterState,
+          yearOptions: yearOptions,
+          onChanged: (nextState) {
+            changedState = nextState;
+            setState(() => filterState = nextState);
+          },
+          onReset: () {
+            resetCount += 1;
+            setState(() => filterState = MovieFilterState.initial);
+          },
+        ),
       ),
     );
 
@@ -90,7 +98,18 @@ void main() {
       of: find.byKey(const Key('movies-filter-panel')),
       matching: find.byType(Scrollable),
     );
+    expect(find.text('1997(1)'), findsNothing);
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('movie-filter-year-expand-toggle')),
+      160,
+      scrollable: scrollable.first,
+    );
+    expect(find.text('展开全部年份'), findsOneWidget);
 
+    await tester.tap(find.byKey(const Key('movie-filter-year-expand-toggle')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('收起年份'), findsOneWidget);
     await tester.scrollUntilVisible(
       find.text('1997(1)'),
       160,
@@ -110,6 +129,36 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('普通影片库使用前端年份范围，不展示后端统计数量', (WidgetTester tester) async {
+    final currentYear = DateTime.now().year;
+    var filterState = MovieFilterState.initial;
+    MovieFilterState? changedState;
+
+    await tester.pumpWidget(
+      StatefulBuilder(
+        builder: (context, setState) => wrapHeader(
+          filterState: filterState,
+          onChanged: (nextState) {
+            changedState = nextState;
+            setState(() => filterState = nextState);
+          },
+          onReset: () => setState(() => filterState = MovieFilterState.initial),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const Key('movies-filter-trigger')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('$currentYear'), findsOneWidget);
+    expect(find.text('$currentYear(1)'), findsNothing);
+
+    await tester.tap(find.byKey(Key('movie-filter-year-$currentYear')));
+    await tester.pumpAndSettle();
+
+    expect(changedState?.year, currentYear);
+  });
+
   testWidgets('影片筛选面板可选 FC2 番号来源并重置回默认', (WidgetTester tester) async {
     var filterState = MovieFilterState.initial;
     MovieFilterState? changedState;
@@ -121,17 +170,16 @@ void main() {
 
     await tester.pumpWidget(
       StatefulBuilder(
-        builder:
-            (context, setState) => wrapHeader(
-              filterState: filterState,
-              onChanged: (nextState) {
-                changedState = nextState;
-                setState(() => filterState = nextState);
-              },
-              onReset: () {
-                setState(() => filterState = MovieFilterState.initial);
-              },
-            ),
+        builder: (context, setState) => wrapHeader(
+          filterState: filterState,
+          onChanged: (nextState) {
+            changedState = nextState;
+            setState(() => filterState = nextState);
+          },
+          onReset: () {
+            setState(() => filterState = MovieFilterState.initial);
+          },
+        ),
       ),
     );
 

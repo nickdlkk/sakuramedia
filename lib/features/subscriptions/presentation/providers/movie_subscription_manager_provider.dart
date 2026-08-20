@@ -41,13 +41,14 @@ class MovieSubscriptionManager extends _$MovieSubscriptionManager
         PagedAsyncNotifierMixin<
           MovieSubscriptionManagerState,
           MovieSubscriptionListItemDto
+        >,
+        FilterablePagedAsyncNotifierMixin<
+          MovieSubscriptionManagerState,
+          MovieSubscriptionListItemDto,
+          MovieSubscriptionFilterState
         > {
-  /// `fetchPage` 读取的筛选源。
-  ///
-  /// 放 Notifier 字段而不是 `state.value.filter`：`reload` 会先把 state 切成
-  /// `AsyncLoading`（`state.value == null`），此时 fetchPage 若从 state 读会拿到
-  /// null → 退回默认筛选。与 `MediaBrowse` 同一处理。
-  MovieSubscriptionFilterState _activeFilter =
+  @override
+  MovieSubscriptionFilterState get initialFilter =>
       MovieSubscriptionFilterState.initial;
 
   @override
@@ -75,7 +76,7 @@ class MovieSubscriptionManager extends _$MovieSubscriptionManager
     int page,
     int pageSize,
   ) {
-    final filter = _activeFilter;
+    final filter = activeFilter;
     return ref
         .read(movieSubscriptionsApiProvider)
         .getSubscriptions(
@@ -103,7 +104,7 @@ class MovieSubscriptionManager extends _$MovieSubscriptionManager
     final paged = await loadInitialPage();
     return MovieSubscriptionManagerState.initial.copyWith(
       paged: paged,
-      filter: _activeFilter,
+      filter: activeFilter,
     );
   }
 
@@ -111,25 +112,18 @@ class MovieSubscriptionManager extends _$MovieSubscriptionManager
 
   /// 切换状态分段签。
   Future<void> applyStatus(MovieSubscriptionStatus? status) {
-    return applyFilterState(_activeFilter.copyWith(status: status));
+    return applyFilterState(activeFilter.copyWith(status: status));
   }
 
-  /// 应用新筛选状态；未变则短路。变化则退出多选并强制 reload。
-  ///
-  /// 切签 / 改排序后列表内容完全不同，沿用 [reload] 的 `AsyncLoading` 分支展示骨架
-  /// 屏是诚实的——保留旧行再悄悄换掉会让人以为筛选没生效。
-  Future<void> applyFilterState(MovieSubscriptionFilterState next) async {
-    if (_activeFilter == next) return;
-    _activeFilter = next;
-    await reload(
-      updateBaseState:
-          (s) => s.copyWith(
-            filter: next,
-            selectionMode: false,
-            selectedMovieNumbers: const <String>{},
-          ),
-    );
-  }
+  @override
+  MovieSubscriptionManagerState applyFilterToState(
+    MovieSubscriptionManagerState state,
+    MovieSubscriptionFilterState filter,
+  ) => state.copyWith(
+    filter: filter,
+    selectionMode: false,
+    selectedMovieNumbers: const <String>{},
+  );
 
   @override
   Future<String?> refresh() async {
@@ -172,11 +166,10 @@ class MovieSubscriptionManager extends _$MovieSubscriptionManager
   void toggleSelectAllLoaded() {
     final current = state.value;
     if (current == null) return;
-    final loaded =
-        current.paged.items
-            .map((item) => item.movieNumber)
-            .where((number) => number.isNotEmpty)
-            .toSet();
+    final loaded = current.paged.items
+        .map((item) => item.movieNumber)
+        .where((number) => number.isNotEmpty)
+        .toSet();
     final alreadyAll =
         loaded.isNotEmpty &&
         loaded.every(current.selectedMovieNumbers.contains);
@@ -261,11 +254,10 @@ class MovieSubscriptionManager extends _$MovieSubscriptionManager
         ref.read(movieSubscriptionStatusCountsProvider.notifier).refresh(),
       );
       await reload(
-        updateBaseState:
-            (s) => s.copyWith(
-              selectionMode: false,
-              selectedMovieNumbers: const <String>{},
-            ),
+        updateBaseState: (s) => s.copyWith(
+          selectionMode: false,
+          selectedMovieNumbers: const <String>{},
+        ),
       );
       return MovieSubscriptionActionResult.success(response.acceptedCount);
     } catch (error) {
@@ -305,11 +297,10 @@ class MovieSubscriptionManager extends _$MovieSubscriptionManager
     } catch (error) {
       return MovieSubscriptionActionResult.failure(_resetErrorMessage(error));
     }
-    final acceptedNumbers =
-        result.acceptedResourceIds
-            .map((id) => numberById[id])
-            .whereType<String>()
-            .toSet();
+    final acceptedNumbers = result.acceptedResourceIds
+        .map((id) => numberById[id])
+        .whereType<String>()
+        .toSet();
     if (acceptedNumbers.isNotEmpty) {
       _applySearchReset(acceptedNumbers);
     }
@@ -393,8 +384,9 @@ class MovieSubscriptionManager extends _$MovieSubscriptionManager
         MovieSubscriptionSkipReason.hasMedia,
       );
       final skipped = <String>{...skippedNotFound, ...skippedHasMedia};
-      final accepted =
-          targets.where((number) => !skipped.contains(number)).toList();
+      final accepted = targets
+          .where((number) => !skipped.contains(number))
+          .toList();
 
       _removeRows(accepted.toSet(), keepSelected: skipped);
       if (accepted.isNotEmpty) {

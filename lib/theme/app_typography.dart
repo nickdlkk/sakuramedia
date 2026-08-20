@@ -20,6 +20,17 @@ enum AppTextTone {
   success,
 }
 
+/// 代码 / JSON 编辑区的等宽字体回退链。
+///
+/// 桌面端优先系统等宽字体（Menlo / Monaco / Consolas），末位 `monospace`
+/// 交给平台通用等宽字体兜底。页面不得散落自己的 fontFamily 裸值。
+const List<String> kAppMonospaceFontFallback = <String>[
+  'Menlo',
+  'Monaco',
+  'Consolas',
+  'monospace',
+];
+
 @immutable
 class AppTextScale extends ThemeExtension<AppTextScale> {
   const AppTextScale({

@@ -6,7 +6,7 @@ import 'package:sakuramedia/features/configuration/presentation/pages/desktop/do
 import 'package:sakuramedia/features/configuration/presentation/pages/desktop/indexer_settings_section.dart';
 import 'package:sakuramedia/features/configuration/presentation/pages/desktop/media_libraries_section.dart';
 import 'package:sakuramedia/features/configuration/presentation/pages/desktop/playlists_section.dart';
-import 'package:sakuramedia/features/configuration/presentation/pages/llm_settings_page.dart';
+import 'package:sakuramedia/features/plugins/presentation/pages/desktop/plugins_section.dart';
 import 'package:sakuramedia/theme.dart';
 import 'package:sakuramedia/widgets/base/feedback/app_confirm_dialog.dart';
 import 'package:sakuramedia/widgets/base/layout/cards/app_settings_rail.dart';
@@ -20,62 +20,98 @@ class DesktopConfigurationPage extends StatefulWidget {
 }
 
 class _DesktopConfigurationPageState extends State<DesktopConfigurationPage> {
-  static const int _defaultSelectedIndex = 1;
-  static const int _advancedSettingsIndex = 7;
+  static const Key _defaultCategoryKey = Key(
+    'configuration-tab-media-libraries',
+  );
+  static const Key _advancedCategoryKey = Key('configuration-tab-advanced');
 
-  int _selectedIndex = _defaultSelectedIndex;
+  late final List<_ConfigurationTab> _tabs = _buildTabs();
+  late int _selectedIndex = _tabs.indexWhere(
+    (tab) => tab.category.itemKey == _defaultCategoryKey,
+  );
   bool _advancedSettingsDirty = false;
 
   // 顺序即右侧 IndexedStack 的索引；itemKey 沿用原 tab key，保持深链/测试兼容。
-  static const List<_ConfigurationCategory> _categories = [
-    _ConfigurationCategory(
-      itemKey: Key('configuration-tab-account-security'),
-      label: '账号安全',
-      icon: Icons.shield_outlined,
-    ),
-    _ConfigurationCategory(
-      itemKey: Key('configuration-tab-media-libraries'),
-      label: '媒体库',
-      icon: Icons.folder_open_outlined,
-    ),
-    _ConfigurationCategory(
-      itemKey: Key('configuration-tab-downloads'),
-      label: '下载器',
-      icon: Icons.download_outlined,
-    ),
-    _ConfigurationCategory(
-      itemKey: Key('configuration-tab-indexers'),
-      label: '索引器',
-      icon: Icons.travel_explore_outlined,
-    ),
-    _ConfigurationCategory(
-      itemKey: Key('configuration-tab-download-preference'),
-      label: '下载偏好',
-      icon: Icons.low_priority_outlined,
-    ),
-    _ConfigurationCategory(
-      itemKey: Key('configuration-tab-llm'),
-      label: 'LLM 配置',
-      icon: Icons.auto_awesome_outlined,
-    ),
-    _ConfigurationCategory(
-      itemKey: Key('configuration-tab-playlists'),
-      label: '播放列表',
-      icon: Icons.playlist_play_outlined,
-    ),
-    _ConfigurationCategory(
-      itemKey: Key('configuration-tab-advanced'),
-      label: '高级设置',
-      icon: Icons.tune_outlined,
-    ),
-    // 媒体维护 / 媒体管理已迁出：并入侧边栏「管理 > 媒体管理」独立页（三 tab）。
-  ];
+  List<_ConfigurationTab> _buildTabs() {
+    return [
+      _ConfigurationTab(
+        category: const _ConfigurationCategory(
+          itemKey: Key('configuration-tab-account-security'),
+          label: '账号安全',
+          icon: Icons.shield_outlined,
+        ),
+        builder: (_) => const AccountSecuritySection(),
+      ),
+      _ConfigurationTab(
+        category: const _ConfigurationCategory(
+          itemKey: _defaultCategoryKey,
+          label: '媒体库',
+          icon: Icons.folder_open_outlined,
+        ),
+        builder: (active) => MediaLibrariesSection(active: active),
+      ),
+      _ConfigurationTab(
+        category: const _ConfigurationCategory(
+          itemKey: Key('configuration-tab-downloads'),
+          label: '下载器',
+          icon: Icons.download_outlined,
+        ),
+        builder: (active) => DownloadClientsSection(active: active),
+      ),
+      _ConfigurationTab(
+        category: const _ConfigurationCategory(
+          itemKey: Key('configuration-tab-indexers'),
+          label: '索引器',
+          icon: Icons.travel_explore_outlined,
+        ),
+        builder: (active) => IndexerSettingsSection(active: active),
+      ),
+      _ConfigurationTab(
+        category: const _ConfigurationCategory(
+          itemKey: Key('configuration-tab-download-preference'),
+          label: '下载偏好',
+          icon: Icons.low_priority_outlined,
+        ),
+        builder: (active) => DesktopDownloadPreferenceSection(active: active),
+      ),
+      _ConfigurationTab(
+        category: const _ConfigurationCategory(
+          itemKey: Key('configuration-tab-playlists'),
+          label: '播放列表',
+          icon: Icons.playlist_play_outlined,
+        ),
+        builder: (active) => PlaylistsSection(active: active),
+      ),
+      _ConfigurationTab(
+        category: const _ConfigurationCategory(
+          itemKey: _advancedCategoryKey,
+          label: '高级设置',
+          icon: Icons.tune_outlined,
+        ),
+        builder: (active) => DesktopAdvancedSettingsSection(
+          active: active,
+          onDirtyChanged: _handleAdvancedDirtyChanged,
+        ),
+      ),
+      _ConfigurationTab(
+        category: const _ConfigurationCategory(
+          itemKey: Key('configuration-tab-plugins'),
+          label: '插件',
+          icon: Icons.extension_outlined,
+        ),
+        builder: (active) => DesktopPluginsSection(active: active),
+      ),
+      // 媒体维护 / 媒体管理已迁出：并入侧边栏「管理 > 媒体管理」独立页（三 tab）。
+    ];
+  }
 
   Future<void> _select(int index) async {
     if (_selectedIndex == index) {
       return;
     }
-    if (_selectedIndex == _advancedSettingsIndex && _advancedSettingsDirty) {
+    final leavingAdvanced =
+        _tabs[_selectedIndex].category.itemKey == _advancedCategoryKey;
+    if (leavingAdvanced && _advancedSettingsDirty) {
       final confirmed = await showAppConfirmDialog(
         context,
         title: '有未保存的改动',
@@ -114,11 +150,11 @@ class _DesktopConfigurationPageState extends State<DesktopConfigurationPage> {
           selectedIndex: _selectedIndex,
           onSelected: _select,
           items: [
-            for (final category in _categories)
+            for (final tab in _tabs)
               AppSettingsRailItem(
-                itemKey: category.itemKey,
-                label: category.label,
-                icon: category.icon,
+                itemKey: tab.category.itemKey,
+                label: tab.category.label,
+                icon: tab.category.icon,
               ),
           ],
         ),
@@ -130,7 +166,7 @@ class _DesktopConfigurationPageState extends State<DesktopConfigurationPage> {
               Padding(
                 padding: EdgeInsets.only(bottom: spacing.lg),
                 child: Text(
-                  _categories[_selectedIndex].label,
+                  _tabs[_selectedIndex].category.label,
                   style: resolveAppTextStyle(
                     context,
                     size: AppTextSize.s20,
@@ -144,37 +180,10 @@ class _DesktopConfigurationPageState extends State<DesktopConfigurationPage> {
                   index: _selectedIndex,
                   sizing: StackFit.expand,
                   children: [
-                    const _ConfigurationTabScrollView(
-                      child: AccountSecuritySection(),
-                    ),
-                    _ConfigurationTabScrollView(
-                      child: MediaLibrariesSection(active: _selectedIndex == 1),
-                    ),
-                    _ConfigurationTabScrollView(
-                      child: DownloadClientsSection(
-                        active: _selectedIndex == 2,
+                    for (var i = 0; i < _tabs.length; i++)
+                      _ConfigurationTabScrollView(
+                        child: _tabs[i].builder(i == _selectedIndex),
                       ),
-                    ),
-                    _ConfigurationTabScrollView(
-                      child: IndexerSettingsSection(
-                        active: _selectedIndex == 3,
-                      ),
-                    ),
-                    _ConfigurationTabScrollView(
-                      child: DesktopDownloadPreferenceSection(
-                        active: _selectedIndex == 4,
-                      ),
-                    ),
-                    LlmSettingsPage(active: _selectedIndex == 5),
-                    _ConfigurationTabScrollView(
-                      child: PlaylistsSection(active: _selectedIndex == 6),
-                    ),
-                    _ConfigurationTabScrollView(
-                      child: DesktopAdvancedSettingsSection(
-                        active: _selectedIndex == _advancedSettingsIndex,
-                        onDirtyChanged: _handleAdvancedDirtyChanged,
-                      ),
-                    ),
                   ],
                 ),
               ),
@@ -184,6 +193,17 @@ class _DesktopConfigurationPageState extends State<DesktopConfigurationPage> {
       ],
     );
   }
+}
+
+/// 系统设置单个分类页：分类描述 + 内容构建器。
+class _ConfigurationTab {
+  const _ConfigurationTab({
+    required this.category,
+    required this.builder,
+  });
+
+  final _ConfigurationCategory category;
+  final Widget Function(bool active) builder;
 }
 
 /// 系统设置左侧分类项描述。

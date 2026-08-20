@@ -9,8 +9,10 @@ import 'package:sakuramedia/features/movies/presentation/controllers/listing/mov
 import 'package:sakuramedia/features/movies/presentation/providers/movie_summary_provider.dart';
 import 'package:sakuramedia/features/movies/presentation/providers/movie_summary_scope.dart';
 import 'package:sakuramedia/features/movies/presentation/providers/mutation_events_provider.dart';
+import 'package:sakuramedia/features/shared/presentation/providers/paged_async_notifier.dart';
 import 'package:sakuramedia/features/subscriptions/presentation/subscription_feedback.dart';
 import 'package:sakuramedia/theme.dart';
+import 'package:sakuramedia/widgets/base/feedback/app_filter_update_bar.dart';
 import 'package:sakuramedia/widgets/base/interaction/refresh/app_page_refresh_scope.dart';
 import 'package:sakuramedia/widgets/base/interaction/selection/multi_select_state_mixin.dart';
 import 'package:sakuramedia/widgets/base/layout/scrolling/app_paged_load_more_footer.dart';
@@ -96,10 +98,9 @@ class _MovieSummaryListContentState
   String get batchKeyPrefix => 'movie-list';
 
   @override
-  MovieBatchToggleExecutor get batchSubscriptionExecutor =>
-      ref
-          .read(movieSummaryProvider(widget.scope).notifier)
-          .batchToggleSubscription;
+  MovieBatchToggleExecutor get batchSubscriptionExecutor => ref
+      .read(movieSummaryProvider(widget.scope).notifier)
+      .batchToggleSubscription;
 
   @override
   List<String> get batchSelectableNumbers =>
@@ -173,8 +174,9 @@ class _MovieSummaryListContentState
   }
 
   Future<void> _handleRefresh() async {
-    final error =
-        await ref.read(movieSummaryProvider(widget.scope).notifier).refresh();
+    final error = await ref
+        .read(movieSummaryProvider(widget.scope).notifier)
+        .refresh();
     if (error == null || !mounted) {
       return;
     }
@@ -194,10 +196,9 @@ class _MovieSummaryListContentState
     final filter = summary?.filter.movie ?? MovieFilterState.initial;
     final items = paged?.items ?? const [];
     final isInitialLoading = moviesAsync.isLoading && summary == null;
-    final initialErrorMessage =
-        moviesAsync.hasError && summary == null
-            ? widget.scope.initialLoadErrorText
-            : null;
+    final initialErrorMessage = moviesAsync.hasError && summary == null
+        ? widget.scope.initialLoadErrorText
+        : null;
     final showFooter =
         items.isNotEmpty &&
         (paged!.isLoadingMore || paged.loadMoreErrorMessage != null);
@@ -217,10 +218,9 @@ class _MovieSummaryListContentState
     final headerBuilder = widget.headerBuilder;
     final Widget header;
     if (selectionMode) {
-      header =
-          widget.useMobileSelectionLayout
-              ? buildMobileBatchSelectionHeader()
-              : buildBatchSelectionToolbar();
+      header = widget.useMobileSelectionLayout
+          ? buildMobileBatchSelectionHeader()
+          : buildBatchSelectionToolbar();
     } else if (headerBuilder != null) {
       header = headerBuilder(
         context,
@@ -235,11 +235,10 @@ class _MovieSummaryListContentState
         filterButtonKey: const Key('movies-filter-trigger'),
         filterLabel: filter.triggerLabel,
         filterPanelKey: const Key('movies-filter-panel'),
-        filterPanelBuilder:
-            (_) => MovieFilterSectionGroup(
-              filterState: filter,
-              onChanged: _applyFilter,
-            ),
+        filterPanelBuilder: (_) => MovieFilterSectionGroup(
+          filterState: filter,
+          onChanged: _applyFilter,
+        ),
         filterPanelFooter: AppFilterPanelFooter(
           isDefault: filter.isDefault,
           onReset: _resetFilters,
@@ -265,46 +264,57 @@ class _MovieSummaryListContentState
               child: Column(
                 key: widget.contentKey,
                 crossAxisAlignment: CrossAxisAlignment.start,
-                children: [header, SizedBox(height: widget.sectionSpacing)],
+                children: [
+                  header,
+                  AppFilterUpdateBar(
+                    state:
+                        paged?.filterUpdate ?? const FilterUpdateState.idle(),
+                    hasPreviousItems: items.isNotEmpty,
+                    onRetry: () => unawaited(
+                      ref
+                          .read(movieSummaryProvider(widget.scope).notifier)
+                          .retryFilter(),
+                    ),
+                  ),
+                  SizedBox(height: widget.sectionSpacing),
+                ],
               ),
             ),
-            MovieSummarySliver(
-              items: items,
-              isLoading: isInitialLoading,
-              errorMessage: initialErrorMessage,
-              onMovieTap:
-                  (movie) => widget.onMovieTap(context, movie.movieNumber),
-              onMovieMenuRequest: (movie, globalPosition) {
-                unawaited(
-                  showMovieCollectionFeatureActionMenu(
-                    context: context,
-                    movieNumber: movie.movieNumber,
-                    globalPosition: globalPosition,
-                    isSubscribed: movie.isSubscribed,
-                    onEnterSelection:
-                        widget.useMobileSelectionLayout
-                            ? () {
+            if (!(paged?.filterUpdate.hasFailed ?? false) || items.isNotEmpty)
+              MovieSummarySliver(
+                items: items,
+                isLoading: isInitialLoading,
+                errorMessage: initialErrorMessage,
+                onMovieTap: (movie) =>
+                    widget.onMovieTap(context, movie.movieNumber),
+                onMovieMenuRequest: (movie, globalPosition) {
+                  unawaited(
+                    showMovieCollectionFeatureActionMenu(
+                      context: context,
+                      movieNumber: movie.movieNumber,
+                      globalPosition: globalPosition,
+                      isSubscribed: movie.isSubscribed,
+                      onEnterSelection: widget.useMobileSelectionLayout
+                          ? () {
                               enterSelection();
                               toggleSelect(movie.movieNumber);
                             }
-                            : null,
-                  ),
-                );
-              },
-              onMovieSubscriptionTap:
-                  (movie) => _toggleMovieSubscription(movie.movieNumber),
-              isMovieSubscriptionUpdating:
-                  (movie) =>
-                      summary?.isSubscriptionUpdating(movie.movieNumber) ??
-                      false,
-              emptyMessage:
-                  widget.emptyMessage ??
-                  (filter.isDefault ? '暂无影片，去搜索看看吧' : '当前筛选条件下暂无匹配影片'),
-              selectionMode: selectionMode,
-              isMovieSelected: (movie) => isSelected(movie.movieNumber),
-              onMovieSelectedChanged:
-                  (movie, _) => toggleSelect(movie.movieNumber),
-            ),
+                          : null,
+                    ),
+                  );
+                },
+                onMovieSubscriptionTap: (movie) =>
+                    _toggleMovieSubscription(movie.movieNumber),
+                isMovieSubscriptionUpdating: (movie) =>
+                    summary?.isSubscriptionUpdating(movie.movieNumber) ?? false,
+                emptyMessage:
+                    widget.emptyMessage ??
+                    (filter.isDefault ? '暂无影片，去搜索看看吧' : '当前筛选条件下暂无匹配影片'),
+                selectionMode: selectionMode,
+                isMovieSelected: (movie) => isSelected(movie.movieNumber),
+                onMovieSelectedChanged: (movie, _) =>
+                    toggleSelect(movie.movieNumber),
+              ),
             if (showFooter)
               SliverToBoxAdapter(
                 child: Padding(
@@ -312,13 +322,9 @@ class _MovieSummaryListContentState
                   child: AppPagedLoadMoreFooter(
                     isLoading: paged.isLoadingMore,
                     errorMessage: paged.loadMoreErrorMessage,
-                    onRetry:
-                        () =>
-                            ref
-                                .read(
-                                  movieSummaryProvider(widget.scope).notifier,
-                                )
-                                .loadMore(),
+                    onRetry: () => ref
+                        .read(movieSummaryProvider(widget.scope).notifier)
+                        .loadMore(),
                   ),
                 ),
               ),
@@ -328,15 +334,14 @@ class _MovieSummaryListContentState
       ),
     );
 
-    final content =
-        widget.useMobileSelectionLayout
-            ? Column(
-              children: [
-                Expanded(child: body),
-                if (selectionMode) buildMobileBatchSelectionBottomBar(),
-              ],
-            )
-            : body;
+    final content = widget.useMobileSelectionLayout
+        ? Column(
+            children: [
+              Expanded(child: body),
+              if (selectionMode) buildMobileBatchSelectionBottomBar(),
+            ],
+          )
+        : body;
     return widget.registerPageRefresh
         ? AppPageRefreshScope(onRefresh: _handleRefresh, child: content)
         : content;

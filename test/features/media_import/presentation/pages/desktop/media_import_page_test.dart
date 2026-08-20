@@ -58,6 +58,75 @@ void main() {
     expect(find.text('导入 5'), findsOneWidget);
   });
 
+  testWidgets('JAV 字幕标签只提交 source_path 创建导入任务', (tester) async {
+    _setDesktopViewport(tester);
+    final sessionStore = await _createSessionStore();
+    final bundle = await createTestApiBundle(sessionStore);
+    addTearDown(bundle.dispose);
+    addTearDown(sessionStore.dispose);
+
+    _enqueueJobsPage(bundle, jobs: const <Map<String, dynamic>>[], total: 0);
+    _enqueueVideoJobsPage(bundle);
+    _enqueueSubtitleJobsPage(
+      bundle,
+      jobs: <Map<String, dynamic>>[
+        _subtitleJobJson(id: 31, taskRunId: 91, state: 'completed'),
+      ],
+      total: 1,
+    );
+    _enqueueBootstrapAndStream(bundle);
+
+    await _pumpPage(tester, bundle: bundle);
+
+    await tester.tap(find.byKey(const Key('media-import-tab-jav-subtitle')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('JAV 字幕导入'), findsOneWidget);
+    expect(find.byKey(const Key('media-import-job-path-31')), findsOneWidget);
+
+    bundle.adapter.enqueueJson(
+      method: 'GET',
+      path: '/filesystem/entries',
+      body: <String, dynamic>{
+        'path': '/mnt/incoming/subtitles',
+        'parent': '/mnt/incoming',
+        'entries': <Map<String, dynamic>>[],
+      },
+    );
+    await tester.tap(find.byKey(const Key('media-import-create-button')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const Key('subtitle-import-directory-picker-modal')),
+      findsOneWidget,
+    );
+    expect(find.textContaining('仅支持 .srt'), findsOneWidget);
+
+    bundle.adapter.enqueueJson(
+      method: 'POST',
+      path: '/subtitle-imports',
+      statusCode: 202,
+      body: <String, dynamic>{
+        'subtitle_import_job_id': 32,
+        'task_run_id': 92,
+        'status': 'accepted',
+      },
+    );
+    await tester.tap(
+      find.byKey(const Key('subtitle-import-picker-submit-button')),
+    );
+    await tester.pumpAndSettle();
+
+    final request = bundle.adapter.requests.lastWhere(
+      (request) =>
+          request.method == 'POST' && request.path == '/subtitle-imports',
+    );
+    expect(request.body, <String, dynamic>{
+      'source_path': '/mnt/incoming/subtitles',
+    });
+    await _drainToast(tester);
+  });
+
   testWidgets('virtualizes accumulated import jobs', (tester) async {
     _setDesktopViewport(tester, size: const Size(1200, 700));
     final sessionStore = await _createSessionStore();
@@ -89,13 +158,12 @@ void main() {
     await tester.scrollUntilVisible(
       find.byKey(const Key('media-import-job-path-80')),
       900,
-      scrollable:
-          find
-              .descendant(
-                of: find.byKey(const Key('media-import-page')),
-                matching: find.byType(Scrollable),
-              )
-              .first,
+      scrollable: find
+          .descendant(
+            of: find.byKey(const Key('media-import-page')),
+            matching: find.byType(Scrollable),
+          )
+          .first,
     );
     await tester.pumpAndSettle();
 
@@ -120,9 +188,10 @@ void main() {
       total: 1,
     );
     _enqueueVideoJobsPage(bundle);
-    // 两个 controller 各连一路 SSE；两路都带同一条 JAV task_run 事件，
-    // 保证无论 FIFO 出队顺序如何，JAV controller 都能拿到事件流（task_key 不匹配的 PornBox 流会忽略它）。
-    for (var i = 0; i < 2; i++) {
+    _enqueueSubtitleJobsPage(bundle);
+    // 三个 controller 各连一路 SSE；三路都带同一条 JAV task_run 事件，
+    // 保证无论 FIFO 出队顺序如何，JAV controller 都能拿到事件流（其它 task_key 会忽略它）。
+    for (var i = 0; i < 3; i++) {
       bundle.adapter.enqueueJson(
         method: 'GET',
         path: '/system/activity/bootstrap',
@@ -595,10 +664,11 @@ void _enqueueJobsPage(
   );
 }
 
-/// 媒体导入页同时持有 JAV 与 PornBox 两个 controller，各自连一次 bootstrap + SSE。
-/// 两路响应内容一致（FIFO 按 path 出队），因此每个共享端点入队两次。
+/// 资源导入页同时持有 JAV、PornBox 与字幕三个 controller，各自连一次 bootstrap + SSE。
+/// 三路响应内容一致（FIFO 按 path 出队），因此每个共享端点入队三次。
 void _enqueueBootstrapAndStream(TestApiBundle bundle) {
-  for (var i = 0; i < 2; i++) {
+  _enqueueSubtitleJobsPage(bundle);
+  for (var i = 0; i < 3; i++) {
     bundle.adapter.enqueueJson(
       method: 'GET',
       path: '/system/activity/bootstrap',
@@ -614,6 +684,24 @@ void _enqueueBootstrapAndStream(TestApiBundle bundle) {
       ],
     );
   }
+}
+
+/// JAV 字幕标签作业列表（`/subtitle-imports`）；影片聚焦用例下默认空列表即可。
+void _enqueueSubtitleJobsPage(
+  TestApiBundle bundle, {
+  List<Map<String, dynamic>> jobs = const <Map<String, dynamic>>[],
+  int total = 0,
+}) {
+  bundle.adapter.enqueueJson(
+    method: 'GET',
+    path: '/subtitle-imports',
+    body: <String, dynamic>{
+      'items': jobs,
+      'page': 1,
+      'page_size': 20,
+      'total': total,
+    },
+  );
 }
 
 /// PornBox 标签作业列表（`/video-imports`）；JAV 聚焦用例下默认空列表即可。
@@ -674,6 +762,31 @@ Map<String, dynamic> _jobJson({
     'task_run_id': taskRunId,
     'state': state,
     'transfer_mode': transferMode,
+    'imported_count': imported,
+    'skipped_count': skipped,
+    'failed_count': failed,
+    'created_at': '2026-06-07 10:00:00',
+    'updated_at': '2026-06-07 10:05:00',
+    if (failedFiles != null) 'failed_files': failedFiles,
+  };
+}
+
+Map<String, dynamic> _subtitleJobJson({
+  required int id,
+  required int taskRunId,
+  required String state,
+  int imported = 0,
+  int skipped = 0,
+  int failed = 0,
+  String sourcePath = '/mnt/incoming/subtitles',
+  List<Map<String, dynamic>>? failedFiles,
+}) {
+  return <String, dynamic>{
+    'id': id,
+    'source_path': sourcePath,
+    'task_run_id': taskRunId,
+    'state': state,
+    'transfer_mode': 'auto',
     'imported_count': imported,
     'skipped_count': skipped,
     'failed_count': failed,

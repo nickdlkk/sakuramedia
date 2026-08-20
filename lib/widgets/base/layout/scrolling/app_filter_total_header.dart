@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:sakuramedia/features/shared/presentation/providers/paged_async_notifier.dart';
 import 'package:sakuramedia/theme.dart';
+import 'package:sakuramedia/widgets/base/feedback/app_filter_update_bar.dart';
 
 /// 「左侧筛选/标题 + 右侧总数(+尾随操作)」的列表顶栏。
 ///
@@ -16,6 +18,9 @@ class AppFilterTotalHeader extends StatelessWidget {
     required this.totalText,
     this.totalKey,
     this.trailing,
+    this.filterUpdate = const FilterUpdateState.idle(),
+    this.hasPreviousFilterItems = true,
+    this.onRetryFilter,
   });
 
   final Widget leading;
@@ -24,6 +29,9 @@ class AppFilterTotalHeader extends StatelessWidget {
 
   /// 「N 个」总数右侧的尾随内容（同一行），可选。
   final Widget? trailing;
+  final FilterUpdateState filterUpdate;
+  final bool hasPreviousFilterItems;
+  final VoidCallback? onRetryFilter;
 
   @override
   Widget build(BuildContext context) {
@@ -59,9 +67,23 @@ class AppFilterTotalHeader extends StatelessWidget {
       ],
     );
 
-    return Padding(
-      padding: EdgeInsets.only(top: spacing.xs),
-      child: SizedBox(height: componentTokens.mobileTopTabHeight, child: row),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: EdgeInsets.only(top: spacing.xs),
+          child: SizedBox(
+            height: componentTokens.mobileTopTabHeight,
+            child: row,
+          ),
+        ),
+        AppFilterUpdateBar(
+          state: filterUpdate,
+          hasPreviousItems: hasPreviousFilterItems,
+          onRetry: onRetryFilter,
+        ),
+      ],
     );
   }
 }

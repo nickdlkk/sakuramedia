@@ -18,7 +18,7 @@ void main() {
         path: '/download-candidates',
         body: [
           {
-            'source': 'jackett',
+            'source': 'torznab',
             'indexer_name': 'mteam',
             'indexer_kind': 'pt',
             'resolved_client_id': 2,
@@ -113,7 +113,7 @@ void main() {
           movieNumber: 'ABC-001',
           clientId: 2,
           candidate: const DownloadCandidateDto(
-            source: 'jackett',
+            source: 'torznab',
             indexerName: 'mteam',
             indexerKind: 'pt',
             resolvedClientId: 2,
@@ -134,7 +134,7 @@ void main() {
           'client_id': 2,
           'movie_number': 'ABC-001',
           'candidate': {
-            'source': 'jackett',
+            'source': 'torznab',
             'indexer_name': 'mteam',
             'indexer_kind': 'pt',
             'title': 'ABC-001 4K 中文字幕',
@@ -239,7 +239,7 @@ void main() {
 
         await bundle.downloadsApi.getDownloadTasks(
           movieNumber: 'SSIS-001',
-          downloadState: 'paused',
+          downloadStates: ['paused'],
           clientId: 3,
           sort: 'created_at:desc',
         );
@@ -248,6 +248,36 @@ void main() {
         expect(request.uri.queryParameters['movie_number'], 'SSIS-001');
         expect(request.uri.queryParameters['download_state'], 'paused');
         expect(request.uri.queryParameters['client_id'], '3');
+      },
+    );
+
+    test(
+      'getDownloadTasks sends multiple download_state as repeated params',
+      () async {
+        final sessionStore = await _buildLoggedInSessionStore();
+        final bundle = await createTestApiBundle(sessionStore);
+        addTearDown(bundle.dispose);
+
+        bundle.adapter.enqueueJson(
+          method: 'GET',
+          path: '/download-tasks',
+          body: {
+            'items': const <Map<String, dynamic>>[],
+            'page': 1,
+            'page_size': 20,
+            'total': 0,
+          },
+        );
+
+        await bundle.downloadsApi.getDownloadTasks(
+          downloadStates: ['downloading', 'stalled'],
+        );
+
+        final request = bundle.adapter.requests.single;
+        expect(request.uri.queryParametersAll['download_state'], [
+          'downloading',
+          'stalled',
+        ]);
       },
     );
 
@@ -434,7 +464,7 @@ void main() {
             movieNumber: 'ABC-001',
             clientId: 2,
             candidate: const DownloadCandidateDto(
-              source: 'jackett',
+              source: 'torznab',
               indexerName: 'mteam',
               indexerKind: 'pt',
               resolvedClientId: 2,
@@ -458,6 +488,45 @@ void main() {
         );
       },
     );
+
+    test('getTaskFiles parses qb/115 unified file list', () async {
+      final sessionStore = await _buildLoggedInSessionStore();
+      final bundle = await createTestApiBundle(sessionStore);
+      addTearDown(bundle.dispose);
+
+      bundle.adapter.enqueueJson(
+        method: 'GET',
+        path: '/download-tasks/516/files',
+        body: <String, dynamic>{
+          'task_id': 516,
+          'client_kind': 'qbittorrent',
+          'files': <Map<String, dynamic>>[
+            <String, dynamic>{
+              'name': 'IPX-451.iso',
+              'size': 32788611072,
+              'is_dir': false,
+            },
+            <String, dynamic>{
+              'name': 'cover.jpg',
+              'size': 2048,
+              'is_dir': false,
+            },
+          ],
+        },
+      );
+
+      final response = await bundle.downloadsApi.getTaskFiles(516);
+
+      final request = bundle.adapter.requests.single;
+      expect(request.path, '/download-tasks/516/files');
+      expect(response.taskId, 516);
+      expect(response.clientKind, 'qbittorrent');
+      expect(response.files, hasLength(2));
+      expect(response.files.first.name, 'IPX-451.iso');
+      expect(response.files.first.size, 32788611072);
+      expect(response.files.first.isDir, isFalse);
+      expect(response.files.first.path, isNull);
+    });
   });
 }
 

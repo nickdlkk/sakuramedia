@@ -1,7 +1,124 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:sakuramedia/core/network/api_error_message.dart';
 import 'package:sakuramedia/core/network/paginated_response_dto.dart';
+
+enum FilterUpdatePhase { idle, loading, failed }
+
+/// 服务端筛选结果与当前 UI 筛选条件之间的同步状态。
+///
+/// 筛选条件始终先写入业务 State；[loading] / [failed] 期间分页条目仍是上一次
+/// 成功结果，页面应保留列表并给出轻量进度或重试反馈。
+@immutable
+class FilterUpdateState {
+  const FilterUpdateState._(this.phase, this.errorMessage);
+
+  const FilterUpdateState.idle() : this._(FilterUpdatePhase.idle, null);
+
+  const FilterUpdateState.loading() : this._(FilterUpdatePhase.loading, null);
+
+  const FilterUpdateState.failed(String message)
+    : this._(FilterUpdatePhase.failed, message);
+
+  final FilterUpdatePhase phase;
+  final String? errorMessage;
+
+  bool get isIdle => phase == FilterUpdatePhase.idle;
+  bool get isLoading => phase == FilterUpdatePhase.loading;
+  bool get hasFailed => phase == FilterUpdatePhase.failed;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is FilterUpdateState &&
+          other.phase == phase &&
+          other.errorMessage == errorMessage;
+
+  @override
+  int get hashCode => Object.hash(phase, errorMessage);
+}
+
+/// 尾随防抖 + latest-wins 的异步请求协调器。
+///
+/// 已经发出的请求不会被强制取消，但新的 [schedule] / [runNow] 会立即使旧请求
+/// 的 request id 失效；调用方在写 State 前用 [isCurrent] 判定即可。
+class DebouncedLatestRequest {
+  DebouncedLatestRequest({this.delay = const Duration(milliseconds: 250)});
+
+  final Duration delay;
+
+  Timer? _timer;
+  Completer<void>? _pendingCompleter;
+  int _generation = 0;
+  bool _disposed = false;
+
+  bool isCurrent(int requestId) => !_disposed && requestId == _generation;
+
+  Future<void> schedule(Future<void> Function(int requestId) action) {
+    final requestId = _beginRequest();
+    final completer = Completer<void>();
+    _pendingCompleter = completer;
+    _timer = Timer(delay, () {
+      _timer = null;
+      unawaited(_runAction(requestId, action, completer));
+    });
+    return completer.future;
+  }
+
+  Future<void> runNow(Future<void> Function(int requestId) action) {
+    final requestId = _beginRequest();
+    final completer = Completer<void>();
+    _pendingCompleter = completer;
+    unawaited(_runAction(requestId, action, completer));
+    return completer.future;
+  }
+
+  int _beginRequest() {
+    _timer?.cancel();
+    _timer = null;
+    _completePending();
+    return ++_generation;
+  }
+
+  Future<void> _runAction(
+    int requestId,
+    Future<void> Function(int requestId) action,
+    Completer<void> completer,
+  ) async {
+    try {
+      await action(requestId);
+    } catch (_) {
+      // Provider 把错误转换为可观察 State；筛选入口通常由 UI fire-and-forget
+      // 调用，因此协调器不把异常重新抛回事件循环。
+    } finally {
+      if (identical(_pendingCompleter, completer)) {
+        _pendingCompleter = null;
+      }
+      if (!completer.isCompleted) completer.complete();
+    }
+  }
+
+  void cancel() {
+    _generation++;
+    _timer?.cancel();
+    _timer = null;
+    _completePending();
+  }
+
+  void dispose() {
+    if (_disposed) return;
+    _disposed = true;
+    cancel();
+  }
+
+  void _completePending() {
+    final completer = _pendingCompleter;
+    _pendingCompleter = null;
+    if (completer != null && !completer.isCompleted) completer.complete();
+  }
+}
 
 /// 分页列表状态的通用值对象：
 /// - [items]：已加载的条目（累加）。
@@ -11,6 +128,7 @@ import 'package:sakuramedia/core/network/paginated_response_dto.dart';
 /// - [syncedAt]：整批数据的抓取时间（本地时区）；跟随最近一次成功响应更新。
 /// - [isLoadingMore] / [loadMoreErrorMessage]：仅描述「下一页」加载态；
 ///   首次加载的 loading/error 由外层 [AsyncValue] 表达（[AsyncLoading]/[AsyncError]）。
+/// - [filterUpdate]：当前筛选条件是否仍在等待服务端结果。
 ///
 /// 可空字段 [syncedAt] / [loadMoreErrorMessage] 的 [copyWith] 使用哨兵：
 /// 省略参数 = 保持原值；显式传 `null` = 置空。
@@ -24,6 +142,7 @@ class PagedListState<T> {
     this.syncedAt,
     this.isLoadingMore = false,
     this.loadMoreErrorMessage,
+    this.filterUpdate = const FilterUpdateState.idle(),
   });
 
   final List<T> items;
@@ -33,6 +152,7 @@ class PagedListState<T> {
   final DateTime? syncedAt;
   final bool isLoadingMore;
   final String? loadMoreErrorMessage;
+  final FilterUpdateState filterUpdate;
 
   bool get isEmpty => items.isEmpty;
   bool get isNotEmpty => items.isNotEmpty;
@@ -56,21 +176,21 @@ class PagedListState<T> {
     Object? syncedAt = _kSentinel,
     bool? isLoadingMore,
     Object? loadMoreErrorMessage = _kSentinel,
+    FilterUpdateState? filterUpdate,
   }) {
     return PagedListState<T>(
       items: items ?? this.items,
       currentPage: currentPage ?? this.currentPage,
       total: total ?? this.total,
       hasMore: hasMore ?? this.hasMore,
-      syncedAt:
-          identical(syncedAt, _kSentinel)
-              ? this.syncedAt
-              : syncedAt as DateTime?,
+      syncedAt: identical(syncedAt, _kSentinel)
+          ? this.syncedAt
+          : syncedAt as DateTime?,
       isLoadingMore: isLoadingMore ?? this.isLoadingMore,
-      loadMoreErrorMessage:
-          identical(loadMoreErrorMessage, _kSentinel)
-              ? this.loadMoreErrorMessage
-              : loadMoreErrorMessage as String?,
+      loadMoreErrorMessage: identical(loadMoreErrorMessage, _kSentinel)
+          ? this.loadMoreErrorMessage
+          : loadMoreErrorMessage as String?,
+      filterUpdate: filterUpdate ?? this.filterUpdate,
     );
   }
 
@@ -84,7 +204,8 @@ class PagedListState<T> {
         other.hasMore == hasMore &&
         other.syncedAt == syncedAt &&
         other.isLoadingMore == isLoadingMore &&
-        other.loadMoreErrorMessage == loadMoreErrorMessage;
+        other.loadMoreErrorMessage == loadMoreErrorMessage &&
+        other.filterUpdate == filterUpdate;
   }
 
   @override
@@ -96,16 +217,11 @@ class PagedListState<T> {
     syncedAt,
     isLoadingMore,
     loadMoreErrorMessage,
+    filterUpdate,
   );
 }
 
 const Object _kSentinel = Object();
-
-/// 筛选切换的视觉策略：
-/// - [spinner]：切 [AsyncLoading]，列表清空显骨架（订阅/媒体管理走这条）；
-/// - [preserveList]：保留旧 items + `isReloading: true`，只显示行内薄进度条
-///   （downloads 走这条）。
-enum FilterReloadStrategy { spinner, preserveList }
 
 /// [PagedListState] 的局部补丁原语：事件/乐观更新后对已加载列表做**就地**
 /// 修正，避免整页 invalidate 重拉。
@@ -132,10 +248,7 @@ extension PagedListStatePatch<T> on PagedListState<T> {
 
   /// 把**第一个**匹配项替换成 `update(item)` 的结果；不改 [PagedListState.total]
   /// / [PagedListState.hasMore]（条数未变）。无匹配时原样返回自身。
-  PagedListState<T> patchWhere(
-    bool Function(T) matches,
-    T Function(T) update,
-  ) {
+  PagedListState<T> patchWhere(bool Function(T) matches, T Function(T) update) {
     final index = items.indexWhere(matches);
     if (index < 0) {
       return this;
@@ -275,8 +388,9 @@ mixin PagedAsyncNotifierMixin<S, T> on $AsyncNotifier<S> {
       }
       return;
     }
-    final baseState =
-        updateBaseState != null ? updateBaseState(current) : current;
+    final baseState = updateBaseState != null
+        ? updateBaseState(current)
+        : current;
     state = AsyncLoading<S>();
     final next = await AsyncValue.guard<S>(() async {
       final firstPage = await loadInitialPage();
@@ -385,11 +499,8 @@ mixin PagedAsyncNotifierMixin<S, T> on $AsyncNotifier<S> {
   }
 }
 
-/// 筛选驱动分页 mixin：统一「值对象筛选状态 → reload/preserveList」两套切换语义。
-/// 现有 adopter：movies / actors / videos / clips / moments / hot_reviews 六个
-/// listing 域。订阅管理 / 媒体管理 / downloads / resource task center 仍各自手写
-/// 筛选切换（downloads 因 SSE 合并等额外语义未收编）——**改本 mixin 的切换语义
-/// （如清 isLoadingMore 的死锁修复）时，这几处手写副本要同步对齐**。
+/// 筛选驱动分页 mixin：统一「UI 先写筛选 → 保留旧列表 → 防抖请求 →
+/// latest-wins 写回」语义。
 ///
 /// 约定：`F` 是不可变值对象（`==` 即"筛选未变"）；`fetchPage` 从 [activeFilter]
 /// 读参数；UI 改筛选后调 [applyFilterState]。State 里的 filter 字段由
@@ -423,75 +534,114 @@ mixin FilterablePagedAsyncNotifierMixin<S, T, F>
 
   late F _activeFilter = initialFilter;
 
+  late final DebouncedLatestRequest _filterRequests = DebouncedLatestRequest(
+    delay: filterDebounceDuration,
+  );
+  bool _filterDisposeAttached = false;
+
   /// 当前生效的筛选；`fetchPage` 从它读参数拼请求。
   @protected
   F get activeFilter => _activeFilter;
+
+  /// 筛选控件的尾随防抖时长。业务域原则上保持默认值；测试可覆写为零。
+  @protected
+  Duration get filterDebounceDuration => const Duration(milliseconds: 250);
+
+  @protected
+  String get filterUpdateErrorText => '筛选结果更新失败，请重试';
 
   /// 把新筛选值写进 State（连带清多选等副作用）。注意把 filter 字段本身也写入。
   @protected
   S applyFilterToState(S state, F filter);
 
-  /// 切换筛选的视觉策略，默认 [FilterReloadStrategy.spinner]。
-  @protected
-  FilterReloadStrategy get filterReloadStrategy =>
-      FilterReloadStrategy.spinner;
-
-  /// [FilterReloadStrategy.preserveList] 策略要求实现：写 `isReloading` 标志
-  /// （`reloading: true` 显示行内薄进度条）。默认返回原状态。
-  @protected
-  S copyWithReloading(S state, bool reloading) => state;
-
-  /// 应用新筛选状态。值对象相等则短路（不发请求）；否则按
-  /// [filterReloadStrategy] 触发 reload / preserveList 重拉第一页。
-  Future<void> applyFilterState(F next) async {
-    if (_activeFilter == next) return;
-    _activeFilter = next;
-
-    switch (filterReloadStrategy) {
-      case FilterReloadStrategy.spinner:
-        await reload(updateBaseState: (s) => applyFilterToState(s, next));
-      case FilterReloadStrategy.preserveList:
-        await _applyPreserveList(next);
-    }
+  void _ensureFilterDisposeGuard() {
+    if (_filterDisposeAttached) return;
+    _filterDisposeAttached = true;
+    ref.onDispose(_filterRequests.dispose);
   }
 
-  /// preserveList：保留旧 items + 顶部薄进度条 → 拉第一页 → 复位。
-  /// 失败：items 保留、`isReloading` 复位（filter 已更新，用户可再触发重试），
-  /// 然后**原样抛出**，由调用方决定是否 toast。
-  Future<void> _applyPreserveList(F next) async {
+  /// 应用新筛选状态。值对象相等则短路；变化时先同步更新 State，再尾随
+  /// 防抖请求第一页。返回 Future 在请求完成或被更新请求取代后正常结束。
+  Future<void> applyFilterState(F next) {
+    if (_activeFilter == next) return Future<void>.value();
+    _activeFilter = next;
+    _ensureFilterDisposeGuard();
+    _writePendingFilter(next);
+    return _filterRequests.schedule(_loadSelectedFilter);
+  }
+
+  /// 立即重试当前筛选，跳过防抖窗口。
+  Future<void> retryFilter() {
+    _ensureFilterDisposeGuard();
+    _writePendingFilter(_activeFilter, applyFilter: false);
+    return _filterRequests.runNow(_loadSelectedFilter);
+  }
+
+  void _writePendingFilter(F next, {bool applyFilter = true}) {
+    final current = state.value;
+    if (current == null) return;
+
+    invalidateInFlightLoadMore();
+    final currentPaged = pagedOf(current);
+    final pendingPaged = currentPaged.copyWith(
+      isLoadingMore: false,
+      loadMoreErrorMessage: null,
+      filterUpdate: const FilterUpdateState.loading(),
+    );
+    final base = applyPaged(current, pendingPaged);
+    state = AsyncData(applyFilter ? applyFilterToState(base, next) : base);
+  }
+
+  Future<void> _loadSelectedFilter(int requestId) async {
     final current = state.value;
     if (current == null) {
-      // 尚未 build 完成，走 reload 兜底。
-      await reload(updateBaseState: (s) => applyFilterToState(s, next));
+      // 初次 build 尚未形成可保留的数据，沿用首屏 AsyncValue 语义。
+      await super.reload();
       return;
     }
 
-    invalidateInFlightLoadMore();
-    // 若当前挂着 in-flight loadMore（isLoadingMore: true），先显式清掉再写
-    // 新 State——被代次作废的 loadMore 失败/成功后都不会再回写，不清会永远
-    // 卡在 loading 态、loadMore 再也触发不了（死锁）。
-    final currentPaged = pagedOf(current);
-    final base = currentPaged.isLoadingMore
-        ? applyPaged(
-            current,
-            currentPaged.copyWith(
-              isLoadingMore: false,
-              loadMoreErrorMessage: null,
-            ),
-          )
-        : current;
-    state = AsyncData(copyWithReloading(applyFilterToState(base, next), true));
-
     try {
       final firstPage = await loadInitialPage();
-      if (isDisposed) return;
+      if (isDisposed || !_filterRequests.isCurrent(requestId)) return;
       final now = state.value ?? current;
-      state = AsyncData(copyWithReloading(applyPaged(now, firstPage), false));
+      state = AsyncData(applyPaged(now, firstPage));
     } catch (error) {
-      if (isDisposed) return;
+      if (isDisposed || !_filterRequests.isCurrent(requestId)) return;
       final now = state.value ?? current;
-      state = AsyncData(copyWithReloading(now, false));
-      rethrow;
+      state = AsyncData(
+        applyPaged(
+          now,
+          pagedOf(now).copyWith(
+            isLoadingMore: false,
+            loadMoreErrorMessage: null,
+            filterUpdate: FilterUpdateState.failed(
+              apiErrorMessage(error, fallback: filterUpdateErrorText),
+            ),
+          ),
+        ),
+      );
     }
+  }
+
+  @override
+  Future<void> loadMore() {
+    final current = state.value;
+    if (current != null && !pagedOf(current).filterUpdate.isIdle) {
+      return Future<void>.value();
+    }
+    return super.loadMore();
+  }
+
+  @override
+  Future<String?> refresh() async {
+    await retryFilter();
+    final current = state.value;
+    return current == null ? null : pagedOf(current).filterUpdate.errorMessage;
+  }
+
+  @override
+  Future<void> reload({S Function(S current)? updateBaseState}) {
+    if (_filterDisposeAttached) _filterRequests.cancel();
+    return super.reload(updateBaseState: updateBaseState);
   }
 }

@@ -19,7 +19,6 @@ class OverviewSystemInfoState {
     this.imageSearchStatus,
     this.cloud115CookiesStatus,
     this.javdbHealthy,
-    this.dmmHealthy,
     this.statusError,
   });
 
@@ -32,7 +31,6 @@ class OverviewSystemInfoState {
   final StatusImageSearchDto? imageSearchStatus;
   final StatusCloud115CookiesDto? cloud115CookiesStatus;
   final bool? javdbHealthy;
-  final bool? dmmHealthy;
   final String? statusError;
 
   OverviewSystemInfoState copyWith({
@@ -45,7 +43,6 @@ class OverviewSystemInfoState {
     Object? imageSearchStatus = _kSentinel,
     Object? cloud115CookiesStatus = _kSentinel,
     Object? javdbHealthy = _kSentinel,
-    Object? dmmHealthy = _kSentinel,
     Object? statusError = _kSentinel,
   }) {
     return OverviewSystemInfoState(
@@ -74,10 +71,6 @@ class OverviewSystemInfoState {
           identical(javdbHealthy, _kSentinel)
               ? this.javdbHealthy
               : javdbHealthy as bool?,
-      dmmHealthy:
-          identical(dmmHealthy, _kSentinel)
-              ? this.dmmHealthy
-              : dmmHealthy as bool?,
       statusError:
           identical(statusError, _kSentinel)
               ? this.statusError

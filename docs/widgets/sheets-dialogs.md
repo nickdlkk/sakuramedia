@@ -45,7 +45,7 @@
 - **路径**: `lib/widgets/base/overlays/app_filter_popover.dart`
 - **用途**: 「触发按钮 + 展开筛选面板」外壳——LayerLink / OverlayEntry / 遮罩 / CompositedTransformFollower / 面板容器一次封死。actor / movie / ranking 三个 filter toolbar 全走它。
 - **AppFilterPopover required**: `triggerLabel` · `panelBuilder`(面板 body, 通常直接给 `*FilterSectionGroup`) · `panelKey`
-- **可选**: `footer`(通常传 `AppFilterPanelFooter`,ranking 不传) · `labelKey` · `isSelected` · `highlightWhenOpen`(默认 true; movie 传 false, 语义是"默认或自定义时高亮,与开合无关") · `enabled`(ranking 传 `!isLoading`) · `panelExtraWidth`(actor 180 / movie 260 / ranking 520) · `scrollViewKey`(movie 传测试锚点) · `onOpened`(movie 用来预取年份) · `initialTriggerSize`
+- **可选**: `footer`(通常传 `AppFilterPanelFooter`,ranking 不传) · `labelKey` · `isSelected` · `highlightWhenOpen`(默认 true; movie 传 false, 语义是"默认或自定义时高亮,与开合无关") · `enabled`(ranking 传 `!isLoading`) · `panelExtraWidth`(actor 180 / movie 260 / ranking 520) · `scrollViewKey`(movie 传测试锚点) · `onOpened`(如女优详情预取年份选项) · `initialTriggerSize`
 - **AppFilterPanelFooter required**: `isDefault` · `onReset`(为 null 时禁用)
 - **可选**: `defaultLabel` / `activeLabel` / `resetLabel`
 - **何时用**: 桌面「筛选按钮 → 弹出面板」的所有场景。移动端等价形态是 `showAppBottomDrawer` 挂 `*FilterSectionGroup`。

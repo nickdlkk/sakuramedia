@@ -52,12 +52,10 @@ class IndexerSettings extends _$IndexerSettings
     }
   }
 
-  void updateDraft({String? apiKey, List<IndexerEntryDto>? indexers}) {
+  void updateDraft({List<IndexerEntryDto>? indexers}) {
     final current = state.value;
     if (current == null || current.isSaving) return;
     final draft = IndexerSettingsDto(
-      type: current.draft.type,
-      apiKey: apiKey ?? current.draft.apiKey,
       indexers: indexers ?? current.draft.indexers,
     );
     state = AsyncData(current.copyWith(draft: draft));
@@ -68,8 +66,6 @@ class IndexerSettings extends _$IndexerSettings
     if (current == null || current.isSaving) {
       return current?.saved ??
           const IndexerSettingsDto(
-            type: '',
-            apiKey: '',
             indexers: <IndexerEntryDto>[],
           );
     }
@@ -79,8 +75,6 @@ class IndexerSettings extends _$IndexerSettings
           .read(indexerSettingsApiProvider)
           .updateSettings(
             UpdateIndexerSettingsPayload(
-              type: current.draft.type,
-              apiKey: current.draft.apiKey,
               indexers: current.draft.indexers,
             ),
           );
@@ -96,23 +90,9 @@ class IndexerSettings extends _$IndexerSettings
 
   /// 移动端编辑抽屉按原行为立即提交完整 settings，再回写 saved/draft。
   Future<IndexerSettingsDto> saveDraft({
-    String? type,
-    required String apiKey,
     required List<IndexerEntryDto> indexers,
   }) async {
-    final current = state.value;
-    if (current != null && type != null && type != current.draft.type) {
-      state = AsyncData(
-        current.copyWith(
-          draft: IndexerSettingsDto(
-            type: type,
-            apiKey: current.draft.apiKey,
-            indexers: current.draft.indexers,
-          ),
-        ),
-      );
-    }
-    updateDraft(apiKey: apiKey, indexers: indexers);
+    updateDraft(indexers: indexers);
     return save();
   }
 }

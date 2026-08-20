@@ -129,7 +129,7 @@ class _SystemDiagnosticsStripState
         children: [
           Expanded(
             child: Text(
-              '一键检测媒体库、下载器、索引器、外部数据源、LLM 与 JoyTag 的连通性。',
+              '一键检测媒体库、下载器、索引器、外部数据源与 JoyTag 的连通性。',
               style: resolveAppTextStyle(
                 context,
                 size: AppTextSize.s12,

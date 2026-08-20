@@ -11,10 +11,7 @@ part 'clips_overview_provider.g.dart';
 
 /// 我的切片首页分页列表（排序筛选驱动）。
 ///
-/// 视觉策略：`FilterReloadStrategy.preserveList`——切排序时**保留旧列表**
-/// 直到新数据回来，与迁移前 `ClipsOverviewController.setSort → load()` 一致
-/// （旧数据只在成功时被覆盖，失败时清空到 empty）。UI 侧当前无薄进度条，
-/// 首屏空态才走整页 spinner。
+/// 切排序时先更新控件并保留旧列表，防抖拉取的新结果成功后再原子替换。
 ///
 /// autoDispose：离开页面即释放，对齐迁移前控制器随 State 生灭。
 ///
@@ -41,12 +38,6 @@ class ClipsOverview extends _$ClipsOverview
   @override
   ClipsFilter get initialFilter => const ClipsFilter();
 
-  /// 切排序保留旧列表：迁移前控制器 `load()` 只在成功时覆盖 `_clips`，失败时
-  /// 才清空到 empty；页面判 `isLoading && clips.isEmpty` 才 spinner。
-  @override
-  FilterReloadStrategy get filterReloadStrategy =>
-      FilterReloadStrategy.preserveList;
-
   @override
   PagedListState<MediaClipDto> pagedOf(ClipsOverviewState s) => s.paged;
 
@@ -63,20 +54,12 @@ class ClipsOverview extends _$ClipsOverview
   ) => s.copyWith(filter: filter);
 
   @override
-  ClipsOverviewState copyWithReloading(
-    ClipsOverviewState state,
-    bool reloading,
-  ) => state.copyWith(isReloading: reloading);
-
-  @override
   Future<PaginatedResponseDto<MediaClipDto>> fetchPage(
     int page,
     int pageSize,
-  ) => ref.read(clipsApiProvider).getMyClips(
-        page: page,
-        pageSize: pageSize,
-        sort: activeFilter.sort,
-      );
+  ) => ref
+      .read(clipsApiProvider)
+      .getMyClips(page: page, pageSize: pageSize, sort: activeFilter.sort);
 
   @override
   Future<ClipsOverviewState> build() async {

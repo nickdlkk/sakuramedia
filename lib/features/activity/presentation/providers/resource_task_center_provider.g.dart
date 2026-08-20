@@ -35,7 +35,7 @@ final class ResourceTaskCenterProvider
 }
 
 String _$resourceTaskCenterHash() =>
-    r'8e1aad102f7aa6e1494333f94676fe683b64ff3b';
+    r'5fbb12fb5fa6eded120a2e2c40f3025756b22af4';
 
 abstract class _$ResourceTaskCenter
     extends $AsyncNotifier<ResourceTaskCenterState> {

@@ -200,8 +200,7 @@ class StatusImageSearchDto {
 ///
 /// [type] 是后端 `StatusService.test_metadata_provider` 定义的**封闭枚举**，
 /// 只有三种取值（见 [MetadataProviderErrorType]）；诊断文案必须按它分派，
-/// 不要去猜 [message] 里的关键字——JavDB 的 message 是英文异常串、DMM 的是中文，
-/// 关键字匹配两边都不可靠。
+/// 不要去猜 [message] 里的关键字——JavDB 的 message 是英文异常串，关键字匹配不可靠。
 class StatusMetadataProviderTestErrorDto {
   const StatusMetadataProviderTestErrorDto({
     required this.type,
@@ -219,8 +218,7 @@ class StatusMetadataProviderTestErrorDto {
   final String? method;
   final String? url;
 
-  /// 仅 `metadata_not_found` 带：找不到的资源类型（javdb=`movie`、dmm=`movie_desc`）
-  /// 与查询值（探测番号）。
+  /// 仅 `metadata_not_found` 带：找不到的资源类型（javdb=`movie`）与查询值（探测番号）。
   final String? resource;
   final String? lookupValue;
 
@@ -257,7 +255,7 @@ abstract final class MetadataProviderErrorType {
   /// HTTP 层失败（重试耗尽）：不可达、超时、非 2xx。
   static const String requestError = 'metadata_request_error';
 
-  /// 其它未归类异常，含 JavDB 账号登录失败（后端未单独 catch `JavdbAuthError`）。
+  /// 其它未归类异常，含 JavDB 登录失败（后端未单独 catch `JavdbAuthError`）。
   static const String unexpected = 'unexpected_error';
 }
 

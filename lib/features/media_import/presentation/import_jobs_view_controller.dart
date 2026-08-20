@@ -12,7 +12,7 @@ abstract interface class ImportJobsViewController {
   Future<void> ensureDetail(int jobId, {bool force = false});
   Future<String?> retryFailedFiles(int jobId, {List<String>? files});
 
-  /// 按原参数（来源 + 媒体库 + 导入方式）新建一个导入作业。
+  /// 按作业原参数新建一个导入任务。
   Future<String?> reimportJob(int jobId);
 }
 

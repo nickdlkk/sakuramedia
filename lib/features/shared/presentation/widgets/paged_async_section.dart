@@ -101,12 +101,16 @@ class SliverPagedAsyncSection<S, T> extends StatelessWidget {
 
     final paged = pagedOf(asyncState.requireValue);
     if (paged.items.isEmpty) {
+      // 筛选失败且没有可保留的旧结果时，筛选头里的 AppFilterUpdateBar 已经
+      // 提供失败说明和重试。这里不再叠加普通“暂无数据”空态，避免误导。
+      if (paged.filterUpdate.hasFailed) {
+        return const SliverToBoxAdapter(child: SizedBox.shrink());
+      }
       final builder = emptyBuilder;
       return SliverToBoxAdapter(
-        child:
-            builder != null
-                ? builder(context)
-                : AppEmptyState(message: emptyMessage),
+        child: builder != null
+            ? builder(context)
+            : AppEmptyState(message: emptyMessage),
       );
     }
 
@@ -121,13 +125,12 @@ class SliverPagedAsyncSection<S, T> extends StatelessWidget {
       ),
       childCount: items.length,
     );
-    final itemSliver =
-        fixedItemExtent == null
-            ? SliverList(delegate: delegate)
-            : SliverFixedExtentList(
-              itemExtent: fixedItemExtent! + itemSpacing,
-              delegate: delegate,
-            );
+    final itemSliver = fixedItemExtent == null
+        ? SliverList(delegate: delegate)
+        : SliverFixedExtentList(
+            itemExtent: fixedItemExtent! + itemSpacing,
+            delegate: delegate,
+          );
 
     if (!showFooter) {
       return itemSliver;

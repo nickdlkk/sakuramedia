@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:sakuramedia/features/activity/data/activity_notification_dto.dart';
 import 'package:sakuramedia/features/activity/presentation/activity_filter_state.dart';
+import 'package:sakuramedia/features/shared/presentation/providers/paged_async_notifier.dart';
 
 enum NotificationConnectionState { connecting, live, reconnecting, polling }
 
@@ -14,6 +15,7 @@ class NotificationCenterState {
     this.connectionState = NotificationConnectionState.connecting,
     this.connectionMessage,
     this.filter = ActivityNotificationFilterState.initial,
+    this.filterUpdate = const FilterUpdateState.idle(),
     this.hasMore = true,
     this.isLoadingMore = false,
     this.isRefreshing = false,
@@ -32,6 +34,7 @@ class NotificationCenterState {
   final NotificationConnectionState connectionState;
   final String? connectionMessage;
   final ActivityNotificationFilterState filter;
+  final FilterUpdateState filterUpdate;
   final bool hasMore;
   final bool isLoadingMore;
   final bool isRefreshing;
@@ -51,6 +54,7 @@ class NotificationCenterState {
     NotificationConnectionState? connectionState,
     Object? connectionMessage = _sentinel,
     ActivityNotificationFilterState? filter,
+    FilterUpdateState? filterUpdate,
     bool? hasMore,
     bool? isLoadingMore,
     bool? isRefreshing,
@@ -62,28 +66,25 @@ class NotificationCenterState {
     return NotificationCenterState(
       initialized: initialized ?? this.initialized,
       isInitialLoading: isInitialLoading ?? this.isInitialLoading,
-      initialErrorMessage:
-          identical(initialErrorMessage, _sentinel)
-              ? this.initialErrorMessage
-              : initialErrorMessage as String?,
+      initialErrorMessage: identical(initialErrorMessage, _sentinel)
+          ? this.initialErrorMessage
+          : initialErrorMessage as String?,
       unreadCount: unreadCount ?? this.unreadCount,
       connectionState: connectionState ?? this.connectionState,
-      connectionMessage:
-          identical(connectionMessage, _sentinel)
-              ? this.connectionMessage
-              : connectionMessage as String?,
+      connectionMessage: identical(connectionMessage, _sentinel)
+          ? this.connectionMessage
+          : connectionMessage as String?,
       filter: filter ?? this.filter,
+      filterUpdate: filterUpdate ?? this.filterUpdate,
       hasMore: hasMore ?? this.hasMore,
       isLoadingMore: isLoadingMore ?? this.isLoadingMore,
       isRefreshing: isRefreshing ?? this.isRefreshing,
-      loadMoreErrorMessage:
-          identical(loadMoreErrorMessage, _sentinel)
-              ? this.loadMoreErrorMessage
-              : loadMoreErrorMessage as String?,
-      refreshErrorMessage:
-          identical(refreshErrorMessage, _sentinel)
-              ? this.refreshErrorMessage
-              : refreshErrorMessage as String?,
+      loadMoreErrorMessage: identical(loadMoreErrorMessage, _sentinel)
+          ? this.loadMoreErrorMessage
+          : loadMoreErrorMessage as String?,
+      refreshErrorMessage: identical(refreshErrorMessage, _sentinel)
+          ? this.refreshErrorMessage
+          : refreshErrorMessage as String?,
       isMarkingAllRead: isMarkingAllRead ?? this.isMarkingAllRead,
       notifications: List<ActivityNotificationDto>.unmodifiable(
         notifications ?? this.notifications,

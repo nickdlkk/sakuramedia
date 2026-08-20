@@ -122,7 +122,6 @@ Map<String, dynamic> _movieDetailJson() {
     'is_subscribed': true,
     'can_play': true,
     'summary': '',
-    'desc': '',
     'plot_images': const <Map<String, dynamic>>[],
     'actors': const <Map<String, dynamic>>[],
     'tags': const <Map<String, dynamic>>[],

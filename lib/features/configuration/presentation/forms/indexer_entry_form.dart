@@ -3,6 +3,7 @@ import 'package:sakuramedia/features/configuration/data/dto/download_client_dto.
 import 'package:sakuramedia/features/configuration/data/dto/indexer_settings_dto.dart';
 import 'package:sakuramedia/theme.dart';
 import 'package:sakuramedia/widgets/base/layout/cards/app_badge.dart';
+import 'package:sakuramedia/widgets/base/forms/app_password_field.dart';
 import 'package:sakuramedia/widgets/base/forms/app_text_field.dart';
 import 'package:sakuramedia/widgets/base/layout/cards/app_settings_group.dart';
 
@@ -73,6 +74,7 @@ class IndexerEntryFormFields extends StatelessWidget {
     super.key,
     required this.nameController,
     required this.urlController,
+    required this.apiKeyController,
     required this.kind,
     required this.downloadClients,
     required this.selectedDownloadClientIds,
@@ -89,6 +91,7 @@ class IndexerEntryFormFields extends StatelessWidget {
 
   final TextEditingController nameController;
   final TextEditingController urlController;
+  final TextEditingController apiKeyController;
   final String kind;
   final List<DownloadClientDto> downloadClients;
   final List<int> selectedDownloadClientIds;
@@ -139,6 +142,20 @@ class IndexerEntryFormFields extends StatelessWidget {
           textInputAction: TextInputAction.done,
           onFieldSubmitted: (_) => onSubmitted?.call(),
           validator: validateIndexerUrlField,
+        ),
+        SizedBox(height: spacing.lg),
+        const IndexerFormFieldLabel(label: 'API Key (可选)'),
+        SizedBox(height: spacing.sm),
+        AppPasswordField(
+          fieldKey: const Key('indexer-entry-api-key-field'),
+          controller: apiKeyController,
+          hintText: '留空则请求不携带 apikey',
+          enabled: enabled,
+          autovalidateMode: autovalidateMode,
+          textInputAction: TextInputAction.done,
+          onFieldSubmitted: (_) => onSubmitted?.call(),
+          showLabel: '显示 API Key',
+          hideLabel: '隐藏 API Key',
         ),
         SizedBox(height: spacing.lg),
         const IndexerFormFieldLabel(label: '类别 (KIND)'),

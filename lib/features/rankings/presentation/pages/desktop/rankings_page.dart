@@ -68,8 +68,9 @@ class _DesktopRankingsPageState extends ConsumerState<DesktopRankingsPage>
         .obtain(
           key: desktopRankingsPageCacheKey(),
           resolveLinks: () {
-            final link =
-                ref.read(rankingSummaryProvider(_scope).notifier).cacheLink;
+            final link = ref
+                .read(rankingSummaryProvider(_scope).notifier)
+                .cacheLink;
             return link == null ? const [] : [link];
           },
         );
@@ -108,6 +109,13 @@ class _DesktopRankingsPageState extends ConsumerState<DesktopRankingsPage>
     showMovieSubscriptionFeedback(result);
   }
 
+  void _applyFilterChange(Future<void> Function() action) {
+    if (_scrollController.hasClients) {
+      _scrollController.jumpTo(0);
+    }
+    unawaited(action());
+  }
+
   /// 与移动榜单页共用同一条顶栏：筛选入口（当前榜单）+ 总数 / 更新时间信息槽。
   /// 差别只在筛选面板的容器——桌面就地浮层，移动底部抽屉。
   Widget _buildHeader(BuildContext context, RankingSummaryState summary) {
@@ -125,43 +133,43 @@ class _DesktopRankingsPageState extends ConsumerState<DesktopRankingsPage>
       filterButtonKey: const Key('desktop-rankings-filter-trigger'),
       filterIcon: Icons.leaderboard_outlined,
       filterLabel: boardLabel,
-      filterEnabled: !summary.filters.isLoading,
+      filterEnabled: summary.filters.sources.isNotEmpty,
+      filterUpdate: summary.paged.filterUpdate,
+      hasPreviousFilterItems: summary.paged.items.isNotEmpty,
+      onRetryFilter: () => unawaited(
+        ref.read(rankingSummaryProvider(_scope).notifier).retryFilter(),
+      ),
       filterPanelKey: const Key('rankings-filter-panel'),
       filterPanelExtraWidth: 520,
-      filterPanelBuilder:
-          (_) => RankingFilterSectionGroup(
-            sources: summary.filters.sources,
-            selectedSource: summary.filters.selectedSource,
-            boards: summary.filters.boards,
-            selectedBoard: summary.filters.selectedBoard,
-            selectedPeriod: summary.filters.selectedPeriod,
-            onSourceChanged:
-                (value) => unawaited(
-                  ref
-                      .read(rankingSummaryProvider(_scope).notifier)
-                      .selectSource(value),
-                ),
-            onBoardChanged:
-                (value) => unawaited(
-                  ref
-                      .read(rankingSummaryProvider(_scope).notifier)
-                      .selectBoard(value),
-                ),
-            onPeriodChanged:
-                (value) => unawaited(
-                  ref
-                      .read(rankingSummaryProvider(_scope).notifier)
-                      .selectPeriod(value),
-                ),
-            selectedSortField: summary.filters.selectedSortField,
-            selectedSortDirection: summary.filters.selectedSortDirection,
-            onSortChanged:
-                (field, dir) => unawaited(
-                  ref
-                      .read(rankingSummaryProvider(_scope).notifier)
-                      .selectSort(field, dir),
-                ),
-          ),
+      filterPanelBuilder: (_) => RankingFilterSectionGroup(
+        sources: summary.filters.sources,
+        selectedSource: summary.filters.selectedSource,
+        boards: summary.filters.boards,
+        selectedBoard: summary.filters.selectedBoard,
+        selectedPeriod: summary.filters.selectedPeriod,
+        onSourceChanged: (value) => _applyFilterChange(
+          () => ref
+              .read(rankingSummaryProvider(_scope).notifier)
+              .selectSource(value),
+        ),
+        onBoardChanged: (value) => _applyFilterChange(
+          () => ref
+              .read(rankingSummaryProvider(_scope).notifier)
+              .selectBoard(value),
+        ),
+        onPeriodChanged: (value) => _applyFilterChange(
+          () => ref
+              .read(rankingSummaryProvider(_scope).notifier)
+              .selectPeriod(value),
+        ),
+        selectedSortField: summary.filters.selectedSortField,
+        selectedSortDirection: summary.filters.selectedSortDirection,
+        onSortChanged: (field, dir) => _applyFilterChange(
+          () => ref
+              .read(rankingSummaryProvider(_scope).notifier)
+              .selectSort(field, dir),
+        ),
+      ),
       informationSlots: [
         AppListHeaderInfo(
           key: const Key('desktop-rankings-page-total'),
@@ -190,8 +198,8 @@ class _DesktopRankingsPageState extends ConsumerState<DesktopRankingsPage>
     final hasNoSources = summary.filters.hasNoSources;
 
     return AppPageRefreshScope(
-      onRefresh:
-          () => ref.read(rankingSummaryProvider(_scope).notifier).refresh(),
+      onRefresh: () =>
+          ref.read(rankingSummaryProvider(_scope).notifier).refresh(),
       child: ColoredBox(
         color: context.appColors.surfaceElevated,
         child: CustomScrollView(
@@ -210,16 +218,13 @@ class _DesktopRankingsPageState extends ConsumerState<DesktopRankingsPage>
                       else
                         _buildHeader(context, summary),
                       SizedBox(height: context.appSpacing.md),
-                      if (summary.filters.errorMessage != null) ...[
+                      if (summary.filters.errorMessage != null &&
+                          summary.paged.filterUpdate.isIdle) ...[
                         _FilterErrorBanner(
                           message: summary.filters.errorMessage!,
-                          onRetry:
-                              () =>
-                                  ref
-                                      .read(
-                                        rankingSummaryProvider(_scope).notifier,
-                                      )
-                                      .reloadFiltersAndData(),
+                          onRetry: () => ref
+                              .read(rankingSummaryProvider(_scope).notifier)
+                              .reloadFiltersAndData(),
                         ),
                         SizedBox(height: context.appSpacing.md),
                       ],
@@ -227,40 +232,40 @@ class _DesktopRankingsPageState extends ConsumerState<DesktopRankingsPage>
                     ],
                   ),
                 ),
-                if (hasNoSources)
+                if (hasNoSources &&
+                    !(summary.paged.filterUpdate.hasFailed &&
+                        summary.paged.items.isEmpty))
                   const SliverToBoxAdapter(
                     child: AppEmptyState(message: '暂无可用排行榜'),
                   )
-                else
+                else if (!summary.paged.filterUpdate.hasFailed ||
+                    summary.paged.items.isNotEmpty)
                   RankedMovieSummarySliver(
                     items: summary.paged.items,
-                    isLoading:
-                        summary.filters.isLoading
-                            ? summary.paged.items.isEmpty
-                            : summary.isListLoading,
+                    isLoading: summary.filters.isLoading
+                        ? summary.paged.items.isEmpty
+                        : summary.isListLoading,
                     errorMessage: summary.initialErrorMessage,
-                    onMovieTap:
-                        (movie) => context.pushDesktopMovieDetail(
-                          movieNumber: movie.movieNumber,
-                          fallbackPath: desktopRankingsPath,
-                        ),
-                    onMovieMenuRequest:
-                        (movie, globalPosition) => requestMovieCollectionMenu(
+                    onMovieTap: (movie) => context.pushDesktopMovieDetail(
+                      movieNumber: movie.movieNumber,
+                      fallbackPath: desktopRankingsPath,
+                    ),
+                    onMovieMenuRequest: (movie, globalPosition) =>
+                        requestMovieCollectionMenu(
                           context,
                           movie.movieNumber,
                           globalPosition,
                           isSubscribed: movie.isSubscribed,
                         ),
-                    onMovieSubscriptionTap:
-                        (movie) => _toggleMovieSubscription(movie.movieNumber),
-                    isMovieSubscriptionUpdating:
-                        (movie) =>
-                            summary.isSubscriptionUpdating(movie.movieNumber),
+                    onMovieSubscriptionTap: (movie) =>
+                        _toggleMovieSubscription(movie.movieNumber),
+                    isMovieSubscriptionUpdating: (movie) =>
+                        summary.isSubscriptionUpdating(movie.movieNumber),
                     emptyMessage: '暂无榜单数据',
                     selectionMode: selectionMode,
                     isMovieSelected: (movie) => isSelected(movie.movieNumber),
-                    onMovieSelectedChanged:
-                        (movie, _) => toggleSelect(movie.movieNumber),
+                    onMovieSelectedChanged: (movie, _) =>
+                        toggleSelect(movie.movieNumber),
                   ),
                 if (showFooter)
                   SliverToBoxAdapter(
@@ -269,13 +274,9 @@ class _DesktopRankingsPageState extends ConsumerState<DesktopRankingsPage>
                       child: AppPagedLoadMoreFooter(
                         isLoading: summary.paged.isLoadingMore,
                         errorMessage: summary.paged.loadMoreErrorMessage,
-                        onRetry:
-                            () =>
-                                ref
-                                    .read(
-                                      rankingSummaryProvider(_scope).notifier,
-                                    )
-                                    .loadMore(),
+                        onRetry: () => ref
+                            .read(rankingSummaryProvider(_scope).notifier)
+                            .loadMore(),
                       ),
                     ),
                   ),

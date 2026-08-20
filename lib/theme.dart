@@ -34,15 +34,22 @@ const kAppFontFamily = 'NotoSansSC';
 /// oktoast 在 MaterialApp 之外用独立 overlay 树显示 toast, 拿不到 ThemeData
 /// 里的 fontFamily/fontVariations。Web 端 NotoSansSC 是可变字体, wght 轴不显式
 /// 设就停在 Thin 100(发丝细几乎看不见); 桌面/移动用系统字体不受影响。
-const TextStyle kAppToastTextStyle =
-    kIsWeb
-        ? TextStyle(
-          fontSize: 15,
-          color: Colors.white,
-          fontFamily: kAppFontFamily,
-          fontVariations: [FontVariation('wght', 400)],
-        )
-        : TextStyle(fontSize: 15, color: Colors.white);
+const TextStyle kAppToastTextStyle = kIsWeb
+    ? TextStyle(
+        fontSize: 15,
+        color: Colors.white,
+        fontFamily: kAppFontFamily,
+        fontVariations: [FontVariation('wght', 400)],
+      )
+    : TextStyle(fontSize: 15, color: Colors.white);
+
+/// oktoast 的 toast 底色。
+///
+/// 库默认是 `0xDD000000` 的裸黑，不属于项目色板；这里统一为文字主色
+/// `AppTextPalette.primary` 的中性深色带 0xDD 透明度，让 toast 与项目暖
+/// 中性色体系一致，而不是库自带的纯黑。
+final Color kAppToastBackgroundColor = AppTextPalette.defaults().primary
+    .withValues(alpha: 0xDD / 0xFF);
 
 final sakuraThemeData = sakuraDesktopThemeData;
 
@@ -116,12 +123,9 @@ ThemeData _buildSakuraThemeData({
       onInverseSurface: Color(0xFFF8EEEA),
       inversePrimary: Color(0xFFFFB4A9),
     ),
-    textTheme:
-        kIsWeb
-            ? textScale
-                .toTextTheme(textWeights)
-                .apply(fontFamily: kAppFontFamily)
-            : textScale.toTextTheme(textWeights),
+    textTheme: kIsWeb
+        ? textScale.toTextTheme(textWeights).apply(fontFamily: kAppFontFamily)
+        : textScale.toTextTheme(textWeights),
     extensions: <ThemeExtension<dynamic>>[
       const AppColors.defaults(),
       componentTokens,

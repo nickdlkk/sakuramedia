@@ -6,6 +6,7 @@ import 'package:sakuramedia/features/configuration/data/dto/config_dto.dart';
 import 'package:sakuramedia/features/configuration/data/dto/download_client_dto.dart';
 import 'package:sakuramedia/features/configuration/presentation/providers/download_preference_provider.dart';
 import 'package:sakuramedia/features/configuration/presentation/providers/download_preference_state.dart';
+import 'package:sakuramedia/features/shared/presentation/restart_messages.dart';
 import 'package:sakuramedia/theme.dart';
 import 'package:sakuramedia/widgets/base/actions/app_button.dart';
 import 'package:sakuramedia/widgets/base/feedback/app_section_error.dart';
@@ -155,6 +156,6 @@ class _DesktopDownloadPreferenceSectionState
 
 String _saveMessage(List<PendingRestartFieldDto> pendingRestart) {
   return pendingRestart.any((item) => item.restart == 'scheduler')
-      ? '已保存，需重启容器才生效'
+      ? buildRestartRequiredMessage('已保存')
       : '已保存';
 }

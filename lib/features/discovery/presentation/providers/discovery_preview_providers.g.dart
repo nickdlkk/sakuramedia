@@ -70,9 +70,10 @@ final class DiscoveryDailyPreviewProvider
   ) {
     return $ProviderOverride(
       origin: this,
-      providerOverride: $SyncValueProvider<
-        DiscoveryPreviewState<DailyRecommendationMovieDto>
-      >(value),
+      providerOverride:
+          $SyncValueProvider<
+            DiscoveryPreviewState<DailyRecommendationMovieDto>
+          >(value),
     );
   }
 

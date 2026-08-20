@@ -78,8 +78,7 @@ class MomentsContent extends HookConsumerWidget {
     final async = ref.watch(momentsProvider);
     final state = async.value;
     final paged = state?.paged ?? const PagedListState<MomentListItem>();
-    // AsyncLoading 期间（切筛选 reload 中）state 无值，从 notifier 读当前筛选，
-    // 避免顶栏标签闪回默认值。
+    // 首次加载尚无 state 时，从 notifier 读默认筛选。
     final filter = state?.filter ?? ref.read(momentsProvider.notifier).filter;
     final scrollController = usePagedLoadMoreScroll(
       onReachBottom: () {
@@ -115,9 +114,8 @@ class MomentsContent extends HookConsumerWidget {
               child: AppPagedLoadMoreFooter(
                 isLoading: paged.isLoadingMore,
                 errorMessage: paged.loadMoreErrorMessage,
-                onRetry:
-                    () =>
-                        unawaited(ref.read(momentsProvider.notifier).loadMore()),
+                onRetry: () =>
+                    unawaited(ref.read(momentsProvider.notifier).loadMore()),
               ),
             ),
           ),
@@ -128,18 +126,17 @@ class MomentsContent extends HookConsumerWidget {
       onRefresh: () => _handleRefresh(context, ref),
       child: ColoredBox(
         color: context.appColors.surfaceCard,
-        child:
-            enablePullToRefresh
-                ? AppAdaptiveRefreshScrollView(
-                  onRefresh: () => _handleRefresh(context, ref),
-                  controller: scrollController,
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  slivers: <Widget>[sliver],
-                )
-                : CustomScrollView(
-                  controller: scrollController,
-                  slivers: <Widget>[sliver],
-                ),
+        child: enablePullToRefresh
+            ? AppAdaptiveRefreshScrollView(
+                onRefresh: () => _handleRefresh(context, ref),
+                controller: scrollController,
+                physics: const AlwaysScrollableScrollPhysics(),
+                slivers: <Widget>[sliver],
+              )
+            : CustomScrollView(
+                controller: scrollController,
+                slivers: <Widget>[sliver],
+              ),
       ),
     );
   }
@@ -166,32 +163,32 @@ class MomentsContent extends HookConsumerWidget {
       filterLabel: filter.kindFilter.label,
       filterPanelKey: Key('$keyPrefix-filter-panel'),
       filterPanelExtraWidth: 180,
-      onFilterTap:
-          useMobileFilterDrawer
-              ? () => unawaited(
-                _openFilterDrawer(context, ref, scrollController, filter),
-              )
-              : null,
-      filterPanelBuilder:
-          useMobileFilterDrawer
-              ? null
-              : (_) => MomentFilterSectionGroup(
-                kindFilter: filter.kindFilter,
-                sortOrder: filter.sortOrder,
-                keyPrefix: keyPrefix,
-                onKindChanged:
-                    (next) => _applyFilter(
-                      ref,
-                      scrollController,
-                      (current) => current.copyWith(kindFilter: next),
-                    ),
-                onSortChanged:
-                    (next) => _applyFilter(
-                      ref,
-                      scrollController,
-                      (current) => current.copyWith(sortOrder: next),
-                    ),
+      filterUpdate: paged.filterUpdate,
+      hasPreviousFilterItems: paged.items.isNotEmpty,
+      onRetryFilter: () =>
+          unawaited(ref.read(momentsProvider.notifier).retryFilter()),
+      onFilterTap: useMobileFilterDrawer
+          ? () => unawaited(
+              _openFilterDrawer(context, ref, scrollController, filter),
+            )
+          : null,
+      filterPanelBuilder: useMobileFilterDrawer
+          ? null
+          : (_) => MomentFilterSectionGroup(
+              kindFilter: filter.kindFilter,
+              sortOrder: filter.sortOrder,
+              keyPrefix: keyPrefix,
+              onKindChanged: (next) => _applyFilter(
+                ref,
+                scrollController,
+                (current) => current.copyWith(kindFilter: next),
               ),
+              onSortChanged: (next) => _applyFilter(
+                ref,
+                scrollController,
+                (current) => current.copyWith(sortOrder: next),
+              ),
+            ),
       informationSlots: [
         AppListHeaderInfo(
           key: Key('$keyPrefix-page-total'),
@@ -212,18 +209,16 @@ class MomentsContent extends HookConsumerWidget {
       kindFilter: filter.kindFilter,
       sortOrder: filter.sortOrder,
       keyPrefix: keyPrefix,
-      onKindChanged:
-          (next) => _applyFilter(
-            ref,
-            scrollController,
-            (current) => current.copyWith(kindFilter: next),
-          ),
-      onSortChanged:
-          (next) => _applyFilter(
-            ref,
-            scrollController,
-            (current) => current.copyWith(sortOrder: next),
-          ),
+      onKindChanged: (next) => _applyFilter(
+        ref,
+        scrollController,
+        (current) => current.copyWith(kindFilter: next),
+      ),
+      onSortChanged: (next) => _applyFilter(
+        ref,
+        scrollController,
+        (current) => current.copyWith(sortOrder: next),
+      ),
     );
   }
 
@@ -250,13 +245,16 @@ class MomentsContent extends HookConsumerWidget {
     AsyncValue<MomentsState> async,
     PagedListState<MomentListItem> paged,
   ) {
-    if (async.isLoading) {
+    if (async.isLoading && async.value == null) {
       return const SliverToBoxAdapter(child: AppMobileSkeletonList());
     }
     if (async.hasError && paged.isEmpty) {
       return const SliverToBoxAdapter(
         child: AppEmptyState(message: '时刻列表加载失败，请稍后重试'),
       );
+    }
+    if (paged.isEmpty && paged.filterUpdate.hasFailed) {
+      return const SliverToBoxAdapter(child: SizedBox.shrink());
     }
     if (paged.isEmpty) {
       return const SliverToBoxAdapter(child: AppEmptyState(message: '暂无时刻数据'));
@@ -277,8 +275,8 @@ class MomentsContent extends HookConsumerWidget {
       item: item,
       presentation: MediaPreviewPresentation.auto,
       drawerKey: previewDrawerKey,
-      onPointRemoved:
-          () => unawaited(ref.read(momentsProvider.notifier).reload()),
+      onPointRemoved: () =>
+          unawaited(ref.read(momentsProvider.notifier).reload()),
       closeOnPointRemoved: true,
     );
     if (!context.mounted || action == null) {

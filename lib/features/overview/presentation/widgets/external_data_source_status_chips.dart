@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:sakuramedia/theme.dart';
 import 'package:sakuramedia/widgets/base/feedback/app_status_chip.dart';
 
-/// 「外部数据源」JavDB / DMM 连通性状态徽章行，桌面 overview 瓦片与
+/// 「外部数据源」JavDB 连通性状态徽章行，桌面 overview 瓦片与
 /// 移动系统概览瓦片共用。
 ///
 /// 不用 ✅/❌ emoji 文本表达状态：Web 端主字体是 NotoSansSC 子集，
@@ -12,13 +12,11 @@ class ExternalDataSourceStatusChips extends StatelessWidget {
   const ExternalDataSourceStatusChips({
     super.key,
     required this.javdbHealthy,
-    required this.dmmHealthy,
     required this.isTesting,
     this.keyPrefix = 'overview',
   });
 
   final bool? javdbHealthy;
-  final bool? dmmHealthy;
   final bool isTesting;
 
   /// 让同一组徽章在不同页面产生不同 Key（桌面/移动各自的测试锚点）。
@@ -34,13 +32,6 @@ class ExternalDataSourceStatusChips extends StatelessWidget {
           key: Key('$keyPrefix-external-data-source-javdb'),
           label: 'JavDB',
           palette: _resolvePalette(context, javdbHealthy),
-          isBusy: isTesting,
-          dense: true,
-        ),
-        AppStatusChip(
-          key: Key('$keyPrefix-external-data-source-dmm'),
-          label: 'DMM',
-          palette: _resolvePalette(context, dmmHealthy),
           isBusy: isTesting,
           dense: true,
         ),

@@ -37,26 +37,25 @@ import 'package:sakuramedia/widgets/shell/mobile/app_mobile_subpage_shell.dart';
 /// 合集详情的成员排布方式：纵向列表（可拖序）或网格（侧重浏览）。
 enum CollectionDetailLayout { list, grid }
 
-typedef VideoCollectionPlaySingle = Future<void> Function(
-  BuildContext context,
-  int videoId,
-  String title,
-);
+typedef VideoCollectionPlaySingle =
+    Future<void> Function(BuildContext context, int videoId, String title);
 
-typedef VideoCollectionConfirm = Future<bool> Function(
-  BuildContext context, {
-  required String title,
-  required String message,
-  required String confirmLabel,
-  required Key confirmKey,
-  Key? drawerKey,
-});
+typedef VideoCollectionConfirm =
+    Future<bool> Function(
+      BuildContext context, {
+      required String title,
+      required String message,
+      required String confirmLabel,
+      required Key confirmKey,
+      Key? drawerKey,
+    });
 
-typedef VideoCollectionPlayAllBuilder = Widget Function(
-  BuildContext context, {
-  required bool enabled,
-  required VoidCallback onPlayFrom,
-});
+typedef VideoCollectionPlayAllBuilder =
+    Widget Function(
+      BuildContext context, {
+      required bool enabled,
+      required VoidCallback onPlayFrom,
+    });
 
 /// 单条成员动作的执行器（由共享 State 绑定后交给壳渲染动作弹窗/抽屉）。
 class VideoCollectionMemberActions {
@@ -150,6 +149,7 @@ class _VideoCollectionDetailContentState
     with MultiSelectStateMixin<VideoCollectionDetailContent, int> {
   int? _hoveredItemId;
   late CollectionDetailLayout _layout;
+  late final ScrollController _itemsScrollController;
 
   VideoCollectionDetailProvider get _providerRef =>
       videoCollectionDetailProvider(widget.collectionId);
@@ -166,6 +166,13 @@ class _VideoCollectionDetailContentState
   void initState() {
     super.initState();
     _layout = widget.defaultLayout;
+    _itemsScrollController = ScrollController();
+  }
+
+  @override
+  void dispose() {
+    _itemsScrollController.dispose();
+    super.dispose();
   }
 
   void _setHovered(int? itemId) {
@@ -177,10 +184,9 @@ class _VideoCollectionDetailContentState
 
   void _toggleLayout() {
     setState(() {
-      _layout =
-          _layout == CollectionDetailLayout.list
-              ? CollectionDetailLayout.grid
-              : CollectionDetailLayout.list;
+      _layout = _layout == CollectionDetailLayout.list
+          ? CollectionDetailLayout.grid
+          : CollectionDetailLayout.list;
     });
   }
 
@@ -196,10 +202,8 @@ class _VideoCollectionDetailContentState
     final content = Builder(
       builder: (context) {
         if (async.isLoading && state == null) {
-          return (
-            widget.loadingBuilder ??
-            (_) => const Center(child: CircularProgressIndicator())
-          )(context);
+          return (widget.loadingBuilder ??
+              (_) => const Center(child: CircularProgressIndicator()))(context);
         }
         if (async.hasError && state == null) {
           return _buildError(context, async.error!);
@@ -215,7 +219,7 @@ class _VideoCollectionDetailContentState
             if (!widget.hoistTitleToSubpageShell)
               _buildTitleBlock(context, state),
             // 空合集没什么可排序 / 可选择的，顶栏整条省掉。
-            if (state.items.isNotEmpty) ...[
+            if (state.items.isNotEmpty || !state.filterUpdate.isIdle) ...[
               if (!widget.hoistTitleToSubpageShell)
                 SizedBox(height: context.appSpacing.md),
               if (selectionMode)
@@ -224,10 +228,7 @@ class _VideoCollectionDetailContentState
                 _buildListHeader(context, state),
             ],
             SizedBox(
-              height:
-                  _isMobile
-                      ? context.appSpacing.md
-                      : context.appSpacing.lg,
+              height: _isMobile ? context.appSpacing.md : context.appSpacing.lg,
             ),
             Expanded(child: _buildBody(context, state)),
             if (_isMobile && selectionMode) _buildBatchBar(context, state),
@@ -359,19 +360,21 @@ class _VideoCollectionDetailContentState
       filterLabel: videoCollectionSortLabel(state.sort.field),
       filterTooltip: _isMobile ? '排序' : null,
       filterPanelKey: Key('${widget.keyPrefix}-sort-panel'),
+      filterUpdate: state.filterUpdate,
+      hasPreviousFilterItems: state.items.isNotEmpty,
+      onRetryFilter: () =>
+          unawaited(ref.read(_providerRef.notifier).retrySort()),
       filterPanelExtraWidth: 180,
-      onFilterTap:
-          widget.useMobileFilterDrawer
-              ? () => unawaited(_openSortDrawer(state))
-              : null,
-      filterPanelBuilder:
-          widget.useMobileFilterDrawer
-              ? null
-              : (_) => VideoCollectionFilterSectionGroup(
-                sortField: state.sort.field,
-                sortDirection: state.sort.direction,
-                onChanged: _applySort,
-              ),
+      onFilterTap: widget.useMobileFilterDrawer
+          ? () => unawaited(_openSortDrawer(state))
+          : null,
+      filterPanelBuilder: widget.useMobileFilterDrawer
+          ? null
+          : (_) => VideoCollectionFilterSectionGroup(
+              sortField: state.sort.field,
+              sortDirection: state.sort.direction,
+              onChanged: _applySort,
+            ),
       informationSlots: [
         AppListHeaderInfo(
           key: Key('${widget.keyPrefix}-total'),
@@ -415,6 +418,9 @@ class _VideoCollectionDetailContentState
   }
 
   void _applySort({required VideoSortField? field, SortDirection? direction}) {
+    if (_itemsScrollController.hasClients) {
+      _itemsScrollController.jumpTo(0);
+    }
     ref
         .read(_providerRef.notifier)
         .applySort(field: field, direction: direction);
@@ -425,11 +431,7 @@ class _VideoCollectionDetailContentState
       context,
       sortField: state.sort.field,
       sortDirection: state.sort.direction,
-      onChanged:
-          ({required field, direction}) =>
-              ref
-                  .read(_providerRef.notifier)
-                  .applySort(field: field, direction: direction),
+      onChanged: _applySort,
     );
   }
 
@@ -445,7 +447,9 @@ class _VideoCollectionDetailContentState
     if (_isMobile) {
       return AppListHeader.selection(
         selectionLabel: '已选 $selectedCount 个',
-        selectionExitButtonKey: Key('${widget.keyPrefix}-exit-selection-button'),
+        selectionExitButtonKey: Key(
+          '${widget.keyPrefix}-exit-selection-button',
+        ),
         onExitSelection: exitSelection,
         actionSlots: [
           AppButton(
@@ -470,8 +474,9 @@ class _VideoCollectionDetailContentState
           label: '加入合集',
           variant: AppButtonVariant.secondary,
           size: AppButtonSize.small,
-          onPressed:
-              hasSelection ? () => _batchAddToOtherCollection(state) : null,
+          onPressed: hasSelection
+              ? () => _batchAddToOtherCollection(state)
+              : null,
         ),
         AppButton(
           key: Key('${widget.keyPrefix}-batch-remove-button'),
@@ -505,8 +510,9 @@ class _VideoCollectionDetailContentState
           key: Key('${widget.keyPrefix}-batch-add-collection-button'),
           label: '加入合集',
           variant: AppButtonVariant.secondary,
-          onPressed:
-              hasSelection ? () => _batchAddToOtherCollection(state) : null,
+          onPressed: hasSelection
+              ? () => _batchAddToOtherCollection(state)
+              : null,
         ),
         AppButton(
           key: Key('${widget.keyPrefix}-batch-remove-button'),
@@ -527,6 +533,9 @@ class _VideoCollectionDetailContentState
   // --------------------------------------------------------- body
 
   Widget _buildBody(BuildContext context, VideoCollectionDetailState state) {
+    if (state.items.isEmpty && state.filterUpdate.hasFailed) {
+      return const SizedBox.shrink();
+    }
     if (state.items.isEmpty) {
       return const AppEmptyState(message: '合集还没有视频，去视频列表用「加入合集」添加吧');
     }
@@ -538,7 +547,8 @@ class _VideoCollectionDetailContentState
   Widget _buildList(BuildContext context, VideoCollectionDetailState state) {
     final items = state.items;
     // 仅手动顺序且非选择模式下允许拖拽重排（仅桌面）：其它排序下拖拽会与排序冲突。
-    final canReorder = widget.enableReorder && !selectionMode && state.sort.isManual;
+    final canReorder =
+        widget.enableReorder && !selectionMode && state.sort.isManual;
 
     CollectionMemberRow buildRow(int index, {required bool isHovered}) {
       final item = items[index];
@@ -554,10 +564,9 @@ class _VideoCollectionDetailContentState
             ? _subtitleFor(item.video)
             : _formatReleaseDate(item.video.releaseDate),
         isHovered: _isMobile ? false : isHovered,
-        onTap:
-            selectionMode
-                ? () => toggleSelect(item.itemId)
-                : () => _openMemberActions(context, item),
+        onTap: selectionMode
+            ? () => toggleSelect(item.itemId)
+            : () => _openMemberActions(context, item),
         menuKey: Key('${widget.keyPrefix}-menu-${item.itemId}'),
         dragHandleKey: Key('$_reorderHandleKeyPrefix-${item.itemId}'),
         onRemove: _isMobile ? null : () => _removeItem(item.itemId),
@@ -572,21 +581,22 @@ class _VideoCollectionDetailContentState
 
     if (_isMobile) {
       return ListView.separated(
+        controller: _itemsScrollController,
         key: Key('${widget.keyPrefix}-detail-list'),
         // 横向缩进由 shell 提供，此处只补底部留白。
         padding: EdgeInsets.only(bottom: context.appSpacing.lg),
         itemCount: items.length,
-        separatorBuilder: (context, _) => SizedBox(height: context.appSpacing.sm),
+        separatorBuilder: (context, _) =>
+            SizedBox(height: context.appSpacing.sm),
         itemBuilder: (context, index) {
           final item = items[index];
           return GestureDetector(
-            onLongPress:
-                selectionMode
-                    ? null
-                    : () {
-                      enterSelection();
-                      toggleSelect(item.itemId);
-                    },
+            onLongPress: selectionMode
+                ? null
+                : () {
+                    enterSelection();
+                    toggleSelect(item.itemId);
+                  },
             child: buildRow(index, isHovered: false),
           );
         },
@@ -596,24 +606,25 @@ class _VideoCollectionDetailContentState
     // 选择模式或非手动排序下禁用拖拽重排，退化为普通列表。
     if (!canReorder) {
       return ListView.separated(
+        controller: _itemsScrollController,
         key: Key('${widget.keyPrefix}-detail-list'),
         itemCount: items.length,
-        separatorBuilder:
-            (context, _) => SizedBox(height: context.appSpacing.sm),
+        separatorBuilder: (context, _) =>
+            SizedBox(height: context.appSpacing.sm),
         itemBuilder: (context, index) => buildRow(index, isHovered: false),
       );
     }
 
     return ReorderableListView.builder(
+      scrollController: _itemsScrollController,
       key: Key('${widget.keyPrefix}-detail-list'),
       buildDefaultDragHandles: false,
       itemCount: items.length,
       onReorder: (oldIndex, newIndex) =>
           ref.read(_providerRef.notifier).reorder(oldIndex, newIndex),
       // 默认 proxyDecorator 会给拖动项叠加带阴影的 Material，这里换成无阴影透明包装。
-      proxyDecorator:
-          (child, index, animation) =>
-              Material(type: MaterialType.transparency, child: child),
+      proxyDecorator: (child, index, animation) =>
+          Material(type: MaterialType.transparency, child: child),
       itemBuilder: (context, index) {
         final item = items[index];
         return Padding(
@@ -646,6 +657,7 @@ class _VideoCollectionDetailContentState
             ? 2
             : (rawColumns > columnCap ? columnCap : rawColumns);
         return MasonryGridView.count(
+          controller: _itemsScrollController,
           key: Key('${widget.keyPrefix}-detail-grid'),
           // 横向缩进由 shell 提供，此处只补底部留白（仅移动）。
           padding: _isMobile
@@ -664,13 +676,12 @@ class _VideoCollectionDetailContentState
             return AspectRatio(
               aspectRatio: aspect,
               child: GestureDetector(
-                onLongPress:
-                    _isMobile && !selectionMode
-                        ? () {
-                          enterSelection();
-                          toggleSelect(item.itemId);
-                        }
-                        : null,
+                onLongPress: _isMobile && !selectionMode
+                    ? () {
+                        enterSelection();
+                        toggleSelect(item.itemId);
+                      }
+                    : null,
                 child: CollectionMemberCard(
                   key: ValueKey<int>(item.itemId),
                   coverUrl: item.video.coverImage?.bestAvailableUrl,
@@ -681,10 +692,9 @@ class _VideoCollectionDetailContentState
                   subtitle: _isMobile
                       ? _subtitleFor(item.video)
                       : _formatReleaseDate(item.video.releaseDate),
-                  onTap:
-                      selectionMode
-                          ? () => toggleSelect(item.itemId)
-                          : () => _openMemberActions(context, item),
+                  onTap: selectionMode
+                      ? () => toggleSelect(item.itemId)
+                      : () => _openMemberActions(context, item),
                   menuKey: Key('${widget.keyPrefix}-grid-menu-${item.itemId}'),
                   onRemove: _isMobile ? null : () => _removeItem(item.itemId),
                   onDelete: _isMobile ? null : () => _deleteVideo(item.itemId),
@@ -722,8 +732,8 @@ class _VideoCollectionDetailContentState
   }
 
   Future<void> _removeItem(int itemId) async {
-    final items = ref.read(_providerRef).value?.items ??
-        const <VideoCollectionItemDto>[];
+    final items =
+        ref.read(_providerRef).value?.items ?? const <VideoCollectionItemDto>[];
     int? videoId;
     for (final item in items) {
       if (item.itemId == itemId) {
@@ -748,8 +758,8 @@ class _VideoCollectionDetailContentState
   /// 彻底删除视频本体（含文件，不可恢复）：先确认，再走 notifier 乐观删除并广播
   /// [VideoMutationEvents.reportDeleted]，让列表页网格精准移除、合集横滑区刷新。
   Future<void> _deleteVideo(int itemId) async {
-    final items = ref.read(_providerRef).value?.items ??
-        const <VideoCollectionItemDto>[];
+    final items =
+        ref.read(_providerRef).value?.items ?? const <VideoCollectionItemDto>[];
     int? videoId;
     var title = '';
     for (final item in items) {
@@ -852,8 +862,7 @@ class _VideoCollectionDetailContentState
 
   List<VideoCollectionItemDto> _selectedItems(
     VideoCollectionDetailState state,
-  ) =>
-      state.items.where((it) => isSelected(it.itemId)).toList(growable: false);
+  ) => state.items.where((it) => isSelected(it.itemId)).toList(growable: false);
 
   void _showBatchToast(String verb, BatchRunResult<dynamic> result) {
     if (result.failed.isEmpty) {
@@ -887,11 +896,10 @@ class _VideoCollectionDetailContentState
       context,
       title: '正在加入「${target.name}」',
       items: selected,
-      action:
-          (item) => api.addCollectionItem(
-            collectionId: target.id,
-            videoItemId: item.video.id,
-          ),
+      action: (item) => api.addCollectionItem(
+        collectionId: target.id,
+        videoItemId: item.video.id,
+      ),
     );
     if (!mounted) {
       return;
@@ -918,7 +926,9 @@ class _VideoCollectionDetailContentState
       message: '确认从合集移除选中的 ${selected.length} 个视频？视频本身不会被删除。',
       confirmLabel: _isMobile ? '移除' : '确认',
       confirmKey: _batchConfirmKey('remove'),
-      drawerKey: _isMobile ? Key('${widget.keyPrefix}-batch-remove-drawer') : null,
+      drawerKey: _isMobile
+          ? Key('${widget.keyPrefix}-batch-remove-drawer')
+          : null,
     );
     if (!mounted || !confirmed) {
       return;
@@ -965,7 +975,9 @@ class _VideoCollectionDetailContentState
       message: '确认删除选中的 ${selected.length} 个视频？该操作不可恢复。',
       confirmLabel: _isMobile ? '删除' : '确认',
       confirmKey: _batchConfirmKey('delete'),
-      drawerKey: _isMobile ? Key('${widget.keyPrefix}-batch-delete-drawer') : null,
+      drawerKey: _isMobile
+          ? Key('${widget.keyPrefix}-batch-delete-drawer')
+          : null,
     );
     if (!mounted || !confirmed) {
       return;

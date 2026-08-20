@@ -69,6 +69,7 @@ void main() {
       _TestApp(
         sessionStore: sessionStore,
         child: PreviewImageStage(
+          stageKey: const Key('preview-image-stage'),
           imageUrl: '/preview.jpg',
           height: 240,
           onClose: () {},
@@ -76,7 +77,12 @@ void main() {
       ),
     );
 
-    final background = tester.widget<ColoredBox>(find.byType(ColoredBox).first);
+    final background = tester.widget<ColoredBox>(
+      find.descendant(
+        of: find.byKey(const Key('preview-image-stage')),
+        matching: find.byType(ColoredBox),
+      ),
+    );
     expect(background.color, Colors.black);
   });
 

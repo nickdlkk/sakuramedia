@@ -72,14 +72,19 @@ class FailedFileDto {
   }
 }
 
-/// 导入作业卡片所需的统一视图（JAV 与 PornBox 两类作业共用同一张卡片）。
+/// 导入作业卡片所需的统一视图。
+///
+/// 不同导入域的作业并不一定拥有媒体库或可选择的传输模式，因此这里仅保留卡片
+/// 渲染和动作判断真正需要的语义，具体域的请求参数留在各自 DTO / provider 内。
 abstract class ImportJobCardData {
   int get id;
   String get sourcePath;
   String get displaySourcePath;
   int? get taskRunId;
   String get state;
-  TransferMode get transferMode;
+
+  /// 可选的导入方式说明；例如字幕导入没有用户可选的方式时不展示该项。
+  String? get importModeLabel;
   int get importedCount;
   int get skippedCount;
   int get failedCount;
@@ -88,11 +93,8 @@ abstract class ImportJobCardData {
   bool get isCloud115;
   bool get canMutateFailedSource;
 
-  /// 从作业字段还原出的导入来源；`null` = 字段不足以还原，不提供「重新导入」。
-  ///
-  /// 用于任务级失败（`kind=job`）作业的整体重跑——这类作业没有可逐个重导的失败
-  /// 文件，只能按原参数新建一个导入作业。
-  MediaImportSource? get reimportSource;
+  /// 任务级失败时，是否可按作业原参数创建新的导入任务。
+  bool get canReimport;
 
   /// 终态（completed / failed）才允许失败文件的删除/重命名/重导。
   bool get isTerminal;
@@ -136,7 +138,6 @@ class ImportJobListItemDto implements ImportJobCardData {
   final int? taskRunId;
   @override
   final String state;
-  @override
   final TransferMode transferMode;
   @override
   final int importedCount;
@@ -157,9 +158,11 @@ class ImportJobListItemDto implements ImportJobCardData {
   @override
   bool get canMutateFailedSource => !isCloud115;
 
+  @override
+  String? get importModeLabel => transferMode.label;
+
   /// cloud115 作业按 `sourceCid` 还原（`sourcePath` 会被后端改写成可读面包屑，
   /// 回传无意义）；本地作业按 `sourcePath` 还原。
-  @override
   MediaImportSource? get reimportSource {
     final cid = sourceCid;
     if (cid != null) {
@@ -167,6 +170,9 @@ class ImportJobListItemDto implements ImportJobCardData {
     }
     return sourcePath.isEmpty ? null : MediaImportSource.local(sourcePath);
   }
+
+  @override
+  bool get canReimport => reimportSource != null;
 
   @override
   String get displaySourcePath {
@@ -234,20 +240,19 @@ class ImportJobDto extends ImportJobListItemDto
   factory ImportJobDto.fromJson(Map<String, dynamic> json) {
     final base = ImportJobListItemDto.fromJson(json);
     final rawFiles = json['failed_files'];
-    final failedFiles =
-        rawFiles is List
-            ? rawFiles
-                .whereType<Map>()
-                .map(
-                  (item) => FailedFileDto.fromJson(
-                    item.map(
-                      (dynamic key, dynamic value) =>
-                          MapEntry(key.toString(), value),
-                    ),
+    final failedFiles = rawFiles is List
+        ? rawFiles
+              .whereType<Map>()
+              .map(
+                (item) => FailedFileDto.fromJson(
+                  item.map(
+                    (dynamic key, dynamic value) =>
+                        MapEntry(key.toString(), value),
                   ),
-                )
-                .toList(growable: false)
-            : const <FailedFileDto>[];
+                ),
+              )
+              .toList(growable: false)
+        : const <FailedFileDto>[];
 
     return ImportJobDto(
       id: base.id,

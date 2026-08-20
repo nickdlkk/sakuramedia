@@ -43,14 +43,12 @@ void main() {
 
   Map<String, dynamic> movieDetailBody({
     String title = 'Movie 1',
-    String titleZh = '',
     String coverOrigin = '/files/images/movies/ABC-001/cover.jpg',
   }) {
     return <String, dynamic>{
       'javdb_id': 'MovieA1',
       'movie_number': 'ABC-001',
       'title': title,
-      'title_zh': titleZh,
       'series_id': 7,
       'series_name': 'Series 1',
       'maker_name': 'Maker',
@@ -74,8 +72,6 @@ void main() {
       'is_subscribed': true,
       'can_play': true,
       'summary': '',
-      'desc_zh': '',
-      'desc': 'desc',
       'thin_cover_image': null,
       'actors': const <Map<String, dynamic>>[],
       'tags': const <Map<String, dynamic>>[],
@@ -97,7 +93,6 @@ void main() {
             'javdb_id': 'MovieA1',
             'movie_number': 'ABC-001',
             'title': 'Movie 1',
-            'title_zh': '电影 1',
             'series_id': 7,
             'series_name': 'Series 1',
             'cover_image': null,
@@ -115,24 +110,27 @@ void main() {
     );
 
     final page = await moviesApi.getMovies(
-      status: MovieStatusFilter.subscribed,
+      status: MovieStatusFilter.unsubscribed,
       collectionType: MovieCollectionTypeFilter.single,
       sort: 'release_date:desc',
+      heatMin: 1000,
+      heatMax: 5000,
       page: 1,
       pageSize: 24,
     );
 
     final request = adapter.requests.single;
-    expect(request.uri.queryParameters['status'], 'subscribed');
+    expect(request.uri.queryParameters['status'], 'unsubscribed');
     expect(request.uri.queryParameters['collection_type'], 'single');
     expect(request.uri.queryParameters['sort'], 'release_date:desc');
+    expect(request.uri.queryParameters['heat_min'], '1000');
+    expect(request.uri.queryParameters['heat_max'], '5000');
     expect(request.uri.queryParameters['actor_id'], isNull);
     expect(request.uri.queryParameters['page'], '1');
     expect(request.uri.queryParameters['page_size'], '24');
     expect(page.items.single.id, 77);
     expect(page.items.single.movieNumber, 'ABC-001');
-    expect(page.items.single.titleZh, '电影 1');
-    expect(page.items.single.preferredTitle, '电影 1');
+    expect(page.items.single.preferredTitle, 'Movie 1');
     expect(page.items.single.seriesId, 7);
     expect(page.items.single.seriesName, 'Series 1');
     expect(page.items.single.heat, 9);
@@ -698,7 +696,6 @@ void main() {
             'javdb_id': 'MovieA1',
             'movie_number': 'ABC-001',
             'title': 'Movie 1',
-            'title_zh': '电影 1',
             'cover_image': <String, dynamic>{
               'id': 10,
               'origin': 'origin.jpg',
@@ -731,8 +728,7 @@ void main() {
     expect(page.pageSize, 8);
     expect(page.total, 1);
     expect(page.items.single.movieNumber, 'ABC-001');
-    expect(page.items.single.titleZh, '电影 1');
-    expect(page.items.single.preferredTitle, '电影 1');
+    expect(page.items.single.preferredTitle, 'Movie 1');
     expect(page.items.single.coverImage?.bestAvailableUrl, 'large.jpg');
     expect(
       page.items.single.thinCoverImage?.bestAvailableUrl,
@@ -838,7 +834,6 @@ void main() {
         'javdb_id': 'MovieA1',
         'movie_number': 'ABC-001',
         'title': 'Movie 1',
-        'title_zh': '电影 1',
         'cover_image': <String, dynamic>{
           'id': 10,
           'origin': 'cover-origin.jpg',
@@ -862,8 +857,6 @@ void main() {
         'maker_name': 'S1 NO.1 STYLE',
         'director_name': '紋℃',
         'summary': 'summary',
-        'desc_zh': '中文简介',
-        'desc': '日本語紹介',
         'actors': [
           <String, dynamic>{
             'id': 1,
@@ -990,17 +983,14 @@ void main() {
     expect(detail.id, 77);
     expect(detail.movieNumber, 'ABC-001');
     expect(detail.title, 'Movie 1');
-    expect(detail.titleZh, '电影 1');
-    expect(detail.preferredTitle, '电影 1');
+    expect(detail.preferredTitle, 'Movie 1');
     expect(detail.heat, 27);
     expect(detail.seriesId, 7);
     expect(detail.seriesName, 'Series 1');
     expect(detail.makerName, 'S1 NO.1 STYLE');
     expect(detail.directorName, '紋℃');
     expect(detail.summary, 'summary');
-    expect(detail.descZh, '中文简介');
-    expect(detail.desc, '日本語紹介');
-    expect(detail.preferredDescription, '中文简介');
+    expect(detail.preferredDescription, 'summary');
     expect(detail.coverImage?.bestAvailableUrl, 'cover-large.jpg');
     expect(detail.thinCoverImage?.bestAvailableUrl, 'thin-large.jpg');
     expect(detail.plotImages.single.bestAvailableUrl, 'plot-large.jpg');
@@ -1148,89 +1138,51 @@ void main() {
     expect(detail.mediaItems, isEmpty);
   });
 
-  test(
-    'getMovieDetail falls back to summary then desc for preferred description',
-    () async {
-      adapter.enqueueJson(
-        method: 'GET',
-        path: '/movies/ABC-020',
-        statusCode: 200,
-        body: <String, dynamic>{
-          'javdb_id': 'MovieA20',
-          'movie_number': 'ABC-020',
-          'title': 'Movie 20',
-          'summary': '  summary fallback  ',
-          'desc_zh': '   ',
-          'desc': '日本語紹介',
-          'actors': const <Map<String, dynamic>>[],
-          'tags': const <Map<String, dynamic>>[],
-          'plot_images': const <Map<String, dynamic>>[],
-          'playlists': const <Map<String, dynamic>>[],
-          'media_items': const <Map<String, dynamic>>[],
-        },
-      );
+  test('getMovieDetail trims summary for preferred description', () async {
+    adapter.enqueueJson(
+      method: 'GET',
+      path: '/movies/ABC-020',
+      statusCode: 200,
+      body: <String, dynamic>{
+        'javdb_id': 'MovieA20',
+        'movie_number': 'ABC-020',
+        'title': 'Movie 20',
+        'summary': '  summary fallback  ',
+        'actors': const <Map<String, dynamic>>[],
+        'tags': const <Map<String, dynamic>>[],
+        'plot_images': const <Map<String, dynamic>>[],
+        'playlists': const <Map<String, dynamic>>[],
+        'media_items': const <Map<String, dynamic>>[],
+      },
+    );
 
-      final detail = await moviesApi.getMovieDetail(movieNumber: 'ABC-020');
+    final detail = await moviesApi.getMovieDetail(movieNumber: 'ABC-020');
 
-      expect(detail.preferredDescription, 'summary fallback');
-    },
-  );
+    expect(detail.preferredDescription, 'summary fallback');
+  });
 
-  test(
-    'getMovieDetail falls back to desc when desc_zh and summary are blank',
-    () async {
-      adapter.enqueueJson(
-        method: 'GET',
-        path: '/movies/ABC-021',
-        statusCode: 200,
-        body: <String, dynamic>{
-          'javdb_id': 'MovieA21',
-          'movie_number': 'ABC-021',
-          'title': 'Movie 21',
-          'summary': ' ',
-          'desc_zh': '',
-          'desc': '  日本語紹介  ',
-          'actors': const <Map<String, dynamic>>[],
-          'tags': const <Map<String, dynamic>>[],
-          'plot_images': const <Map<String, dynamic>>[],
-          'playlists': const <Map<String, dynamic>>[],
-          'media_items': const <Map<String, dynamic>>[],
-        },
-      );
+  test('getMovieDetail preferred description is empty when summary is blank', () async {
+    adapter.enqueueJson(
+      method: 'GET',
+      path: '/movies/ABC-022',
+      statusCode: 200,
+      body: <String, dynamic>{
+        'javdb_id': 'MovieA22',
+        'movie_number': 'ABC-022',
+        'title': 'Movie 22',
+        'summary': '  ',
+        'actors': const <Map<String, dynamic>>[],
+        'tags': const <Map<String, dynamic>>[],
+        'plot_images': const <Map<String, dynamic>>[],
+        'playlists': const <Map<String, dynamic>>[],
+        'media_items': const <Map<String, dynamic>>[],
+      },
+    );
 
-      final detail = await moviesApi.getMovieDetail(movieNumber: 'ABC-021');
+    final detail = await moviesApi.getMovieDetail(movieNumber: 'ABC-022');
 
-      expect(detail.preferredDescription, '日本語紹介');
-    },
-  );
-
-  test(
-    'getMovieDetail preferred description is empty when all candidates are blank',
-    () async {
-      adapter.enqueueJson(
-        method: 'GET',
-        path: '/movies/ABC-022',
-        statusCode: 200,
-        body: <String, dynamic>{
-          'javdb_id': 'MovieA22',
-          'movie_number': 'ABC-022',
-          'title': 'Movie 22',
-          'summary': '  ',
-          'desc_zh': '',
-          'desc': '\n',
-          'actors': const <Map<String, dynamic>>[],
-          'tags': const <Map<String, dynamic>>[],
-          'plot_images': const <Map<String, dynamic>>[],
-          'playlists': const <Map<String, dynamic>>[],
-          'media_items': const <Map<String, dynamic>>[],
-        },
-      );
-
-      final detail = await moviesApi.getMovieDetail(movieNumber: 'ABC-022');
-
-      expect(detail.preferredDescription, isEmpty);
-    },
-  );
+    expect(detail.preferredDescription, isEmpty);
+  });
 
   test('getMovieDetail handles missing video info sections', () async {
     adapter.enqueueJson(
@@ -1342,64 +1294,6 @@ void main() {
       ),
     );
   });
-
-  test(
-    'translateMovieDescription posts rerun to unified action endpoint',
-    () async {
-      // 统一 action（任务架构 Wave 4）：rerun + resource_ids 寻址，响应带
-      // task_run_id，客户端不解析影片详情。
-      adapter.enqueueJson(
-        method: 'POST',
-        path: '/system/resource-task-actions',
-        body: <String, dynamic>{
-          'task_key': 'movie_desc_translation',
-          'action': 'rerun',
-          'task_run_id': 9,
-          'accepted_resource_ids': <int>[1],
-          'skipped': <Map<String, dynamic>>[],
-        },
-      );
-
-      await moviesApi.translateMovieDescription(movieId: 1);
-
-      final request = adapter.requests.single;
-      expect(request.method, 'POST');
-      expect(request.path, '/system/resource-task-actions');
-      expect(request.body, <String, dynamic>{
-        'task_key': 'movie_desc_translation',
-        'action': 'rerun',
-        'resource_ids': <int>[1],
-      });
-    },
-  );
-
-  test(
-    'translateMovieDescription preserves backend ApiException payload',
-    () async {
-      adapter.enqueueJson(
-        method: 'POST',
-        path: '/system/resource-task-actions',
-        statusCode: 409,
-        body: <String, dynamic>{
-          'error': <String, dynamic>{
-            'code': 'resource_task_action_conflict',
-            'message': '已有相同任务执行中',
-          },
-        },
-      );
-
-      expect(
-        () => moviesApi.translateMovieDescription(movieId: 1),
-        throwsA(
-          isA<ApiException>().having(
-            (ApiException error) => error.error?.code,
-            'error.code',
-            'resource_task_action_conflict',
-          ),
-        ),
-      );
-    },
-  );
 
   test('syncMovieInteraction posts rerun to unified action endpoint', () async {
     adapter.enqueueJson(

@@ -70,3 +70,16 @@ Map<String, dynamic>? asMapOrNull(dynamic value) {
 /// 同 [asMapOrNull]，但非 Map 时返回空 Map（用于「必有对象」字段的兜底）。
 Map<String, dynamic> asMap(dynamic value) =>
     asMapOrNull(value) ?? <String, dynamic>{};
+
+/// 宽松转 `List<String>`：非 List 返回空列表；只保留可转成字符串的项。
+///
+/// [trim] 为 `true` 时逐项 trim，trim 后为空字符串的项会被丢弃。
+List<String> asStringList(dynamic value, {bool trim = false}) {
+  if (value is! List) {
+    return const <String>[];
+  }
+  return <String>[
+    for (final item in value)
+      if (asStringOrNull(item, trim: trim) case final text?) text,
+  ];
+}

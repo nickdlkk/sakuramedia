@@ -13,6 +13,7 @@ import 'package:sakuramedia/features/activity/presentation/providers/activity_ap
 import 'package:sakuramedia/features/activity/presentation/providers/activity_center_state.dart';
 import 'package:sakuramedia/features/shared/presentation/providers/sse_channel.dart';
 import 'package:sakuramedia/features/shared/presentation/providers/async_notifier_dispose_guard.dart';
+import 'package:sakuramedia/features/shared/presentation/providers/paged_async_notifier.dart';
 
 part 'activity_center_provider.g.dart';
 
@@ -31,7 +32,9 @@ class ActivityCenter extends _$ActivityCenter
   /// null，写不进 state；把它记下来，由 `_loadInitialState` 的返回值带上——否则
   /// 「首连就 unsupported / 立刻断线」会被无条件的 live 覆盖掉。
   SseChannelState _channelState = SseChannelState.idle;
-  int _taskRefreshRequestId = 0;
+  late final DebouncedLatestRequest _taskFilterRequests =
+      DebouncedLatestRequest();
+  int _taskFilterGeneration = 0;
   int _lastEventId = 0;
   ActivityTab? _pendingActiveTab;
   int? _pendingHighlightedTaskRunId;
@@ -42,7 +45,10 @@ class ActivityCenter extends _$ActivityCenter
   @override
   Future<ActivityCenterState> build() async {
     attachDisposeGuard();
-    ref.onDispose(() => unawaited(_shutdownChannel()));
+    ref.onDispose(() {
+      _taskFilterRequests.dispose();
+      unawaited(_shutdownChannel());
+    });
     return _loadInitialState();
   }
 
@@ -61,10 +67,9 @@ class ActivityCenter extends _$ActivityCenter
       if (_pendingActiveTab != null || _hasPendingHighlight) {
         next = next.copyWith(
           activeTab: _pendingActiveTab ?? next.activeTab,
-          highlightedTaskRunId:
-              _hasPendingHighlight
-                  ? _pendingHighlightedTaskRunId
-                  : next.highlightedTaskRunId,
+          highlightedTaskRunId: _hasPendingHighlight
+              ? _pendingHighlightedTaskRunId
+              : next.highlightedTaskRunId,
         );
         _pendingActiveTab = null;
         _pendingHighlightedTaskRunId = null;
@@ -82,7 +87,8 @@ class ActivityCenter extends _$ActivityCenter
   }
 
   Future<void> reloadAll() async {
-    _taskRefreshRequestId += 1;
+    _taskFilterRequests.cancel();
+    _taskFilterGeneration++;
     await _shutdownChannel();
 
     state = AsyncData(
@@ -93,6 +99,7 @@ class ActivityCenter extends _$ActivityCenter
         initialErrorMessage: null,
         jobErrorMessage: null,
         taskRefreshErrorMessage: null,
+        taskFilterUpdate: const FilterUpdateState.idle(),
         connectionState: ActivityConnectionState.connecting,
         connectionMessage: '正在同步任务中心',
       ),
@@ -158,21 +165,37 @@ class ActivityCenter extends _$ActivityCenter
     state = AsyncData(current.copyWith(highlightedTaskRunId: null));
   }
 
-  Future<void> applyTaskFilter(ActivityTaskFilterState next) async {
-    if (current.taskFilter == next) return;
-    state = AsyncData(current.copyWith(taskFilter: next));
-    await refreshTaskHistory();
-  }
-
-  Future<void> refreshTaskHistory() async {
-    final requestId = ++_taskRefreshRequestId;
+  Future<void> applyTaskFilter(ActivityTaskFilterState next) {
+    if (current.taskFilter == next) return Future<void>.value();
+    _taskFilterGeneration++;
     state = AsyncData(
       current.copyWith(
+        taskFilter: next,
+        taskFilterUpdate: const FilterUpdateState.loading(),
         isRefreshingTaskHistory: true,
+        isLoadingMoreTasks: false,
         taskRefreshErrorMessage: null,
         taskLoadMoreErrorMessage: null,
       ),
     );
+    return _taskFilterRequests.schedule(_refreshTaskHistory);
+  }
+
+  Future<void> refreshTaskHistory() {
+    _taskFilterGeneration++;
+    state = AsyncData(
+      current.copyWith(
+        isRefreshingTaskHistory: true,
+        isLoadingMoreTasks: false,
+        taskFilterUpdate: const FilterUpdateState.loading(),
+        taskRefreshErrorMessage: null,
+        taskLoadMoreErrorMessage: null,
+      ),
+    );
+    return _taskFilterRequests.runNow(_refreshTaskHistory);
+  }
+
+  Future<void> _refreshTaskHistory(int requestId) async {
     final filter = current.taskFilter;
     try {
       final response = await ref
@@ -185,7 +208,7 @@ class ActivityCenter extends _$ActivityCenter
             triggerType: filter.triggerType,
             sort: filter.sort.apiValue,
           );
-      if (isDisposed || requestId != _taskRefreshRequestId) return;
+      if (isDisposed || !_taskFilterRequests.isCurrent(requestId)) return;
       final tasks = _sortHistoryTasks(response.items, filter);
       state = AsyncData(
         current.copyWith(
@@ -195,17 +218,17 @@ class ActivityCenter extends _$ActivityCenter
           taskLoadMoreErrorMessage: null,
           taskRefreshErrorMessage: null,
           isRefreshingTaskHistory: false,
+          taskFilterUpdate: const FilterUpdateState.idle(),
         ),
       );
     } catch (error) {
-      if (isDisposed || requestId != _taskRefreshRequestId) return;
+      if (isDisposed || !_taskFilterRequests.isCurrent(requestId)) return;
+      final message = apiErrorMessage(error, fallback: '任务筛选刷新失败，请重试');
       state = AsyncData(
         current.copyWith(
-          taskRefreshErrorMessage: apiErrorMessage(
-            error,
-            fallback: '任务筛选刷新失败，请重试',
-          ),
+          taskRefreshErrorMessage: message,
           isRefreshingTaskHistory: false,
+          taskFilterUpdate: FilterUpdateState.failed(message),
         ),
       );
     }
@@ -227,7 +250,10 @@ class ActivityCenter extends _$ActivityCenter
     );
   }
 
-  Future<ManualJobTriggerResponseDto> triggerJob(String taskKey) async {
+  Future<ManualJobTriggerResponseDto> triggerJob(
+    String taskKey, {
+    Map<String, dynamic>? params,
+  }) async {
     if (current.triggeringTaskKeys.contains(taskKey)) {
       throw StateError('job trigger already running');
     }
@@ -239,7 +265,7 @@ class ActivityCenter extends _$ActivityCenter
     try {
       final response = await ref
           .read(activityApiProvider)
-          .triggerJob(taskKey: taskKey);
+          .triggerJob(taskKey: taskKey, params: params);
       if (!isDisposed) {
         state = AsyncData(
           current.copyWith(
@@ -284,12 +310,14 @@ class ActivityCenter extends _$ActivityCenter
     final now = current;
     if (now.isLoadingMoreTasks ||
         now.isRefreshingTaskHistory ||
+        !now.taskFilterUpdate.isIdle ||
         !now.hasMoreTasks) {
       return;
     }
     state = AsyncData(
       now.copyWith(isLoadingMoreTasks: true, taskLoadMoreErrorMessage: null),
     );
+    final taskFilterGeneration = _taskFilterGeneration;
     final filter = now.taskFilter;
     try {
       final response = await ref
@@ -302,7 +330,7 @@ class ActivityCenter extends _$ActivityCenter
             triggerType: filter.triggerType,
             sort: filter.sort.apiValue,
           );
-      if (isDisposed) return;
+      if (isDisposed || taskFilterGeneration != _taskFilterGeneration) return;
       final tasks = _appendUniqueTasks(
         current.taskRuns,
         response.items,
@@ -318,7 +346,7 @@ class ActivityCenter extends _$ActivityCenter
         ),
       );
     } catch (error) {
-      if (isDisposed) return;
+      if (isDisposed || taskFilterGeneration != _taskFilterGeneration) return;
       state = AsyncData(
         current.copyWith(
           taskLoadMoreErrorMessage: apiErrorMessage(
@@ -383,10 +411,9 @@ class ActivityCenter extends _$ActivityCenter
     final channel = SseChannel<ActivityStreamEvent>(
       // afterEventId 由本 provider 自持的 _lastEventId 决定（连流那一刻才读，
       // 重连时自然带上断线期间已消费到的最大事件 id）。
-      connect:
-          ({String? afterEventId}) => ref
-              .read(activityApiProvider)
-              .streamEvents(afterEventId: _lastEventId),
+      connect: ({String? afterEventId}) => ref
+          .read(activityApiProvider)
+          .streamEvents(afterEventId: _lastEventId),
       mergeMode: SseMergeMode.microtask,
       pollingInterval: _pollingInterval,
       longDisconnectThreshold: _longDisconnectThreshold,
@@ -397,8 +424,7 @@ class ActivityCenter extends _$ActivityCenter
     _channel = channel;
     await channel.start(
       // microtask 合批模式下事件走 onBatch；onEvent 只是模式改变时的等价兜底。
-      onEvent:
-          (event) => _applyStreamEvents(<ActivityStreamEvent>[event]),
+      onEvent: (event) => _applyStreamEvents(<ActivityStreamEvent>[event]),
       onBatch: _applyStreamEvents,
     );
   }
@@ -450,9 +476,20 @@ class ActivityCenter extends _$ActivityCenter
 
   /// 轮询 tick 与长断线补拉共用：重新 bootstrap 一次覆盖本地快照。
   Future<void> _refreshFromBootstrap() async {
+    final taskFilterGeneration = _taskFilterGeneration;
     try {
       final bootstrap = await _fetchBootstrap(current.taskFilter);
-      if (!isDisposed) state = AsyncData(_applyBootstrap(current, bootstrap));
+      if (isDisposed) return;
+      final now = current;
+      if (taskFilterGeneration != _taskFilterGeneration ||
+          !now.taskFilterUpdate.isIdle) {
+        _lastEventId = bootstrap.latestEventId;
+        state = AsyncData(
+          now.copyWith(activeTaskRuns: bootstrap.activeTaskRuns),
+        );
+        return;
+      }
+      state = AsyncData(_applyBootstrap(now, bootstrap));
     } catch (_) {}
   }
 
@@ -504,13 +541,15 @@ class ActivityCenter extends _$ActivityCenter
         keepWhenMissing: taskRun.isActive,
         sorter: _sortActiveTasks,
       ),
-      taskRuns: _upsertTaskInList(
-        base.taskRuns,
-        taskRun,
-        insertAtFront: insertAtFront,
-        keepWhenMissing: _matchesTaskFilter(taskRun, base.taskFilter),
-        sorter: (items) => _sortHistoryTasks(items, base.taskFilter),
-      ),
+      taskRuns: base.taskFilterUpdate.isIdle
+          ? _upsertTaskInList(
+              base.taskRuns,
+              taskRun,
+              insertAtFront: insertAtFront,
+              keepWhenMissing: _matchesTaskFilter(taskRun, base.taskFilter),
+              sorter: (items) => _sortHistoryTasks(items, base.taskFilter),
+            )
+          : base.taskRuns,
     );
   }
 
@@ -563,8 +602,9 @@ class ActivityCenter extends _$ActivityCenter
     List<TaskRunDto> items,
     ActivityTaskFilterState filter,
   ) {
-    final sorted =
-        items.where((item) => _matchesTaskFilter(item, filter)).toList();
+    final sorted = items
+        .where((item) => _matchesTaskFilter(item, filter))
+        .toList();
     int timestampFor(TaskRunDto item) => switch (filter.sort) {
       ActivityTaskSort.startedAtDesc || ActivityTaskSort.startedAtAsc =>
         item.startedAt?.millisecondsSinceEpoch ?? 0,
@@ -613,6 +653,7 @@ class ActivityCenter extends _$ActivityCenter
   bool get isLoadingMoreTasks => current.isLoadingMoreTasks;
   bool get isLoadingJobs => current.isLoadingJobs;
   bool get isRefreshingTaskHistory => current.isRefreshingTaskHistory;
+  FilterUpdateState get taskFilterUpdate => current.taskFilterUpdate;
   String? get taskLoadMoreErrorMessage => current.taskLoadMoreErrorMessage;
   String? get jobErrorMessage => current.jobErrorMessage;
   String? get taskRefreshErrorMessage => current.taskRefreshErrorMessage;

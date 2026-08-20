@@ -36,7 +36,7 @@ void main() {
   });
 
   testWidgets(
-    'renders overview card, api key card, empty state and disabled create action',
+    'renders overview card, connection test card, empty state and disabled create action',
     (WidgetTester tester) async {
       _enqueueIndexersData(
         _bundle,
@@ -52,7 +52,7 @@ void main() {
         findsOneWidget,
       );
       expect(
-        find.byKey(const Key('mobile-indexers-api-key-card')),
+        find.byKey(const Key('mobile-indexers-connection-test-card')),
         findsOneWidget,
       );
       expect(
@@ -130,11 +130,10 @@ void main() {
         DownloadClientDto.fromJson(_buildClientJson()),
       ],
     );
-    final indexerSettingsApi = _RefreshFailureIndexerSettingsApi(
+      final indexerSettingsApi = _RefreshFailureIndexerSettingsApi(
       apiClient: _bundle.apiClient,
       initialSettings: IndexerSettingsDto.fromJson(
         _buildSettingsJson(
-          apiKey: 'secret-key',
           indexers: const <Map<String, dynamic>>[
             <String, dynamic>{
               'id': 1,
@@ -169,70 +168,51 @@ void main() {
     await tester.pump(const Duration(seconds: 3));
   });
 
-  testWidgets('saves api key and updates overview state', (
+  testWidgets('shows per-indexer API Key status in card and detail drawer', (
     WidgetTester tester,
   ) async {
     _enqueueIndexersData(
       _bundle,
-      clients: _defaultClients,
-      apiKey: '',
-      indexers: const <Map<String, dynamic>>[],
-    );
-    _bundle.adapter.enqueueJson(
-      method: 'PATCH',
-      path: '/indexer-settings',
-      body: _buildSettingsJson(
-        apiKey: 'secret-key',
-        indexers: const <Map<String, dynamic>>[],
-      ),
+      indexers: const <Map<String, dynamic>>[
+        <String, dynamic>{
+          'id': 1,
+          'name': '馒头',
+          'url': 'https://mt.example/api',
+          'kind': 'pt',
+          'api_key': 'secret-key',
+          'download_client_id': 1,
+          'download_client_name': 'client-a',
+        },
+        <String, dynamic>{
+          'id': 2,
+          'name': 'dmhy',
+          'url': 'https://dmhy.example/api',
+          'kind': 'bt',
+          'api_key': null,
+          'download_client_id': 1,
+          'download_client_name': 'client-a',
+        },
+      ],
     );
 
     await _pumpPage(tester);
 
-    await tester.enterText(
-      find.byKey(const Key('mobile-indexers-api-key-field')),
-      'secret-key',
-    );
-    await tester.tap(
-      find.byKey(const Key('mobile-indexers-api-key-save-button')),
-    );
-    await tester.pump();
+    expect(find.text('API Key: 已配置'), findsOneWidget);
+    expect(find.text('API Key: 未配置'), findsOneWidget);
+
+    await tester.drag(find.byType(Scrollable).first, const Offset(0, -300));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('mobile-indexer-card-body-1')));
     await tester.pumpAndSettle();
 
-    final patchRequest = _bundle.adapter.requests.firstWhere(
-      (request) =>
-          request.method == 'PATCH' && request.path == '/indexer-settings',
-    );
-    expect(patchRequest.body['api_key'], 'secret-key');
     expect(find.text('已配置'), findsWidgets);
-    await tester.pump(const Duration(seconds: 3));
+    expect(find.byKey(const Key('mobile-indexer-detail-drawer')), findsOneWidget);
   });
 
-  testWidgets('blocks saving empty api key', (WidgetTester tester) async {
-    _enqueueIndexersData(
-      _bundle,
-      clients: _defaultClients,
-      apiKey: '',
-      indexers: const <Map<String, dynamic>>[],
-    );
-
-    await _pumpPage(tester);
-
-    await tester.tap(
-      find.byKey(const Key('mobile-indexers-api-key-save-button')),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 100));
-
-    expect(find.text('请输入 API Key'), findsOneWidget);
-    expect(_bundle.adapter.hitCount('PATCH', '/indexer-settings'), 0);
-    await tester.pump(const Duration(seconds: 3));
-  });
-
-  testWidgets('tests saved Jackett settings and blocks unsaved API Key', (
+  testWidgets('tests saved Torznab settings and shows the result', (
     WidgetTester tester,
   ) async {
-    _enqueueIndexersData(_bundle, apiKey: 'secret-key');
+    _enqueueIndexersData(_bundle);
     _bundle.adapter.enqueueJson(
       method: 'GET',
       path: '/indexer-settings/test',
@@ -258,26 +238,14 @@ void main() {
       find.byKey(const Key('mobile-indexers-connection-test-result')),
       findsOneWidget,
     );
-    expect(find.text('Jackett 已连通，测试查询未返回候选。'), findsOneWidget);
-
-    await tester.enterText(
-      find.byKey(const Key('mobile-indexers-api-key-field')),
-      'changed-key',
-    );
-    await tester.pump();
-
-    final button = tester.widget<AppButton>(
-      find.byKey(const Key('mobile-indexers-connection-test-button')),
-    );
-    expect(button.onPressed, isNull);
-    expect(find.text('当前配置尚未保存，保存后再测试。'), findsOneWidget);
+    expect(find.text('Torznab 已连通，测试查询未返回候选。'), findsOneWidget);
     await tester.pump(const Duration(seconds: 3));
   });
 
-  testWidgets('shows Jackett connection failure details', (
+  testWidgets('shows Torznab connection failure details', (
     WidgetTester tester,
   ) async {
-    _enqueueIndexersData(_bundle, apiKey: 'secret-key');
+    _enqueueIndexersData(_bundle);
     _bundle.adapter.enqueueJson(
       method: 'GET',
       path: '/indexer-settings/test',
@@ -289,7 +257,7 @@ void main() {
         'result_count': 0,
         'elapsed_ms': 30,
         'error': <String, dynamic>{
-          'type': 'jackett_request_error',
+          'type': 'torznab_request_error',
           'message': 'connection refused',
         },
       },
@@ -306,14 +274,14 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('connection refused'), findsOneWidget);
-    expect(find.text('jackett_request_error'), findsOneWidget);
+    expect(find.text('torznab_request_error'), findsOneWidget);
     await tester.pump(const Duration(seconds: 3));
   });
 
   testWidgets('shows a repair hint when the connection request fails', (
     WidgetTester tester,
   ) async {
-    _enqueueIndexersData(_bundle, apiKey: 'secret-key');
+    _enqueueIndexersData(_bundle);
     _bundle.adapter.enqueueJson(
       method: 'GET',
       path: '/indexer-settings/test',
@@ -328,7 +296,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(AppStatusChip), findsOneWidget);
-    expect(find.text('请检查 Jackett 服务、API Key 和索引器地址后重试。'), findsOneWidget);
+    expect(find.text('请检查 Torznab 服务、API Key 和索引器地址后重试。'), findsOneWidget);
     await tester.pump(const Duration(seconds: 3));
   });
 
@@ -338,14 +306,12 @@ void main() {
     _enqueueIndexersData(
       _bundle,
       clients: _defaultClients,
-      apiKey: 'secret-key',
       indexers: const <Map<String, dynamic>>[],
     );
     _bundle.adapter.enqueueJson(
       method: 'PATCH',
       path: '/indexer-settings',
       body: _buildSettingsJson(
-        apiKey: 'secret-key',
         indexers: const <Map<String, dynamic>>[
           <String, dynamic>{
             'id': 2,
@@ -371,6 +337,10 @@ void main() {
       find.byKey(const Key('indexer-entry-url-field')),
       'https://mteam.example/api',
     );
+    await tester.enterText(
+      find.byKey(const Key('indexer-entry-api-key-field')),
+      'secret-key',
+    );
     await tester.tap(find.text('PT (私有)').last);
     await tester.pumpAndSettle();
     await tester.ensureVisible(
@@ -390,6 +360,7 @@ void main() {
           request.method == 'PATCH' && request.path == '/indexer-settings',
     );
     expect(patchRequest.body['indexers'][0]['download_client_ids'], <int>[1]);
+    expect(patchRequest.body['indexers'][0]['api_key'], 'secret-key');
     expect(find.text('M-Team'), findsOneWidget);
     await tester.pump(const Duration(seconds: 3));
   });
@@ -400,20 +371,19 @@ void main() {
     _enqueueIndexersData(
       _bundle,
       clients: <Map<String, dynamic>>[..._defaultClients, _cloudDownloadClient],
-      apiKey: 'secret-key',
       indexers: const <Map<String, dynamic>>[],
     );
     _bundle.adapter.enqueueJson(
       method: 'PATCH',
       path: '/indexer-settings',
       body: _buildSettingsJson(
-        apiKey: 'secret-key',
         indexers: const <Map<String, dynamic>>[
           <String, dynamic>{
             'id': 3,
             'name': 'DMHY',
             'url': 'https://dmhy.example/api',
             'kind': 'bt',
+            'api_key': null,
             'download_clients': <Map<String, dynamic>>[
               <String, dynamic>{
                 'id': 1,
@@ -441,6 +411,9 @@ void main() {
     expect(find.byKey(const Key('indexer-download-client-8')), findsNothing);
     await tester.tap(find.text('BT (公网)').last);
     await tester.pumpAndSettle();
+    await tester.ensureVisible(
+      find.byKey(const Key('indexer-download-client-1')),
+    );
     await tester.tap(find.byKey(const Key('indexer-download-client-1')));
     await tester.pumpAndSettle();
     await tester.ensureVisible(
@@ -470,18 +443,18 @@ void main() {
   testWidgets('opens detail drawer and edits indexer', (
     WidgetTester tester,
   ) async {
-    _enqueueIndexersData(_bundle, apiKey: 'secret-key');
+    _enqueueIndexersData(_bundle);
     _bundle.adapter.enqueueJson(
       method: 'PATCH',
       path: '/indexer-settings',
       body: _buildSettingsJson(
-        apiKey: 'secret-key',
         indexers: const <Map<String, dynamic>>[
           <String, dynamic>{
             'id': 1,
             'name': '馒头-更新',
             'url': 'https://mt-updated.example/api',
             'kind': 'pt',
+            'api_key': 'new-key',
             'download_client_id': 1,
             'download_client_name': 'client-a',
           },
@@ -512,6 +485,10 @@ void main() {
       find.byKey(const Key('indexer-entry-url-field')),
       'https://mt-updated.example/api',
     );
+    await tester.enterText(
+      find.byKey(const Key('indexer-entry-api-key-field')),
+      'new-key',
+    );
     await tester.ensureVisible(
       find.byKey(const Key('mobile-indexer-submit-button')),
     );
@@ -524,6 +501,7 @@ void main() {
           request.method == 'PATCH' && request.path == '/indexer-settings',
     );
     expect(patchRequest.body['indexers'][0]['name'], '馒头-更新');
+    expect(patchRequest.body['indexers'][0]['api_key'], 'new-key');
     expect(find.text('馒头-更新'), findsOneWidget);
     await tester.pump(const Duration(seconds: 3));
   });
@@ -531,12 +509,11 @@ void main() {
   testWidgets('deletes indexer from detail action after confirm', (
     WidgetTester tester,
   ) async {
-    _enqueueIndexersData(_bundle, apiKey: 'secret-key');
+    _enqueueIndexersData(_bundle);
     _bundle.adapter.enqueueJson(
       method: 'PATCH',
       path: '/indexer-settings',
       body: _buildSettingsJson(
-        apiKey: 'secret-key',
         indexers: const <Map<String, dynamic>>[],
       ),
     );
@@ -565,7 +542,7 @@ void main() {
   testWidgets(
     'validates duplicate name, invalid url and missing download client',
     (WidgetTester tester) async {
-      _enqueueIndexersData(_bundle, apiKey: 'secret-key');
+      _enqueueIndexersData(_bundle);
 
       await _pumpPage(tester);
 
@@ -597,13 +574,13 @@ void main() {
     (WidgetTester tester) async {
       _enqueueIndexersData(
         _bundle,
-        apiKey: 'secret-key',
         indexers: const <Map<String, dynamic>>[
           <String, dynamic>{
             'id': 1,
             'name': '失效索引器',
             'url': 'https://broken.example/api',
             'kind': 'bt',
+            'api_key': null,
             'download_client_id': 99,
             'download_client_name': 'missing-client',
           },
@@ -613,13 +590,13 @@ void main() {
         method: 'PATCH',
         path: '/indexer-settings',
         body: _buildSettingsJson(
-          apiKey: 'secret-key',
           indexers: const <Map<String, dynamic>>[
             <String, dynamic>{
               'id': 1,
               'name': '失效索引器',
               'url': 'https://broken.example/api',
               'kind': 'bt',
+              'api_key': null,
               'download_client_id': 1,
               'download_client_name': 'client-a',
             },
@@ -642,6 +619,9 @@ void main() {
         find.byKey(const Key('mobile-indexer-detail-edit-button')),
       );
       await tester.pumpAndSettle();
+      await tester.ensureVisible(
+        find.byKey(const Key('indexer-download-client-1')),
+      );
       await tester.tap(find.byKey(const Key('indexer-download-client-1')));
       await tester.pumpAndSettle();
       await tester.ensureVisible(
@@ -691,7 +671,6 @@ Future<void> _pumpPage(
 void _enqueueIndexersData(
   TestApiBundle bundle, {
   List<Map<String, dynamic>>? clients,
-  String apiKey = '',
   List<Map<String, dynamic>>? indexers,
 }) {
   bundle.adapter.enqueueJson(
@@ -702,17 +681,14 @@ void _enqueueIndexersData(
   bundle.adapter.enqueueJson(
     method: 'GET',
     path: '/indexer-settings',
-    body: _buildSettingsJson(apiKey: apiKey, indexers: indexers),
+    body: _buildSettingsJson(indexers: indexers),
   );
 }
 
 Map<String, dynamic> _buildSettingsJson({
-  String apiKey = '',
   List<Map<String, dynamic>>? indexers,
 }) {
   return <String, dynamic>{
-    'type': 'jackett',
-    'api_key': apiKey,
     'indexers': (indexers ??
             const <Map<String, dynamic>>[
               <String, dynamic>{
@@ -720,14 +696,19 @@ Map<String, dynamic> _buildSettingsJson({
                 'name': '馒头',
                 'url': 'https://mt.example/api',
                 'kind': 'pt',
+                'api_key': 'secret-key',
                 'download_client_id': 1,
                 'download_client_name': 'client-a',
               },
             ])
         .map((entry) {
-          if (entry.containsKey('download_clients')) return entry;
-          return <String, dynamic>{
+          final withApiKey = <String, dynamic>{
             ...entry,
+            'api_key': entry.containsKey('api_key') ? entry['api_key'] : 'secret-key',
+          };
+          if (entry.containsKey('download_clients')) return withApiKey;
+          return <String, dynamic>{
+            ...withApiKey,
             'download_clients': <Map<String, dynamic>>[
               <String, dynamic>{
                 'id': entry['download_client_id'],

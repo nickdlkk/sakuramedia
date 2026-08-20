@@ -68,8 +68,6 @@ class _MobileDownloadersPageState extends ConsumerState<MobileDownloadersPage>
   List<DownloadClientDto> _clients = const <DownloadClientDto>[];
   List<MediaLibraryDto> _libraries = const <MediaLibraryDto>[];
   IndexerSettingsDto _indexerSettings = const IndexerSettingsDto(
-    type: '',
-    apiKey: '',
     indexers: <IndexerEntryDto>[],
   );
   bool _isLoading = true;

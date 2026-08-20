@@ -12,7 +12,7 @@ part of 'system_diagnostics_controller.dart';
 ///
 /// 调度算法（[runAll]）：
 ///   Stage A（基础资源）：媒体库。空 → 后置全部 blocked。
-///   Stage B（独立探针，与 A 并行）：JavDB / DMM / LLM / JoyTag。
+///   Stage B（独立探针，与 A 并行）：JavDB / JoyTag。
 ///   Stage C（依赖 A）：下载器（每个 client → 连通性 + 存储 两项，全部并发）。
 ///   Stage D（依赖 C）：索引器 —— 静态校验、下载器绑定核对和真实搜索测试。
 ///
@@ -25,7 +25,7 @@ final systemDiagnosticsProvider = SystemDiagnosticsFamily._();
 ///
 /// 调度算法（[runAll]）：
 ///   Stage A（基础资源）：媒体库。空 → 后置全部 blocked。
-///   Stage B（独立探针，与 A 并行）：JavDB / DMM / LLM / JoyTag。
+///   Stage B（独立探针，与 A 并行）：JavDB / JoyTag。
 ///   Stage C（依赖 A）：下载器（每个 client → 连通性 + 存储 两项，全部并发）。
 ///   Stage D（依赖 C）：索引器 —— 静态校验、下载器绑定核对和真实搜索测试。
 ///
@@ -36,7 +36,7 @@ final class SystemDiagnosticsProvider
   ///
   /// 调度算法（[runAll]）：
   ///   Stage A（基础资源）：媒体库。空 → 后置全部 blocked。
-  ///   Stage B（独立探针，与 A 并行）：JavDB / DMM / LLM / JoyTag。
+  ///   Stage B（独立探针，与 A 并行）：JavDB / JoyTag。
   ///   Stage C（依赖 A）：下载器（每个 client → 连通性 + 存储 两项，全部并发）。
   ///   Stage D（依赖 C）：索引器 —— 静态校验、下载器绑定核对和真实搜索测试。
   ///
@@ -85,13 +85,13 @@ final class SystemDiagnosticsProvider
   }
 }
 
-String _$systemDiagnosticsHash() => r'c89b1b96fa5ea1d55f04823360a1a8a91346c449';
+String _$systemDiagnosticsHash() => r'df1d4ffaa16ceef6ea47807407c190a34c2efefa';
 
 /// 一次「组件诊断」检测的调度器。
 ///
 /// 调度算法（[runAll]）：
 ///   Stage A（基础资源）：媒体库。空 → 后置全部 blocked。
-///   Stage B（独立探针，与 A 并行）：JavDB / DMM / LLM / JoyTag。
+///   Stage B（独立探针，与 A 并行）：JavDB / JoyTag。
 ///   Stage C（依赖 A）：下载器（每个 client → 连通性 + 存储 两项，全部并发）。
 ///   Stage D（依赖 C）：索引器 —— 静态校验、下载器绑定核对和真实搜索测试。
 ///
@@ -119,7 +119,7 @@ final class SystemDiagnosticsFamily extends $Family
   ///
   /// 调度算法（[runAll]）：
   ///   Stage A（基础资源）：媒体库。空 → 后置全部 blocked。
-  ///   Stage B（独立探针，与 A 并行）：JavDB / DMM / LLM / JoyTag。
+  ///   Stage B（独立探针，与 A 并行）：JavDB / JoyTag。
   ///   Stage C（依赖 A）：下载器（每个 client → 连通性 + 存储 两项，全部并发）。
   ///   Stage D（依赖 C）：索引器 —— 静态校验、下载器绑定核对和真实搜索测试。
   ///
@@ -136,7 +136,7 @@ final class SystemDiagnosticsFamily extends $Family
 ///
 /// 调度算法（[runAll]）：
 ///   Stage A（基础资源）：媒体库。空 → 后置全部 blocked。
-///   Stage B（独立探针，与 A 并行）：JavDB / DMM / LLM / JoyTag。
+///   Stage B（独立探针，与 A 并行）：JavDB / JoyTag。
 ///   Stage C（依赖 A）：下载器（每个 client → 连通性 + 存储 两项，全部并发）。
 ///   Stage D（依赖 C）：索引器 —— 静态校验、下载器绑定核对和真实搜索测试。
 ///

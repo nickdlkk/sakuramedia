@@ -1,6 +1,4 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sakuramedia/core/network/api_error_dto.dart';
-import 'package:sakuramedia/core/network/api_exception.dart';
 import 'package:sakuramedia/features/configuration/data/dto/download_client_dto.dart';
 import 'package:sakuramedia/features/configuration/data/dto/indexer_settings_dto.dart';
 import 'package:sakuramedia/features/status/data/status_dto.dart';
@@ -9,7 +7,6 @@ import 'package:sakuramedia/features/system_diagnostics/presentation/hints/joyta
 import 'package:sakuramedia/features/system_diagnostics/presentation/hints/media_library_hints.dart';
 import 'package:sakuramedia/features/system_diagnostics/presentation/hints/downloader_hints.dart';
 import 'package:sakuramedia/features/system_diagnostics/presentation/hints/indexer_hints.dart';
-import 'package:sakuramedia/features/system_diagnostics/presentation/hints/llm_hints.dart';
 import 'package:sakuramedia/features/system_diagnostics/presentation/hints/metadata_provider_hints.dart';
 
 DownloadClientDiagnosticErrorDto _err(String type, [String message = '']) {
@@ -33,14 +30,14 @@ DownloadClientDto _client(int id) {
 
 IndexerEntryDto _entry({
   int id = 1,
-  String url = 'https://jackett.example/torznab',
+  String url = 'https://torznab.example/torznab',
   int clientId = 1,
 }) {
   return IndexerEntryDto(
     id: id,
     name: 'e$id',
     url: url,
-    kind: 'jackett',
+    kind: 'pt',
     downloadClients:
         clientId > 0
             ? <IndexerBoundClientDto>[
@@ -241,32 +238,10 @@ void main() {
 
   group('resolveIndexerConfigHintKey', () {
     IndexerSettingsDto settings({
-      String type = 'jackett',
-      String apiKey = 'k',
       List<IndexerEntryDto> entries = const <IndexerEntryDto>[],
     }) {
-      return IndexerSettingsDto(type: type, apiKey: apiKey, indexers: entries);
+      return IndexerSettingsDto(indexers: entries);
     }
-
-    test('type 空 → type-missing', () {
-      expect(
-        resolveIndexerConfigHintKey(
-          settings: settings(type: ''),
-          existingClients: <DownloadClientDto>[_client(1)],
-        ),
-        'type-missing',
-      );
-    });
-
-    test('apiKey 空 → api-key-missing', () {
-      expect(
-        resolveIndexerConfigHintKey(
-          settings: settings(apiKey: '  '),
-          existingClients: <DownloadClientDto>[_client(1)],
-        ),
-        'api-key-missing',
-      );
-    });
 
     test('entries 空 → entries-empty', () {
       expect(
@@ -329,14 +304,14 @@ void main() {
       );
     });
 
-    test('Jackett 请求失败及未知错误 → jackett-request-error', () {
+    test('Torznab 请求失败及未知错误 → torznab-request-error', () {
       expect(
-        resolveIndexerConnectionHintKey('jackett_request_error'),
-        'jackett-request-error',
+        resolveIndexerConnectionHintKey('torznab_request_error'),
+        'torznab-request-error',
       );
       expect(
         resolveIndexerConnectionHintKey('unexpected_error'),
-        'jackett-request-error',
+        'torznab-request-error',
       );
     });
   });
@@ -349,12 +324,11 @@ void main() {
       return StatusMetadataProviderTestErrorDto(type: type, message: message);
     }
 
-    // 分派只看后端的 type。message 一律不参与判定：JavDB 的 message 是英文异常串、
-    // DMM 的是中文（"DMM 未找到对应番号: …"），靠关键字匹配两边都会错。
+    // 分派只看后端的 type。message 一律不参与判定，避免靠关键字匹配出错。
     test('按后端 type 分派，与 message 语言无关', () {
       expect(
         resolveMetadataProviderHintKey(
-          error(MetadataProviderErrorType.notFound, 'DMM 未找到对应番号: SSNI-888'),
+          error(MetadataProviderErrorType.notFound, 'movie not found: SSNI-888'),
         ),
         MetadataProviderErrorType.notFound,
       );
@@ -397,13 +371,8 @@ void main() {
     });
   });
 
-  group('metadataProviderHints', () {
-    test('JavDB 与 DMM 各一套，不共用', () {
-      expect(metadataProviderHints(javdbProviderKey), same(javdbHints));
-      expect(metadataProviderHints(dmmProviderKey), same(dmmHints));
-    });
-
-    test('两套都覆盖全部 hint key，控制器可以直接 ! 取值', () {
+  group('javdbHints', () {
+    test('覆盖全部 hint key，控制器可以直接 ! 取值', () {
       const keys = <String>[
         MetadataProviderErrorType.notFound,
         MetadataProviderErrorType.requestError,
@@ -412,26 +381,14 @@ void main() {
       ];
       for (final key in keys) {
         expect(javdbHints[key], isNotNull, reason: 'javdbHints 缺 $key');
-        expect(dmmHints[key], isNotNull, reason: 'dmmHints 缺 $key');
       }
     });
 
-    // 代理语义是这两个源最容易写反的地方：
-    // build_javdb_provider() 写死 proxy=None，build_dmm_provider() 才吃 metadata.proxy。
-    test('JavDB 的请求失败文案必须说明它不走代理', () {
+    // JavDB 不再接收应用内代理配置，外部站点请求统一跟随容器环境变量分流。
+    test('JavDB 的请求失败文案必须说明代理由环境变量分流', () {
       final hint = javdbHints[MetadataProviderErrorType.requestError]!;
-      expect(hint.fixHint, contains('不走代理'));
-      expect(hint.fixHint, contains('填代理没用'));
-    });
-
-    test('DMM 的请求失败文案必须给出代理这个可操作出口', () {
-      final hint = dmmHints[MetadataProviderErrorType.requestError]!;
-      expect(hint.fixHint, contains('代理'));
-      expect(
-        hint.fixTarget?.configurationTabIndex,
-        7,
-        reason: 'metadata.proxy 是「高级设置」里的字段，DMM 必须能跳过去',
-      );
+      expect(hint.fixHint, contains('环境变量'));
+      expect(hint.fixHint, contains('NO_PROXY'));
     });
 
     // 「高级设置 · JavDB API 域名」按 wiki config.md 是"不建议随便改"的字段，
@@ -460,69 +417,6 @@ void main() {
     });
   });
 
-  group('resolveLlmHintKey', () {
-    ApiException apiError(String code) {
-      return ApiException(
-        message: code,
-        statusCode: 502,
-        error: ApiErrorDto(code: code, message: 'boom'),
-      );
-    }
-
-    // 后端失败时抛 ApiError(status, error_code, message)，而不是返回 ok:false。
-    test('按后端 error_code 分派', () {
-      expect(
-        resolveLlmHintKey(apiError(LlmErrorCode.unavailable)),
-        LlmErrorCode.unavailable,
-      );
-      expect(
-        resolveLlmHintKey(apiError(LlmErrorCode.failed)),
-        LlmErrorCode.failed,
-      );
-      expect(
-        resolveLlmHintKey(apiError(LlmErrorCode.invalidResponse)),
-        LlmErrorCode.invalidResponse,
-      );
-      expect(
-        resolveLlmHintKey(apiError(LlmErrorCode.emptyResult)),
-        LlmErrorCode.emptyResult,
-      );
-    });
-
-    test('未知 code / 非 ApiException / 传输层失败 → unknown', () {
-      expect(resolveLlmHintKey(apiError('some_future_code')), 'unknown');
-      expect(resolveLlmHintKey(Exception('boom')), 'unknown');
-      expect(
-        resolveLlmHintKey(
-          const ApiException(
-            message: 'no route',
-            transportFailureKind: ApiTransportFailureKind.connection,
-          ),
-        ),
-        'unknown',
-        reason: '连不上后端时压根没跑到 LLM 上游，不能套上游错误文案',
-      );
-    });
-
-    test('base URL 建议必须是「不要带 /v1」', () {
-      // 后端自己拼 /v1/chat/completions，带 /v1 会变成 /v1/v1/… 直接 404。
-      final hint = llmHints[LlmErrorCode.failed]!;
-      expect(hint.fixHint, contains('不要带 /v1'));
-    });
-
-    test('LLM 的 fixTarget 一律指向「LLM 配置」(index 5)', () {
-      for (final entry in llmHints.entries) {
-        final target = entry.value.fixTarget;
-        if (target == null) continue;
-        expect(
-          target.configurationTabIndex,
-          5,
-          reason: 'llmHints[${entry.key}] 指错了 tab',
-        );
-      }
-    });
-  });
-
   // 这些文案直接显示在诊断页上，读者是自建 NAS 的普通用户，不是开发者。
   // 规矩定在 DiagnosticHint 的类注释里，这里做机械守卫，防止后续改动又滑回技术腔。
   group('文案风格守卫', () {
@@ -533,12 +427,10 @@ void main() {
         'downloaderStorage[${entry.key}]': entry.value,
       for (final entry in indexerHints.entries)
         'indexer[${entry.key}]': entry.value,
-      for (final entry in llmHints.entries) 'llm[${entry.key}]': entry.value,
       for (final entry in joyTagHints.entries)
         'joyTag[${entry.key}]': entry.value,
       for (final entry in javdbHints.entries)
         'javdb[${entry.key}]': entry.value,
-      for (final entry in dmmHints.entries) 'dmm[${entry.key}]': entry.value,
       'mediaLibraryEmpty': mediaLibraryEmptyHint,
       'mediaLibraryProbeFailed': mediaLibraryProbeFailedHint,
     };

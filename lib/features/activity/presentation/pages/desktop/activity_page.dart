@@ -11,6 +11,7 @@ import 'package:sakuramedia/features/activity/data/task_run_dto.dart';
 import 'package:sakuramedia/features/activity/presentation/activity_filter_state.dart';
 import 'package:sakuramedia/features/activity/presentation/providers/activity_center_provider.dart';
 import 'package:sakuramedia/features/activity/presentation/providers/activity_center_state.dart';
+import 'package:sakuramedia/features/activity/presentation/job_params_dialog.dart';
 import 'package:sakuramedia/features/activity/presentation/providers/resource_task_center_provider.dart';
 import 'package:sakuramedia/features/activity/presentation/resource_task_pane.dart';
 import 'package:sakuramedia/features/downloads/presentation/download_task_pane.dart';
@@ -19,12 +20,16 @@ import 'package:sakuramedia/features/downloads/presentation/providers/download_t
 import 'package:sakuramedia/features/downloads/presentation/providers/download_task_center_state.dart';
 import 'package:sakuramedia/theme.dart';
 import 'package:sakuramedia/widgets/base/actions/app_button.dart';
+import 'package:sakuramedia/widgets/base/feedback/app_inline_spinner.dart';
+import 'package:sakuramedia/widgets/base/layout/cards/app_content_card.dart';
 import 'package:sakuramedia/widgets/base/interaction/refresh/app_page_refresh_scope.dart';
 import 'package:sakuramedia/widgets/base/layout/scrolling/app_paged_load_more_footer.dart';
 import 'package:sakuramedia/widgets/base/layout/cards/app_badge.dart';
 import 'package:sakuramedia/widgets/base/feedback/app_empty_state.dart';
+import 'package:sakuramedia/widgets/base/feedback/app_filter_update_bar.dart';
 import 'package:sakuramedia/widgets/base/forms/app_select_field.dart';
 import 'package:sakuramedia/widgets/base/navigation/app_tab_bar.dart';
+import 'package:sakuramedia/widgets/base/overlays/app_adaptive_modal.dart';
 
 class DesktopActivityPage extends ConsumerStatefulWidget {
   const DesktopActivityPage({super.key, this.initialDownloadMovieNumber});
@@ -223,7 +228,14 @@ class _DesktopActivityPageState extends ConsumerState<DesktopActivityPage>
 
   Future<void> _triggerJob(JobMetadataDto job) async {
     try {
-      await _controller.triggerJob(job.taskKey);
+      Map<String, dynamic>? params;
+      if (job.paramsSchema != null) {
+        params = await showJobParamsDialog(context, job: job);
+        if (!mounted || params == null) {
+          return;
+        }
+      }
+      await _controller.triggerJob(job.taskKey, params: params);
       if (mounted) {
         showToast('任务已提交');
       }
@@ -239,6 +251,15 @@ class _DesktopActivityPageState extends ConsumerState<DesktopActivityPage>
       }
       showToast(apiErrorMessage(error, fallback: '任务提交失败，请重试'));
     }
+  }
+
+  Future<void> _openExecutableJobsDialog(BuildContext context) async {
+    await showAppAdaptiveModal<void>(
+      context: context,
+      modalKey: const Key('activity-executable-jobs-dialog'),
+      desktopWidth: context.appLayoutTokens.dialogWidthMd,
+      builder: (_) => _ExecutableJobsDialog(onTriggerJob: _triggerJob),
+    );
   }
 
   List<Widget> _buildTabSlivers(BuildContext context) {
@@ -310,7 +331,7 @@ class _DesktopActivityPageState extends ConsumerState<DesktopActivityPage>
             ],
             _ExecutableJobsSection(
               controller: _controller,
-              onTriggerJob: _triggerJob,
+              onOpen: () => unawaited(_openExecutableJobsDialog(context)),
             ),
             SizedBox(height: context.appSpacing.xl),
             _ActivitySection(
@@ -320,14 +341,11 @@ class _DesktopActivityPageState extends ConsumerState<DesktopActivityPage>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _TaskFilterBar(controller: _controller),
-                  if (_controller.taskRefreshErrorMessage != null) ...[
-                    SizedBox(height: context.appSpacing.md),
-                    AppPagedLoadMoreFooter(
-                      isLoading: false,
-                      errorMessage: _controller.taskRefreshErrorMessage,
-                      onRetry: _controller.refreshTaskHistory,
-                    ),
-                  ],
+                  AppFilterUpdateBar(
+                    state: _controller.taskFilterUpdate,
+                    hasPreviousItems: _controller.taskRuns.isNotEmpty,
+                    onRetry: _controller.refreshTaskHistory,
+                  ),
                 ],
               ),
             ),
@@ -337,6 +355,10 @@ class _DesktopActivityPageState extends ConsumerState<DesktopActivityPage>
       ),
     ];
 
+    if (_controller.taskRuns.isEmpty &&
+        _controller.taskFilterUpdate.hasFailed) {
+      return slivers;
+    }
     if (_controller.taskRuns.isEmpty) {
       slivers.add(
         const SliverToBoxAdapter(child: AppEmptyState(message: '当前筛选下暂无任务记录')),
@@ -408,6 +430,48 @@ class _DesktopActivityPageState extends ConsumerState<DesktopActivityPage>
       ),
       (_, next) => _syncTabSelection(next),
     );
+    ref.listen(
+      activityCenterProvider.select((value) => value.value?.taskFilter),
+      (previous, next) {
+        if (previous != null &&
+            next != null &&
+            previous != next &&
+            activeTab == ActivityTab.tasks &&
+            _pageScrollController.hasClients) {
+          _pageScrollController.jumpTo(0);
+        }
+      },
+    );
+    if (_hasOpenedResourceTasks || activeTab == ActivityTab.resourceTasks) {
+      ref.listen(
+        resourceTaskCenterProvider.select(
+          (value) => value.value?.activeBucket?.filter,
+        ),
+        (previous, next) {
+          if (previous != null &&
+              next != null &&
+              previous != next &&
+              activeTab == ActivityTab.resourceTasks &&
+              _pageScrollController.hasClients) {
+            _pageScrollController.jumpTo(0);
+          }
+        },
+      );
+    }
+    if (_hasOpenedDownloadTasks || activeTab == ActivityTab.downloadTasks) {
+      ref.listen(
+        downloadTaskCenterProvider.select((value) => value.value?.filter),
+        (previous, next) {
+          if (previous != null &&
+              next != null &&
+              previous != next &&
+              activeTab == ActivityTab.downloadTasks &&
+              _pageScrollController.hasClients) {
+            _pageScrollController.jumpTo(0);
+          }
+        },
+      );
+    }
     ref.listen<AsyncValue<ActivityCenterState>>(
       activityCenterProvider,
       (_, __) => _handleControllerChanged(),
@@ -468,13 +532,12 @@ class _DesktopActivityPageState extends ConsumerState<DesktopActivityPage>
                 ignoring: !_resourceTaskController.isDetailOpen,
                 child: AnimatedSwitcher(
                   duration: const Duration(milliseconds: 180),
-                  child:
-                      _resourceTaskController.isDetailOpen
-                          ? buildResourceTaskDetailOverlay(
-                            context: context,
-                            controller: _resourceTaskController,
-                          )
-                          : const SizedBox.shrink(),
+                  child: _resourceTaskController.isDetailOpen
+                      ? buildResourceTaskDetailOverlay(
+                          context: context,
+                          controller: _resourceTaskController,
+                        )
+                      : const SizedBox.shrink(),
                 ),
               ),
             ),
@@ -627,44 +690,18 @@ class _ConnectionBanner extends StatelessWidget {
   }
 }
 
-class _ExecutableJobsSection extends StatefulWidget {
+class _ExecutableJobsSection extends StatelessWidget {
   const _ExecutableJobsSection({
     required this.controller,
-    required this.onTriggerJob,
+    required this.onOpen,
   });
 
   final ActivityCenter controller;
-  final ValueChanged<JobMetadataDto> onTriggerJob;
-
-  @override
-  State<_ExecutableJobsSection> createState() => _ExecutableJobsSectionState();
-}
-
-class _ExecutableJobsSectionState extends State<_ExecutableJobsSection> {
-  bool _isExpanded = false;
-
-  ActivityCenter get controller => widget.controller;
+  final VoidCallback onOpen;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _ExecutableJobsHeader(
-          isExpanded: _isExpanded,
-          summary: _summaryText,
-          onToggle: () {
-            setState(() {
-              _isExpanded = !_isExpanded;
-            });
-          },
-        ),
-        if (_isExpanded) ...[
-          SizedBox(height: context.appSpacing.md),
-          _buildContent(context),
-        ],
-      ],
-    );
+    return _ExecutableJobsHeader(summary: _summaryText, onOpen: onOpen);
   }
 
   String get _summaryText {
@@ -679,132 +716,39 @@ class _ExecutableJobsSectionState extends State<_ExecutableJobsSection> {
     }
     return '${controller.jobs.length} 个任务';
   }
-
-  Widget _buildContent(BuildContext context) {
-    if (controller.isLoadingJobs && controller.jobs.isEmpty) {
-      return Container(
-        key: const Key('activity-jobs-loading'),
-        width: double.infinity,
-        padding: EdgeInsets.all(context.appSpacing.lg),
-        decoration: BoxDecoration(
-          color: context.appColors.surfaceCard,
-          borderRadius: context.appRadius.mdBorder,
-          border: Border.all(color: context.appColors.borderSubtle),
-        ),
-        child: const Center(child: CircularProgressIndicator.adaptive()),
-      );
-    }
-
-    if (controller.jobErrorMessage != null && controller.jobs.isEmpty) {
-      return Container(
-        key: const Key('activity-jobs-error'),
-        width: double.infinity,
-        padding: EdgeInsets.all(context.appSpacing.lg),
-        decoration: BoxDecoration(
-          color: context.appColors.surfaceCard,
-          borderRadius: context.appRadius.mdBorder,
-          border: Border.all(color: context.appColors.borderSubtle),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            AppEmptyState(message: controller.jobErrorMessage!),
-            SizedBox(height: context.appSpacing.md),
-            AppButton(
-              key: const Key('activity-jobs-retry-button'),
-              label: '重试',
-              size: AppButtonSize.small,
-              onPressed: controller.refreshJobs,
-            ),
-          ],
-        ),
-      );
-    }
-
-    if (controller.jobs.isEmpty) {
-      return const AppEmptyState(message: '暂无可执行任务');
-    }
-
-    return Column(
-      children: [
-        for (var index = 0; index < controller.jobs.length; index++) ...[
-          _ExecutableJobCard(
-            job: controller.jobs[index],
-            isTriggering: controller.isTriggeringJob(
-              controller.jobs[index].taskKey,
-            ),
-            onTrigger: () => widget.onTriggerJob(controller.jobs[index]),
-          ),
-          if (index != controller.jobs.length - 1)
-            SizedBox(height: context.appSpacing.md),
-        ],
-        if (controller.jobErrorMessage != null) ...[
-          SizedBox(height: context.appSpacing.md),
-          AppPagedLoadMoreFooter(
-            isLoading: controller.isLoadingJobs,
-            errorMessage: controller.jobErrorMessage,
-            onRetry: controller.refreshJobs,
-          ),
-        ],
-      ],
-    );
-  }
 }
 
 class _ExecutableJobsHeader extends StatelessWidget {
-  const _ExecutableJobsHeader({
-    required this.isExpanded,
-    required this.summary,
-    required this.onToggle,
-  });
+  const _ExecutableJobsHeader({required this.summary, required this.onOpen});
 
-  final bool isExpanded;
   final String summary;
-  final VoidCallback onToggle;
+  final VoidCallback onOpen;
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        key: const Key('activity-jobs-toggle'),
-        borderRadius: context.appRadius.mdBorder,
-        onTap: onToggle,
-        child: Container(
-          width: double.infinity,
-          padding: EdgeInsets.symmetric(
-            horizontal: context.appSpacing.lg,
-            vertical: context.appSpacing.md,
+    return AppContentCard(
+      title: '可执行任务',
+      headerTrailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AppBadge(label: summary, tone: AppBadgeTone.neutral),
+          SizedBox(width: context.appSpacing.sm),
+          AppButton(
+            key: const Key('activity-jobs-toggle'),
+            label: '查看任务',
+            icon: const Icon(Icons.list_alt_rounded),
+            size: AppButtonSize.small,
+            onPressed: onOpen,
           ),
-          decoration: BoxDecoration(
-            color: context.appColors.surfaceCard,
-            borderRadius: context.appRadius.mdBorder,
-            border: Border.all(color: context.appColors.borderSubtle),
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  '可执行任务',
-                  style: resolveAppTextStyle(
-                    context,
-                    size: AppTextSize.s18,
-                    weight: AppTextWeight.semibold,
-                    tone: AppTextTone.primary,
-                  ),
-                ),
-              ),
-              AppBadge(label: summary, tone: AppBadgeTone.neutral),
-              SizedBox(width: context.appSpacing.sm),
-              Icon(
-                isExpanded
-                    ? Icons.keyboard_arrow_up_rounded
-                    : Icons.keyboard_arrow_down_rounded,
-                size: context.appComponentTokens.iconSizeMd,
-                color: context.appTextPalette.secondary,
-              ),
-            ],
-          ),
+        ],
+      ),
+      child: Text(
+        '手动触发已注册的后台任务，执行状态会在任务中心实时更新。',
+        style: resolveAppTextStyle(
+          context,
+          size: AppTextSize.s12,
+          weight: AppTextWeight.regular,
+          tone: AppTextTone.muted,
         ),
       ),
     );
@@ -827,76 +771,261 @@ class _ExecutableJobCard extends StatelessWidget {
     final lastTaskRun = job.lastTaskRun;
     final canTrigger = job.manualTriggerAllowed && !isTriggering;
 
-    return Container(
+    return AppContentCard(
       key: Key('activity-job-${job.taskKey}'),
-      width: double.infinity,
       padding: EdgeInsets.all(context.appSpacing.lg),
-      decoration: BoxDecoration(
-        color: context.appColors.surfaceCard,
-        borderRadius: context.appRadius.mdBorder,
-        border: Border.all(color: context.appColors.borderSubtle),
+      title: job.cliHelp.isEmpty ? job.taskKey : job.cliHelp,
+      titleStyle: resolveAppTextStyle(
+        context,
+        size: AppTextSize.s14,
+        weight: AppTextWeight.regular,
+        tone: AppTextTone.secondary,
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      headerBottomSpacing: context.appSpacing.sm,
+      headerTrailing: AppButton(
+        key: Key('activity-job-trigger-${job.taskKey}'),
+        label: job.manualTriggerAllowed
+            ? (isTriggering
+                  ? '提交中'
+                  : job.paramsSchema == null
+                  ? '立即执行'
+                  : '填写参数')
+            : '不可手动执行',
+        size: AppButtonSize.small,
+        variant: AppButtonVariant.primary,
+        isLoading: isTriggering,
+        onPressed: canTrigger ? onTrigger : null,
+      ),
+      child: Wrap(
+        spacing: context.appSpacing.sm,
+        runSpacing: context.appSpacing.sm,
+        crossAxisAlignment: WrapCrossAlignment.center,
         children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  job.cliHelp.isEmpty ? job.taskKey : job.cliHelp,
-                  style: resolveAppTextStyle(
-                    context,
-                    size: AppTextSize.s14,
-                    weight: AppTextWeight.regular,
-                    tone: AppTextTone.secondary,
-                  ),
-                ),
-                SizedBox(height: context.appSpacing.sm),
-                Wrap(
-                  spacing: context.appSpacing.sm,
-                  runSpacing: context.appSpacing.sm,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    AppBadge(
-                      label: job.cronExpr.isEmpty ? '未配置定时' : job.cronExpr,
-                      tone: AppBadgeTone.neutral,
-                    ),
-                    if (lastTaskRun != null)
-                      AppBadge(
-                        label: _labelForTaskState(lastTaskRun.state),
-                        tone: _taskStateTone(lastTaskRun.state),
-                      ),
-                    Text(
-                      lastTaskRun == null
-                          ? '暂无运行记录'
-                          : '最近运行：${_taskTimeSummary(lastTaskRun)}',
-                      style: resolveAppTextStyle(
-                        context,
-                        size: AppTextSize.s12,
-                        weight: AppTextWeight.regular,
-                        tone: AppTextTone.muted,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
+          AppBadge(
+            label: job.cronExpr.isEmpty ? '未配置定时' : job.cronExpr,
+            tone: AppBadgeTone.neutral,
           ),
-          SizedBox(width: context.appSpacing.lg),
-          AppButton(
-            key: Key('activity-job-trigger-${job.taskKey}'),
-            label:
-                job.manualTriggerAllowed
-                    ? (isTriggering ? '提交中' : '立即执行')
-                    : '不可手动执行',
-            size: AppButtonSize.small,
-            variant: AppButtonVariant.primary,
-            isLoading: isTriggering,
-            onPressed: canTrigger ? onTrigger : null,
+          if (lastTaskRun != null)
+            AppBadge(
+              label: _labelForTaskState(lastTaskRun.state),
+              tone: _taskStateTone(lastTaskRun.state),
+            ),
+          if (job.paramsSchema != null)
+            const AppBadge(label: '需填写参数', tone: AppBadgeTone.info),
+          Text(
+            lastTaskRun == null
+                ? '暂无运行记录'
+                : '最近运行：${_taskTimeSummary(lastTaskRun)}',
+            style: resolveAppTextStyle(
+              context,
+              size: AppTextSize.s12,
+              weight: AppTextWeight.regular,
+              tone: AppTextTone.muted,
+            ),
           ),
         ],
       ),
+    );
+  }
+}
+
+class _ExecutableJobsDialog extends ConsumerWidget {
+  const _ExecutableJobsDialog({required this.onTriggerJob});
+
+  final ValueChanged<JobMetadataDto> onTriggerJob;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final activity = ref.watch(activityCenterProvider);
+    final controller = ref.read(activityCenterProvider.notifier);
+    final body = activity.when(
+      loading: () => const _ExecutableJobsDialogLoadingBody(),
+      error: (error, _) => AppEmptyState(
+        key: const Key('activity-jobs-error'),
+        message: apiErrorMessage(error, fallback: '可执行任务加载失败，请重试'),
+        onRetry: controller.reloadAll,
+        retryKey: const Key('activity-jobs-retry-button'),
+      ),
+      data: (state) => _ExecutableJobsDialogContent(
+        state: state,
+        controller: controller,
+        onTriggerJob: onTriggerJob,
+      ),
+    );
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _ExecutableJobsDialogHeader(),
+        SizedBox(height: context.appSpacing.lg),
+        body,
+      ],
+    );
+  }
+}
+
+class _ExecutableJobsDialogContent extends StatelessWidget {
+  const _ExecutableJobsDialogContent({
+    required this.state,
+    required this.controller,
+    required this.onTriggerJob,
+  });
+
+  final ActivityCenterState state;
+  final ActivityCenter controller;
+  final ValueChanged<JobMetadataDto> onTriggerJob;
+
+  @override
+  Widget build(BuildContext context) {
+    final spacing = context.appSpacing;
+    final jobs = state.jobs;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (state.isLoadingJobs && jobs.isEmpty)
+          const _ExecutableJobsDialogLoadingBody()
+        else if (state.jobErrorMessage != null && jobs.isEmpty)
+          AppEmptyState(
+            key: const Key('activity-jobs-error'),
+            message: state.jobErrorMessage!,
+            onRetry: controller.refreshJobs,
+            retryKey: const Key('activity-jobs-retry-button'),
+          )
+        else if (jobs.isEmpty)
+          const AppEmptyState(message: '暂无可执行任务')
+        else ...[
+          if (state.isLoadingJobs) ...[
+            Row(
+              children: [
+                const AppInlineSpinner(),
+                SizedBox(width: spacing.sm),
+                Text(
+                  '正在刷新任务列表',
+                  style: resolveAppTextStyle(
+                    context,
+                    size: AppTextSize.s12,
+                    weight: AppTextWeight.regular,
+                    tone: AppTextTone.muted,
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(height: spacing.md),
+          ],
+          ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.sizeOf(context).height * 0.68,
+            ),
+            child: ListView.separated(
+              key: const Key('activity-executable-jobs-list'),
+              shrinkWrap: true,
+              itemCount: jobs.length,
+              separatorBuilder: (_, __) => SizedBox(height: spacing.md),
+              itemBuilder: (_, index) {
+                final job = jobs[index];
+                return _ExecutableJobCard(
+                  job: job,
+                  isTriggering: controller.isTriggeringJob(job.taskKey),
+                  onTrigger: () => onTriggerJob(job),
+                );
+              },
+            ),
+          ),
+          if (state.jobErrorMessage != null) ...[
+            SizedBox(height: spacing.md),
+            _ExecutableJobsRefreshError(
+              message: state.jobErrorMessage!,
+              onRetry: controller.refreshJobs,
+            ),
+          ],
+        ],
+      ],
+    );
+  }
+}
+
+class _ExecutableJobsDialogHeader extends StatelessWidget {
+  const _ExecutableJobsDialogHeader();
+
+  @override
+  Widget build(BuildContext context) {
+    final spacing = context.appSpacing;
+    return Padding(
+      padding: EdgeInsets.only(right: spacing.xxl),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '可执行任务',
+            style: resolveAppTextStyle(
+              context,
+              size: AppTextSize.s18,
+              weight: AppTextWeight.semibold,
+              tone: AppTextTone.primary,
+            ),
+          ),
+          SizedBox(height: spacing.xs),
+          Text(
+            '选择一个任务手动执行，运行结果会回到后台任务列表。',
+            style: resolveAppTextStyle(
+              context,
+              size: AppTextSize.s12,
+              weight: AppTextWeight.regular,
+              tone: AppTextTone.muted,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ExecutableJobsDialogLoadingBody extends StatelessWidget {
+  const _ExecutableJobsDialogLoadingBody();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: context.appSpacing.xxl),
+      child: const Center(child: AppInlineSpinner()),
+    );
+  }
+}
+
+class _ExecutableJobsRefreshError extends StatelessWidget {
+  const _ExecutableJobsRefreshError({
+    required this.message,
+    required this.onRetry,
+  });
+
+  final String message;
+  final Future<void> Function() onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final spacing = context.appSpacing;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Expanded(
+          child: Text(
+            message,
+            style: resolveAppTextStyle(
+              context,
+              size: AppTextSize.s12,
+              weight: AppTextWeight.regular,
+              tone: AppTextTone.error,
+            ),
+          ),
+        ),
+        SizedBox(width: spacing.sm),
+        AppButton(
+          key: const Key('activity-jobs-retry-button'),
+          label: '重试',
+          size: AppButtonSize.xSmall,
+          onPressed: onRetry,
+        ),
+      ],
     );
   }
 }
@@ -948,12 +1077,9 @@ class _TaskFilterBar extends StatelessWidget {
                 ),
               ),
             ],
-            onChanged:
-                controller.isRefreshingTaskHistory
-                    ? null
-                    : (value) => controller.applyTaskFilter(
-                      controller.taskFilter.copyWith(state: value),
-                    ),
+            onChanged: (value) => controller.applyTaskFilter(
+              controller.taskFilter.copyWith(state: value),
+            ),
           ),
         ),
         SizedBox(
@@ -973,12 +1099,9 @@ class _TaskFilterBar extends StatelessWidget {
                     DropdownMenuItem<String?>(value: value, child: Text(value)),
               ),
             ],
-            onChanged:
-                controller.isRefreshingTaskHistory
-                    ? null
-                    : (value) => controller.applyTaskFilter(
-                      controller.taskFilter.copyWith(taskKey: value),
-                    ),
+            onChanged: (value) => controller.applyTaskFilter(
+              controller.taskFilter.copyWith(taskKey: value),
+            ),
           ),
         ),
         SizedBox(
@@ -1000,12 +1123,9 @@ class _TaskFilterBar extends StatelessWidget {
                 ),
               ),
             ],
-            onChanged:
-                controller.isRefreshingTaskHistory
-                    ? null
-                    : (value) => controller.applyTaskFilter(
-                      controller.taskFilter.copyWith(triggerType: value),
-                    ),
+            onChanged: (value) => controller.applyTaskFilter(
+              controller.taskFilter.copyWith(triggerType: value),
+            ),
           ),
         ),
         SizedBox(
@@ -1023,52 +1143,14 @@ class _TaskFilterBar extends StatelessWidget {
                   ),
                 )
                 .toList(growable: false),
-            onChanged:
-                controller.isRefreshingTaskHistory
-                    ? null
-                    : (value) => controller.applyTaskFilter(
-                      controller.taskFilter.copyWith(
-                        sort: value ?? ActivityTaskSort.startedAtDesc,
-                      ),
-                    ),
+            onChanged: (value) => controller.applyTaskFilter(
+              controller.taskFilter.copyWith(
+                sort: value ?? ActivityTaskSort.startedAtDesc,
+              ),
+            ),
           ),
         ),
-        _FilterRefreshIndicator(
-          indicatorKey: const Key('activity-task-filter-loading'),
-          isVisible: controller.isRefreshingTaskHistory,
-        ),
       ],
-    );
-  }
-}
-
-class _FilterRefreshIndicator extends StatelessWidget {
-  const _FilterRefreshIndicator({
-    required this.indicatorKey,
-    required this.isVisible,
-  });
-
-  final Key indicatorKey;
-  final bool isVisible;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 36,
-      height: 36,
-      child: Center(
-        child:
-            isVisible
-                ? SizedBox(
-                  key: indicatorKey,
-                  width: 18,
-                  height: 18,
-                  child: const CircularProgressIndicator.adaptive(
-                    strokeWidth: 2.2,
-                  ),
-                )
-                : null,
-      ),
     );
   }
 }
@@ -1092,10 +1174,9 @@ class _TaskRunCard extends StatelessWidget {
         color: colors.surfaceCard,
         borderRadius: context.appRadius.mdBorder,
         border: Border.all(
-          color:
-              highlighted
-                  ? Theme.of(context).colorScheme.primary
-                  : colors.borderSubtle,
+          color: highlighted
+              ? Theme.of(context).colorScheme.primary
+              : colors.borderSubtle,
         ),
       ),
       child: Column(

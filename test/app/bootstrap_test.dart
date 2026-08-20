@@ -29,5 +29,6 @@ void main() {
       imageCache.maximumSizeBytes,
       AppImageConfig.imageCacheMaximumSizeBytes,
     );
+    expect(imageCache.maximumSizeBytes, 128 * 1024 * 1024);
   });
 }

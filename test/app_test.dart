@@ -31,7 +31,6 @@ const List<String> _mobileSmokeRoutes = <String>[
   mobileSettingsMediaLibrariesPath,
   mobileSettingsDownloadersPath,
   mobileSettingsIndexersPath,
-  mobileSettingsLlmPath,
   mobileSettingsExternalPlayerPath,
 ];
 

@@ -79,15 +79,11 @@ class OverviewSystemInfo extends _$OverviewSystemInfo {
 
     state = state.copyWith(isTestingMetadataProviders: true);
 
-    final results = await Future.wait<bool>([
-      _testMetadataProvider('javdb'),
-      _testMetadataProvider('dmm'),
-    ]);
+    final javdbHealthy = await _testMetadataProvider('javdb');
 
     if (_disposed) return;
     state = state.copyWith(
-      javdbHealthy: results[0],
-      dmmHealthy: results[1],
+      javdbHealthy: javdbHealthy,
       isTestingMetadataProviders: false,
     );
   }

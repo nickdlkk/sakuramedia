@@ -42,7 +42,6 @@ void main() {
               'javdb_id': 'abc-id',
               'movie_number': 'ABC-001',
               'title': 'Movie title',
-              'title_zh': '中文标题',
               'cover_image': <String, dynamic>{
                 'id': 1,
                 'origin': 'origin.jpg',
@@ -83,7 +82,7 @@ void main() {
       expect(request.uri.queryParameters['page_size'], '10');
       expect(page.total, 30);
       expect(page.items.single.movie.movieNumber, 'ABC-001');
-      expect(page.items.single.movie.preferredTitle, '中文标题');
+      expect(page.items.single.movie.preferredTitle, 'Movie title');
       expect(page.items.single.rank, 3);
       expect(page.items.single.recommendationScore, 0.91);
       expect(page.items.single.reasonTexts, ['近期热度较高']);
@@ -120,7 +119,6 @@ void main() {
                 'javdb_id': 'abc-id',
                 'movie_number': 'ABC-001',
                 'title': 'Movie title',
-                'title_zh': '',
                 'cover_image': null,
                 'thin_cover_image': null,
                 'release_date': null,

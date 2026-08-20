@@ -57,7 +57,7 @@
 - **路径**: `lib/widgets/base/feedback/app_inline_spinner.dart`
 - **用途**: 行内小转圈 —— `movieCardLoaderSize` 见方 + `movieCardLoaderStrokeWidth` 线宽的 `CircularProgressIndicator`。
 - **可选**: `color`(不传走主题 primary；订阅心形等有专属语义色的位置才传)
-- **何时用**: 「某个小控件正在忙」——卡片上的订阅心形、列表行的动作按钮、加载更多页脚。演员详情(桌面/移动)、播放列表详情此前各写了一份逐字相同的 `SizedBox + CircularProgressIndicator`，已收口到这里。
+- **何时用**: 「某个小控件正在忙」——卡片上的订阅心形、列表行的动作按钮、加载更多页脚。演员详情(桌面/移动)、播放列表详情、`SubscriptionHeartBadge` 此前各写了一份逐字相同的 `SizedBox + CircularProgressIndicator`，已收口到这里。
 - **何时不用**: 整页 / 整区块加载态 → `AppSectionSkeleton` / `AppMobileSkeletonList` 等骨架屏。转圈只用于局部、短时的忙碌指示。
 
 ## showAppConfirmDialog
@@ -79,7 +79,7 @@
 - **可选**: `isBusy`(true 用 spinner 替代 `icon`) · `detail` · `dense`(更紧凑的横条/阵列场景)
 - **配色**: 标准 5 态一律走命名工厂 `AppStatusChipPalette.neutral(context) / .success / .warning / .error / .muted`，图标可覆盖(如 probing 传 `icon: Icons.hourglass_top`)。**不要在业务侧再写 `_xxxPalette(context)` helper** —— 之前 5 处逐字复制已收敛。真的非标 tone(如 accent 色 radar)才就地构造 `AppStatusChipPalette(...)`。
 - **何时用**: 任何"探针/诊断类状态指示"——连通性检测、健康检查这类多态徽章。
-- **现有用例**: `DownloadClientProbeStatusChip`（下载器探针）、`DiagnosticStatusBadge`（组件诊断 6 态）、`Cloud115AuthenticationStatusChips`（115 认证）、`ExternalDataSourceStatusChips`（JavDB/DMM）、`IndexerConnectionTestPanel`（索引器连测）。
+- **现有用例**: `DownloadClientProbeStatusChip`（下载器探针）、`DiagnosticStatusBadge`（组件诊断 6 态）、`Cloud115AuthenticationStatusChips`（115 认证）、`ExternalDataSourceStatusChips`（JavDB）、`IndexerConnectionTestPanel`（索引器连测）。
 
 ---
 
@@ -88,3 +88,4 @@
 - **四态顺序**: **骨架 → 错误 → 空态(`AppEmptyState`)→ 内容**,顺序固定。见 `lib/widgets/CLAUDE.md` "网格四态容器"段。
 - 错误文案统一走 `apiErrorMessage(error, fallback: ...)`,`fallback` 用具体动词(如 "删除下载器失败"),不要 "操作失败" 一把梭。
 - 轻量反馈用 `oktoast`(顶层已 wrap `OKToast`),别用 SnackBar。
+- toast 底色/文字统一由主题层 `kAppToastBackgroundColor` / `kAppToastTextStyle` 提供，业务侧不要给 `showToast` 传裸颜色。

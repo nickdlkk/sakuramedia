@@ -20,6 +20,8 @@ class MovieSummaryGrid extends StatelessWidget {
     this.selectionMode = false,
     this.isMovieSelected,
     this.onMovieSelectedChanged,
+    this.maxRows,
+    this.maxColumns = 6,
   });
 
   final List<MovieListItemDto> items;
@@ -39,6 +41,12 @@ class MovieSummaryGrid extends StatelessWidget {
   final void Function(MovieListItemDto movie, bool selected)?
   onMovieSelectedChanged;
 
+  /// 首页等预览区可限制为固定行数；列表页保持不传以展示全部项目。
+  final int? maxRows;
+
+  /// 网格的最大列数；默认保持影片列表既有的 6 列上限。
+  final int maxColumns;
+
   @override
   Widget build(BuildContext context) {
     return AppAdaptiveCardGrid<MovieListItemDto>(
@@ -48,34 +56,30 @@ class MovieSummaryGrid extends StatelessWidget {
       errorMessage: errorMessage,
       emptyMessage: emptyMessage,
       placeholderCount: placeholderCount,
-      skeletonBuilder:
-          (context, index) => AppCoverCardSkeleton(
-            key: Key('movie-summary-card-skeleton-$index'),
-            posterKey: Key('movie-summary-card-skeleton-poster-$index'),
-            aspectRatio: context.appComponentTokens.movieCardAspectRatio,
-          ),
-      itemBuilder:
-          (context, movie, index) => MovieSummaryCard(
-            movie: movie,
-            onTap: onMovieTap == null ? null : () => onMovieTap!(movie),
-            onRequestMenu:
-                onMovieMenuRequest == null
-                    ? null
-                    : (globalPosition) =>
-                        onMovieMenuRequest!(movie, globalPosition),
-            onSubscriptionTap:
-                onMovieSubscriptionTap == null
-                    ? null
-                    : () => onMovieSubscriptionTap!(movie),
-            isSubscriptionUpdating:
-                isMovieSubscriptionUpdating?.call(movie) ?? false,
-            selectionMode: selectionMode,
-            isSelected: isMovieSelected?.call(movie) ?? false,
-            onSelectedChanged:
-                onMovieSelectedChanged == null
-                    ? null
-                    : (selected) => onMovieSelectedChanged!(movie, selected),
-          ),
+      maxRows: maxRows,
+      maxColumns: maxColumns,
+      skeletonBuilder: (context, index) => AppCoverCardSkeleton(
+        key: Key('movie-summary-card-skeleton-$index'),
+        posterKey: Key('movie-summary-card-skeleton-poster-$index'),
+        aspectRatio: context.appComponentTokens.movieCardAspectRatio,
+      ),
+      itemBuilder: (context, movie, index) => MovieSummaryCard(
+        movie: movie,
+        onTap: onMovieTap == null ? null : () => onMovieTap!(movie),
+        onRequestMenu: onMovieMenuRequest == null
+            ? null
+            : (globalPosition) => onMovieMenuRequest!(movie, globalPosition),
+        onSubscriptionTap: onMovieSubscriptionTap == null
+            ? null
+            : () => onMovieSubscriptionTap!(movie),
+        isSubscriptionUpdating:
+            isMovieSubscriptionUpdating?.call(movie) ?? false,
+        selectionMode: selectionMode,
+        isSelected: isMovieSelected?.call(movie) ?? false,
+        onSelectedChanged: onMovieSelectedChanged == null
+            ? null
+            : (selected) => onMovieSelectedChanged!(movie, selected),
+      ),
     );
   }
 }
@@ -123,34 +127,28 @@ class MovieSummarySliver extends StatelessWidget {
       errorMessage: errorMessage,
       emptyMessage: emptyMessage,
       placeholderCount: placeholderCount,
-      skeletonBuilder:
-          (context, index) => AppCoverCardSkeleton(
-            key: Key('movie-summary-card-skeleton-$index'),
-            posterKey: Key('movie-summary-card-skeleton-poster-$index'),
-            aspectRatio: context.appComponentTokens.movieCardAspectRatio,
-          ),
-      itemBuilder:
-          (context, movie, index) => MovieSummaryCard(
-            movie: movie,
-            onTap: onMovieTap == null ? null : () => onMovieTap!(movie),
-            onRequestMenu:
-                onMovieMenuRequest == null
-                    ? null
-                    : (globalPosition) =>
-                        onMovieMenuRequest!(movie, globalPosition),
-            onSubscriptionTap:
-                onMovieSubscriptionTap == null
-                    ? null
-                    : () => onMovieSubscriptionTap!(movie),
-            isSubscriptionUpdating:
-                isMovieSubscriptionUpdating?.call(movie) ?? false,
-            selectionMode: selectionMode,
-            isSelected: isMovieSelected?.call(movie) ?? false,
-            onSelectedChanged:
-                onMovieSelectedChanged == null
-                    ? null
-                    : (selected) => onMovieSelectedChanged!(movie, selected),
-          ),
+      skeletonBuilder: (context, index) => AppCoverCardSkeleton(
+        key: Key('movie-summary-card-skeleton-$index'),
+        posterKey: Key('movie-summary-card-skeleton-poster-$index'),
+        aspectRatio: context.appComponentTokens.movieCardAspectRatio,
+      ),
+      itemBuilder: (context, movie, index) => MovieSummaryCard(
+        movie: movie,
+        onTap: onMovieTap == null ? null : () => onMovieTap!(movie),
+        onRequestMenu: onMovieMenuRequest == null
+            ? null
+            : (globalPosition) => onMovieMenuRequest!(movie, globalPosition),
+        onSubscriptionTap: onMovieSubscriptionTap == null
+            ? null
+            : () => onMovieSubscriptionTap!(movie),
+        isSubscriptionUpdating:
+            isMovieSubscriptionUpdating?.call(movie) ?? false,
+        selectionMode: selectionMode,
+        isSelected: isMovieSelected?.call(movie) ?? false,
+        onSelectedChanged: onMovieSelectedChanged == null
+            ? null
+            : (selected) => onMovieSelectedChanged!(movie, selected),
+      ),
     );
   }
 }

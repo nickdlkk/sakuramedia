@@ -52,18 +52,17 @@ class HotReviewsContent extends HookConsumerWidget {
   final ScrollPhysics? scrollPhysics;
 
   /// 顶栏筛选入口点开什么：`true` 弹底部抽屉（移动端），`false` 就地展开浮层
-  /// （桌面端）。两端按钮外观、面板内容、即时生效行为完全一致，只有容器不同。
+  /// （桌面端）。两端按钮外观、面板内容、条件即时更新行为完全一致，只有容器不同。
   final bool useMobileFilterDrawer;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(hotReviewsProvider);
     final state = async.value;
-    final paged =
-        state?.paged ?? const PagedListState<HotReviewListItemDto>();
-    // AsyncLoading 期间（切周期 reload 中）state 无值，从 notifier 读当前周期，
-    // 避免顶栏标签闪回默认值。
-    final period = state?.period ?? ref.read(hotReviewsProvider.notifier).period;
+    final paged = state?.paged ?? const PagedListState<HotReviewListItemDto>();
+    // 首次加载尚无 state 时，从 notifier 读默认周期。
+    final period =
+        state?.period ?? ref.read(hotReviewsProvider.notifier).period;
     final scrollController = usePagedLoadMoreScroll(
       onReachBottom: () {
         // 对齐旧基类：loadMore 失败存续期间滚动不自动重试。
@@ -93,10 +92,9 @@ class HotReviewsContent extends HookConsumerWidget {
                 child: AppPagedLoadMoreFooter(
                   isLoading: paged.isLoadingMore,
                   errorMessage: paged.loadMoreErrorMessage,
-                  onRetry:
-                      () => unawaited(
-                        ref.read(hotReviewsProvider.notifier).loadMore(),
-                      ),
+                  onRetry: () => unawaited(
+                    ref.read(hotReviewsProvider.notifier).loadMore(),
+                  ),
                 ),
               ),
             ),
@@ -105,10 +103,9 @@ class HotReviewsContent extends HookConsumerWidget {
     ];
     final scrollView = CustomScrollView(
       key: const Key('desktop-hot-reviews-scroll-view'),
-      physics:
-          enablePullToRefresh
-              ? scrollPhysics ?? const AlwaysScrollableScrollPhysics()
-              : scrollPhysics,
+      physics: enablePullToRefresh
+          ? scrollPhysics ?? const AlwaysScrollableScrollPhysics()
+          : scrollPhysics,
       controller: scrollController,
       slivers: slivers,
     );
@@ -155,8 +152,7 @@ class HotReviewsContent extends HookConsumerWidget {
   }
 
   Future<void> _handleRefresh(BuildContext context, WidgetRef ref) async {
-    final errorMessage =
-        await ref.read(hotReviewsProvider.notifier).refresh();
+    final errorMessage = await ref.read(hotReviewsProvider.notifier).refresh();
     if (errorMessage != null && context.mounted) {
       showToast('刷新失败');
     }
@@ -187,7 +183,10 @@ class HotReviewsContent extends HookConsumerWidget {
     PagedListState<HotReviewListItemDto> paged,
     HotReviewPeriod period,
   ) {
-    final syncedAtLabel = formatSyncedAtLabel(paged.syncedAt, withPrefix: false);
+    final syncedAtLabel = formatSyncedAtLabel(
+      paged.syncedAt,
+      withPrefix: false,
+    );
 
     return AppListHeader(
       filterButtonKey: const Key('hot-reviews-filter-trigger'),
@@ -195,21 +194,22 @@ class HotReviewsContent extends HookConsumerWidget {
       filterLabel: period.label,
       filterPanelKey: const Key('hot-reviews-filter-panel'),
       filterPanelExtraWidth: 180,
-      onFilterTap:
-          useMobileFilterDrawer
-              ? () => unawaited(
-                _openFilterDrawer(context, ref, scrollController, period),
-              )
-              : null,
-      filterPanelBuilder:
-          useMobileFilterDrawer
-              ? null
-              : (_) => HotReviewFilterSectionGroup(
-                period: period,
-                onChanged:
-                    (next) =>
-                        unawaited(_applyPeriod(ref, scrollController, next)),
-              ),
+      filterUpdate: paged.filterUpdate,
+      hasPreviousFilterItems: paged.items.isNotEmpty,
+      onRetryFilter: () =>
+          unawaited(ref.read(hotReviewsProvider.notifier).retryFilter()),
+      onFilterTap: useMobileFilterDrawer
+          ? () => unawaited(
+              _openFilterDrawer(context, ref, scrollController, period),
+            )
+          : null,
+      filterPanelBuilder: useMobileFilterDrawer
+          ? null
+          : (_) => HotReviewFilterSectionGroup(
+              period: period,
+              onChanged: (next) =>
+                  unawaited(_applyPeriod(ref, scrollController, next)),
+            ),
       informationSlots: [
         AppListHeaderInfo(
           key: const Key('desktop-hot-reviews-page-total'),
@@ -234,8 +234,7 @@ class HotReviewsContent extends HookConsumerWidget {
     await showMobileHotReviewFilterDrawer(
       context,
       current: period,
-      onChanged:
-          (next) => unawaited(_applyPeriod(ref, scrollController, next)),
+      onChanged: (next) => unawaited(_applyPeriod(ref, scrollController, next)),
     );
   }
 
@@ -245,7 +244,7 @@ class HotReviewsContent extends HookConsumerWidget {
     AsyncValue<HotReviewsState> async,
     PagedListState<HotReviewListItemDto> paged,
   ) {
-    if (async.isLoading) {
+    if (async.isLoading && async.value == null) {
       return HotReviewSliver(
         isLoading: true,
         items: <HotReviewListItemDto>[],
@@ -261,6 +260,9 @@ class HotReviewsContent extends HookConsumerWidget {
       );
     }
 
+    if (paged.isEmpty && paged.filterUpdate.hasFailed) {
+      return const SliverToBoxAdapter(child: SizedBox.shrink());
+    }
     if (paged.isEmpty) {
       return const SliverToBoxAdapter(child: AppEmptyState(message: '暂无热评数据'));
     }

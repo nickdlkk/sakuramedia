@@ -21,10 +21,8 @@ import 'package:sakuramedia/features/configuration/presentation/widgets/mobile/m
 import 'package:sakuramedia/routes/app_route_paths.dart';
 import 'package:sakuramedia/theme.dart';
 import 'package:sakuramedia/widgets/base/actions/app_button.dart';
-import 'package:sakuramedia/widgets/base/forms/app_password_field.dart';
 import 'package:sakuramedia/widgets/base/layout/scrolling/app_adaptive_refresh_scroll_view.dart';
 import 'package:sakuramedia/widgets/base/overlays/app_bottom_drawer.dart';
-import 'package:sakuramedia/widgets/base/layout/cards/app_badge.dart';
 import 'package:sakuramedia/widgets/base/layout/cards/app_info_block.dart';
 import 'package:sakuramedia/widgets/base/layout/cards/app_notice_card.dart';
 import 'package:sakuramedia/widgets/base/feedback/app_confirm_dialog.dart';
@@ -40,11 +38,8 @@ class MobileIndexersPage extends ConsumerStatefulWidget {
 }
 
 class _MobileIndexersPageState extends ConsumerState<MobileIndexersPage> {
-  late final TextEditingController _apiKeyController;
   bool _isLoading = true;
-  bool _isSavingApiKey = false;
   String? _errorMessage;
-  String _settingsType = 'jackett';
   List<IndexerEntryDto> _indexers = const <IndexerEntryDto>[];
   List<DownloadClientDto> _downloadClients = const <DownloadClientDto>[];
   IndexerSettingsDto? _savedSettings;
@@ -54,23 +49,17 @@ class _MobileIndexersPageState extends ConsumerState<MobileIndexersPage> {
 
   int get _boundIndexerCount => _indexers.where(_boundClientsStillExist).length;
 
-  String get _resolvedSettingsType {
-    final trimmed = _settingsType.trim();
-    return trimmed.isEmpty ? 'jackett' : trimmed;
-  }
+  int get _configuredApiKeyCount =>
+      _indexers.where((entry) => entry.hasApiKey).length;
 
   @override
   void initState() {
     super.initState();
-    _apiKeyController = TextEditingController();
-    _apiKeyController.addListener(_handleApiKeyChanged);
     unawaited(_loadData());
   }
 
   @override
   void dispose() {
-    _apiKeyController.removeListener(_handleApiKeyChanged);
-    _apiKeyController.dispose();
     super.dispose();
   }
 
@@ -140,8 +129,7 @@ class _MobileIndexersPageState extends ConsumerState<MobileIndexersPage> {
 
     if (_errorMessage != null &&
         _indexers.isEmpty &&
-        _downloadClients.isEmpty &&
-        _apiKeyController.text.trim().isEmpty) {
+        _downloadClients.isEmpty) {
       return AppMobileSectionError(
         key: const Key('mobile-indexers-error-state'),
         title: '索引器加载失败',
@@ -158,20 +146,19 @@ class _MobileIndexersPageState extends ConsumerState<MobileIndexersPage> {
       children: [
         AppNoticeCard(
           key: const Key('mobile-indexers-overview-card'),
-          title: 'Jackett 负责统一管理索引器入口，并把资源请求投递到对应下载器。',
-          description: '先确认 API Key，再补齐每个索引器和下载器的绑定关系。',
+          title: 'Torznab 索引器负责搜索候选资源，并把资源请求投递到对应下载器。',
+          description: '每个索引器可独立配置 API Key；留空的站点请求不会携带 apikey。',
           stats: [
-            const AppNoticeStat(label: '接入类型', value: 'Jackett'),
             AppNoticeStat(
-              label: 'API Key 状态',
-              value: _apiKeyController.text.trim().isNotEmpty ? '已配置' : '待配置',
+              label: 'API Key 已配置',
+              value: '$_configuredApiKeyCount 个',
             ),
             AppNoticeStat(label: '索引器数', value: '${_indexers.length}'),
             AppNoticeStat(label: '已绑定下载器', value: '$_boundIndexerCount'),
           ],
         ),
         SizedBox(height: spacing.md),
-        _buildApiKeyCard(context),
+        _buildConnectionTestCard(context),
         SizedBox(height: spacing.md),
         if (!_hasDownloadClients) ...[
           MobileConfigOnboardingCard(
@@ -189,7 +176,7 @@ class _MobileIndexersPageState extends ConsumerState<MobileIndexersPage> {
     );
   }
 
-  Widget _buildApiKeyCard(BuildContext context) {
+  Widget _buildConnectionTestCard(BuildContext context) {
     final spacing = context.appSpacing;
     final colors = context.appColors;
     final connectionTest = ref.watch(
@@ -197,7 +184,7 @@ class _MobileIndexersPageState extends ConsumerState<MobileIndexersPage> {
     );
 
     return Container(
-      key: const Key('mobile-indexers-api-key-card'),
+      key: const Key('mobile-indexers-connection-test-card'),
       padding: EdgeInsets.all(spacing.md),
       decoration: BoxDecoration(
         color: colors.surfaceCard,
@@ -208,63 +195,6 @@ class _MobileIndexersPageState extends ConsumerState<MobileIndexersPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'Jackett API Key',
-                  style: resolveAppTextStyle(
-                    context,
-                    size: AppTextSize.s14,
-                    weight: AppTextWeight.semibold,
-                    tone: AppTextTone.primary,
-                  ),
-                ),
-              ),
-              AppBadge(
-                label: _apiKeyController.text.trim().isEmpty ? '待配置' : '已配置',
-                tone:
-                    _apiKeyController.text.trim().isEmpty
-                        ? AppBadgeTone.warning
-                        : AppBadgeTone.success,
-                size: AppBadgeSize.compact,
-              ),
-            ],
-          ),
-          SizedBox(height: spacing.xs),
-          Text(
-            '用于与 Jackett 后端通信，保存后索引器条目会复用这份凭证。',
-            style: resolveAppTextStyle(
-              context,
-              size: AppTextSize.s12,
-              weight: AppTextWeight.regular,
-              tone: AppTextTone.secondary,
-            ),
-          ),
-          SizedBox(height: spacing.md),
-          AppPasswordField(
-            fieldKey: const Key('mobile-indexers-api-key-field'),
-            visibilityButtonKey: const Key(
-              'mobile-indexers-api-key-visibility-button',
-            ),
-            controller: _apiKeyController,
-            hintText: '请输入 Jackett API Key',
-            enabled: !_isSavingApiKey,
-            showLabel: '显示 API Key',
-            hideLabel: '隐藏 API Key',
-          ),
-          SizedBox(height: spacing.md),
-          SizedBox(
-            width: double.infinity,
-            child: AppButton(
-              key: const Key('mobile-indexers-api-key-save-button'),
-              label: '保存 API Key',
-              variant: AppButtonVariant.primary,
-              isLoading: _isSavingApiKey,
-              onPressed: _saveApiKey,
-            ),
-          ),
-          SizedBox(height: spacing.lg),
           IndexerConnectionTestPanel(
             key: const Key('mobile-indexers-connection-test-panel'),
             isTesting: connectionTest.isTesting,
@@ -326,6 +256,16 @@ class _MobileIndexersPageState extends ConsumerState<MobileIndexersPage> {
         SizedBox(height: spacing.xs),
         Text(
           entry.url,
+          style: resolveAppTextStyle(
+            context,
+            size: AppTextSize.s12,
+            weight: AppTextWeight.regular,
+            tone: AppTextTone.secondary,
+          ),
+        ),
+        SizedBox(height: spacing.sm),
+        Text(
+          'API Key: ${entry.hasApiKey ? '已配置' : '未配置'}',
           style: resolveAppTextStyle(
             context,
             size: AppTextSize.s12,
@@ -453,47 +393,6 @@ class _MobileIndexersPageState extends ConsumerState<MobileIndexersPage> {
     }
   }
 
-  Future<void> _saveApiKey() async {
-    if (_isSavingApiKey) {
-      return;
-    }
-    final apiKey = _apiKeyController.text.trim();
-    if (apiKey.isEmpty) {
-      showToast('请输入 API Key');
-      return;
-    }
-
-    setState(() {
-      _isSavingApiKey = true;
-    });
-
-    try {
-      final saved = await ref
-          .read(indexerSettingsProvider.notifier)
-          .saveDraft(
-            type: _resolvedSettingsType,
-            apiKey: apiKey,
-            indexers: _indexers,
-          );
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _applySettings(saved);
-        _isSavingApiKey = false;
-      });
-      showToast('API Key 已保存');
-    } catch (error) {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _isSavingApiKey = false;
-      });
-      showToast(apiErrorMessage(error, fallback: '保存 API Key 失败'));
-    }
-  }
-
   Future<void> _testConnection() async {
     if (!_isConnectionTestEnabled) {
       return;
@@ -506,14 +405,12 @@ class _MobileIndexersPageState extends ConsumerState<MobileIndexersPage> {
     if (!mounted || result == null) {
       return;
     }
-    showToast(result.healthy ? 'Jackett 连通正常' : 'Jackett 连通性测试失败');
+    showToast(result.healthy ? 'Torznab 连通正常' : 'Torznab 连通性测试失败');
   }
 
   Future<void> _handleCreateIndexer() async {
     final saved = await showMobileIndexerEditorDrawer(
       context,
-      settingsType: _resolvedSettingsType,
-      apiKey: _apiKeyController.text.trim(),
       existingEntries: _indexers,
       downloadClients: _downloadClients,
     );
@@ -546,8 +443,6 @@ class _MobileIndexersPageState extends ConsumerState<MobileIndexersPage> {
   Future<void> _handleEditIndexer(IndexerEntryDto entry) async {
     final saved = await showMobileIndexerEditorDrawer(
       context,
-      settingsType: _resolvedSettingsType,
-      apiKey: _apiKeyController.text.trim(),
       existingEntries: _indexers,
       downloadClients: _downloadClients,
       initialEntry: entry,
@@ -562,8 +457,6 @@ class _MobileIndexersPageState extends ConsumerState<MobileIndexersPage> {
   }
 
   Future<void> _handleDeleteIndexer(IndexerEntryDto entry) async {
-    final settingsType = _resolvedSettingsType;
-    final apiKey = _apiKeyController.text.trim();
     final nextEntries = _indexers
         .where((item) => item.id != entry.id)
         .toList(growable: false);
@@ -580,11 +473,7 @@ class _MobileIndexersPageState extends ConsumerState<MobileIndexersPage> {
       onConfirm: () async {
         savedSettings = await ref
             .read(indexerSettingsProvider.notifier)
-            .saveDraft(
-              type: settingsType,
-              apiKey: apiKey,
-              indexers: nextEntries,
-            );
+            .saveDraft(indexers: nextEntries);
       },
     );
     if (!confirmed || !mounted || savedSettings == null) {
@@ -598,21 +487,8 @@ class _MobileIndexersPageState extends ConsumerState<MobileIndexersPage> {
   }
 
   void _applySettings(IndexerSettingsDto settings) {
-    _settingsType = settings.type.trim().isEmpty ? 'jackett' : settings.type;
-    _apiKeyController.removeListener(_handleApiKeyChanged);
-    _apiKeyController.text = settings.apiKey;
-    _apiKeyController.addListener(_handleApiKeyChanged);
     _indexers = List<IndexerEntryDto>.from(settings.indexers);
     _savedSettings = settings;
-    ref
-        .read(indexerConnectionTestProvider(_connectionTestScope).notifier)
-        .invalidate();
-  }
-
-  void _handleApiKeyChanged() {
-    if (!mounted) {
-      return;
-    }
     ref
         .read(indexerConnectionTestProvider(_connectionTestScope).notifier)
         .invalidate();
@@ -623,9 +499,7 @@ class _MobileIndexersPageState extends ConsumerState<MobileIndexersPage> {
     if (saved == null) {
       return false;
     }
-    if (_resolvedSettingsType != saved.type.trim() ||
-        _apiKeyController.text.trim() != saved.apiKey.trim() ||
-        _indexers.length != saved.indexers.length) {
+    if (_indexers.length != saved.indexers.length) {
       return true;
     }
     for (var index = 0; index < _indexers.length; index++) {
@@ -635,6 +509,7 @@ class _MobileIndexersPageState extends ConsumerState<MobileIndexersPage> {
           current.name != previous.name ||
           current.url != previous.url ||
           current.kind != previous.kind ||
+          current.apiKey != previous.apiKey ||
           !listEquals(current.downloadClientIds, previous.downloadClientIds)) {
         return true;
       }
@@ -644,7 +519,6 @@ class _MobileIndexersPageState extends ConsumerState<MobileIndexersPage> {
 
   bool get _isConnectionTestEnabled =>
       !_isLoading &&
-      !_isSavingApiKey &&
       !ref
           .read(indexerConnectionTestProvider(_connectionTestScope))
           .isTesting &&
@@ -666,8 +540,6 @@ class _MobileIndexersPageState extends ConsumerState<MobileIndexersPage> {
 
 Future<IndexerSettingsDto?> showMobileIndexerEditorDrawer(
   BuildContext context, {
-  required String settingsType,
-  required String apiKey,
   required List<IndexerEntryDto> existingEntries,
   required List<DownloadClientDto> downloadClients,
   IndexerEntryDto? initialEntry,
@@ -678,8 +550,6 @@ Future<IndexerSettingsDto?> showMobileIndexerEditorDrawer(
     heightFactor: 0.8,
     builder: (drawerContext) {
       return _MobileIndexerEditorDrawer(
-        settingsType: settingsType,
-        apiKey: apiKey,
         existingEntries: existingEntries,
         downloadClients: downloadClients,
         initialEntry: initialEntry,
@@ -730,15 +600,11 @@ class _MobileIndexersLoadingSection extends StatelessWidget {
 
 class _MobileIndexerEditorDrawer extends ConsumerStatefulWidget {
   const _MobileIndexerEditorDrawer({
-    required this.settingsType,
-    required this.apiKey,
     required this.existingEntries,
     required this.downloadClients,
     this.initialEntry,
   });
 
-  final String settingsType;
-  final String apiKey;
   final List<IndexerEntryDto> existingEntries;
   final List<DownloadClientDto> downloadClients;
   final IndexerEntryDto? initialEntry;
@@ -754,6 +620,7 @@ class _MobileIndexerEditorDrawerState
 
   late final TextEditingController _nameController;
   late final TextEditingController _urlController;
+  late final TextEditingController _apiKeyController;
   late final FocusNode _nameFocusNode;
   late final FocusNode _urlFocusNode;
   late String _kind;
@@ -774,6 +641,9 @@ class _MobileIndexerEditorDrawerState
     final initialEntry = widget.initialEntry;
     _nameController = TextEditingController(text: initialEntry?.name ?? '');
     _urlController = TextEditingController(text: initialEntry?.url ?? '');
+    _apiKeyController = TextEditingController(
+      text: initialEntry?.apiKey ?? '',
+    );
     _nameFocusNode = FocusNode();
     _urlFocusNode = FocusNode();
     _kind = initialEntry?.kind ?? 'pt';
@@ -786,6 +656,7 @@ class _MobileIndexerEditorDrawerState
   void dispose() {
     _nameController.dispose();
     _urlController.dispose();
+    _apiKeyController.dispose();
     _nameFocusNode.dispose();
     _urlFocusNode.dispose();
     super.dispose();
@@ -803,6 +674,7 @@ class _MobileIndexerEditorDrawerState
       body: IndexerEntryFormFields(
         nameController: _nameController,
         urlController: _urlController,
+        apiKeyController: _apiKeyController,
         kind: _kind,
         downloadClients: widget.downloadClients,
         selectedDownloadClientIds: _selectedDownloadClientIds,
@@ -853,16 +725,15 @@ class _MobileIndexerEditorDrawerState
       showToast('索引器类型仅支持 pt 或 bt');
       return;
     }
-    if (widget.apiKey.trim().isEmpty) {
-      showToast('请先保存 API Key');
-      return;
-    }
 
     final nextEntry = IndexerEntryDto(
       id: widget.initialEntry?.id ?? 0,
       name: _nameController.text.trim(),
       url: _urlController.text.trim(),
       kind: _kind,
+      apiKey: _apiKeyController.text.trim().isEmpty
+          ? null
+          : _apiKeyController.text.trim(),
       downloadClients: _selectedDownloadClients(),
     );
     final nextEntries = List<IndexerEntryDto>.of(widget.existingEntries);
@@ -882,11 +753,7 @@ class _MobileIndexerEditorDrawerState
     try {
       final saved = await ref
           .read(indexerSettingsProvider.notifier)
-          .saveDraft(
-            type: widget.settingsType,
-            apiKey: widget.apiKey,
-            indexers: nextEntries,
-          );
+          .saveDraft(indexers: nextEntries);
       if (!mounted) {
         return;
       }
@@ -973,6 +840,11 @@ class _MobileIndexerDetailDrawer extends StatelessWidget {
           ),
           SizedBox(height: spacing.lg),
           AppInfoBlock(label: '类别', value: entry.kind.toUpperCase()),
+          SizedBox(height: spacing.sm),
+          AppInfoBlock(
+            label: 'API Key',
+            value: entry.hasApiKey ? '已配置' : '未配置',
+          ),
           SizedBox(height: spacing.sm),
           AppInfoBlock(
             label: '绑定下载器',

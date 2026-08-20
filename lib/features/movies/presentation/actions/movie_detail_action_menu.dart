@@ -11,7 +11,6 @@ enum MovieDetailActionType {
   refreshMetadata,
   recomputeHeat,
   syncInteraction,
-  translateDescription,
 }
 
 class MovieDetailActionDescriptor {
@@ -34,7 +33,6 @@ List<MovieDetailActionDescriptor> buildMovieDetailActionDescriptors({
   required MovieDetailDto movie,
   required bool isSubscribed,
 }) {
-  final hasDescription = movie.desc.trim().isNotEmpty;
   final hasJavdbId = movie.javdbId.trim().isNotEmpty;
 
   return <MovieDetailActionDescriptor>[
@@ -65,12 +63,6 @@ List<MovieDetailActionDescriptor> buildMovieDetailActionDescriptors({
       label: '刷新互动数',
       icon: Icons.bar_chart_rounded,
       enabled: hasJavdbId,
-    ),
-    MovieDetailActionDescriptor(
-      type: MovieDetailActionType.translateDescription,
-      label: '翻译影片介绍',
-      icon: Icons.translate_rounded,
-      enabled: hasDescription,
     ),
   ];
 }

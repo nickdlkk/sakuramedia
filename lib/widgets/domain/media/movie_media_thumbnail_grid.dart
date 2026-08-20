@@ -29,6 +29,13 @@ enum ThumbnailGridLayout { uniform16x9, staggered }
 /// 仅 [ThumbnailGridLayout.uniform16x9] 分支使用——瀑布流分支预先按真实比例切 tile，cover 即可。
 const double _kAdaptiveFitAspectThreshold = 1.5;
 
+/// 播放器缩略图统一按长边 512 个**物理像素**解码。
+///
+/// 这个值刻意不依赖 tile 的实际布局尺寸或设备 DPR：用户切换列数、拖动播放器
+/// 分栏或调整窗口时，同一张图始终命中同一个 [ResizeImage] 缓存键，避免批量重复
+/// 解码。横图按宽限制，竖图按高限制，使两种方向的像素面积都受控。
+const int kMoviePlayerThumbnailDecodeLongEdge = 512;
+
 /// 按图片真实宽高比（宽/高）选填充方式：竖/方图（< 1.5）用 contain 完整展示，
 /// 横图（>= 1.5）用 cover 填满。测得前（null）或无效（<=0）回退 cover，等同原行为、不闪烁。
 @visibleForTesting
@@ -39,6 +46,39 @@ BoxFit resolveAdaptiveThumbnailFit(double? aspectRatio) {
   return aspectRatio < _kAdaptiveFitAspectThreshold
       ? BoxFit.contain
       : BoxFit.cover;
+}
+
+/// 返回播放器缩略图稳定的解码尺寸提示。
+///
+/// 有效的宽高数据表明图片为竖图时，改用固定高，确保长边始终不超过
+/// [kMoviePlayerThumbnailDecodeLongEdge]。缺尺寸时按横图回退，仍保持缓存键稳定；
+/// 此时自适应 fit 会继续在图片就绪后测量真实比例。
+@visibleForTesting
+({int? width, int? height}) resolveMoviePlayerThumbnailDecodeHint({
+  required int? imageWidth,
+  required int? imageHeight,
+}) {
+  if (imageWidth != null &&
+      imageHeight != null &&
+      imageWidth > 0 &&
+      imageHeight > imageWidth) {
+    return (width: null, height: kMoviePlayerThumbnailDecodeLongEdge);
+  }
+  return (width: kMoviePlayerThumbnailDecodeLongEdge, height: null);
+}
+
+@visibleForTesting
+double? resolveMoviePlayerThumbnailAspectRatio({
+  required int? imageWidth,
+  required int? imageHeight,
+}) {
+  if (imageWidth == null ||
+      imageHeight == null ||
+      imageWidth <= 0 ||
+      imageHeight <= 0) {
+    return null;
+  }
+  return imageWidth / imageHeight;
 }
 
 class MovieMediaThumbnailGrid extends StatefulWidget {
@@ -88,8 +128,6 @@ class _MovieMediaThumbnailGridState extends State<MovieMediaThumbnailGrid> {
     milliseconds: 180,
   );
   static const int _visibleRowBuffer = 2;
-  static const double _decodeDevicePixelRatioCap = 2.0;
-  static const int _decodeSizeUpperBound = 1024;
 
   late final ScrollController _scrollController;
   Timer? _scrollIdleTimer;
@@ -465,11 +503,10 @@ class _MovieMediaThumbnailGridState extends State<MovieMediaThumbnailGrid> {
       }
       // 用 tile 自身高度算 buffer：buffer ~= _visibleRowBuffer 行 * 平均 tile 高。
       // 平均高取「总高 / 平均每列 tile 数」，与 uniform 分支按行缓冲粗略对齐。
-      final averageTileHeight =
-          layout.tiles.isEmpty
-              ? 0.0
-              : layout.tiles.map((t) => t.height).reduce((a, b) => a + b) /
-                  layout.tiles.length;
+      final averageTileHeight = layout.tiles.isEmpty
+          ? 0.0
+          : layout.tiles.map((t) => t.height).reduce((a, b) => a + b) /
+                layout.tiles.length;
       final buffer = (averageTileHeight + spacing) * _visibleRowBuffer;
       final from = offset - buffer;
       final to = offset + viewportDimension + buffer;
@@ -587,32 +624,6 @@ class _MovieMediaThumbnailGridState extends State<MovieMediaThumbnailGrid> {
     return index >= visibleStartIndex && index <= visibleEndIndex;
   }
 
-  ({int? width, int? height}) _resolveDecodeHint(BoxConstraints constraints) {
-    if (!constraints.hasBoundedWidth ||
-        !constraints.maxWidth.isFinite ||
-        constraints.maxWidth <= 0) {
-      return (width: null, height: null);
-    }
-    if (!constraints.hasBoundedHeight ||
-        !constraints.maxHeight.isFinite ||
-        constraints.maxHeight <= 0) {
-      return (width: null, height: null);
-    }
-
-    final dpr = MediaQuery.devicePixelRatioOf(context);
-    final effectiveDevicePixelRatio = dpr.clamp(
-      1.0,
-      _decodeDevicePixelRatioCap,
-    );
-    final cacheWidth = ((constraints.maxWidth * effectiveDevicePixelRatio)
-        .round()
-        .clamp(1, _decodeSizeUpperBound));
-    // 只按宽给解码提示、不给高：ResizeImage 默认 exact 策略下同时给宽高会把位图
-    // **强制拉伸**成 tile 的 16:9（既毁了竖图渲染，也让宽高比检测恒为 ~1.78）。
-    // 单边宽 → 保持原图宽高比，cover/contain 与自适应 fit 检测才正确。
-    return (width: cacheWidth, height: null);
-  }
-
   @override
   Widget build(BuildContext context) {
     if (widget.isLoading) {
@@ -646,10 +657,9 @@ class _MovieMediaThumbnailGridState extends State<MovieMediaThumbnailGrid> {
         _scheduleVisibleRangeRefreshIfLayoutChanged(constraints);
         return NotificationListener<ScrollNotification>(
           onNotification: _handleScrollNotification,
-          child:
-              widget.layout == ThumbnailGridLayout.staggered
-                  ? _buildStaggeredGrid(context)
-                  : _buildUniformGrid(context),
+          child: widget.layout == ThumbnailGridLayout.staggered
+              ? _buildStaggeredGrid(context)
+              : _buildUniformGrid(context),
         );
       },
     );
@@ -660,10 +670,9 @@ class _MovieMediaThumbnailGridState extends State<MovieMediaThumbnailGrid> {
       key: Key('${widget.keyPrefix}-thumbnail-grid'),
       controller: _scrollController,
       cacheExtent: 500,
-      physics:
-          widget.isScrollLocked
-              ? const NeverScrollableScrollPhysics()
-              : const ClampingScrollPhysics(),
+      physics: widget.isScrollLocked
+          ? const NeverScrollableScrollPhysics()
+          : const ClampingScrollPhysics(),
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: widget.columns,
         crossAxisSpacing: context.appSpacing.sm,
@@ -672,9 +681,8 @@ class _MovieMediaThumbnailGridState extends State<MovieMediaThumbnailGrid> {
             context.appComponentTokens.moviePlayerThumbnailAspectRatio,
       ),
       itemCount: widget.thumbnails.length,
-      itemBuilder:
-          (context, index) =>
-              _buildTile(context, index, useAdaptiveFit: true, aspect: null),
+      itemBuilder: (context, index) =>
+          _buildTile(context, index, useAdaptiveFit: true),
     );
   }
 
@@ -684,10 +692,9 @@ class _MovieMediaThumbnailGridState extends State<MovieMediaThumbnailGrid> {
       key: Key('${widget.keyPrefix}-thumbnail-grid'),
       controller: _scrollController,
       cacheExtent: 500,
-      physics:
-          widget.isScrollLocked
-              ? const NeverScrollableScrollPhysics()
-              : const ClampingScrollPhysics(),
+      physics: widget.isScrollLocked
+          ? const NeverScrollableScrollPhysics()
+          : const ClampingScrollPhysics(),
       slivers: [
         SliverMasonryGrid.count(
           crossAxisCount: widget.columns,
@@ -698,19 +705,13 @@ class _MovieMediaThumbnailGridState extends State<MovieMediaThumbnailGrid> {
             final thumbnail = widget.thumbnails[index];
             final w = thumbnail.width;
             final h = thumbnail.height;
-            final aspect =
-                (w != null && h != null && w > 0 && h > 0)
-                    ? w / h
-                    : kStaggeredFallbackAspect;
+            final aspect = (w != null && h != null && w > 0 && h > 0)
+                ? w / h
+                : kStaggeredFallbackAspect;
             // AspectRatio 让 SliverMasonryGrid 无须解码图片即可定 tile 高度，懒构建照常生效。
             return AspectRatio(
               aspectRatio: aspect,
-              child: _buildTile(
-                context,
-                index,
-                useAdaptiveFit: false,
-                aspect: aspect,
-              ),
+              child: _buildTile(context, index, useAdaptiveFit: false),
             );
           },
         ),
@@ -725,7 +726,6 @@ class _MovieMediaThumbnailGridState extends State<MovieMediaThumbnailGrid> {
     BuildContext context,
     int index, {
     required bool useAdaptiveFit,
-    required double? aspect,
   }) {
     final thumbnail = widget.thumbnails[index];
     final isActive = widget.activeIndex == index;
@@ -756,28 +756,30 @@ class _MovieMediaThumbnailGridState extends State<MovieMediaThumbnailGrid> {
       borderWidth = 1;
     }
 
-    final image =
-        _shouldBuildImageForIndex(index)
-            ? LayoutBuilder(
-              builder: (context, constraints) {
-                final decodeHint = _resolveDecodeHint(constraints);
-                if (useAdaptiveFit) {
-                  return _AdaptiveFitThumbnailImage(
-                    url: thumbnail.image.bestAvailableUrl,
-                    memCacheWidth: decodeHint.width,
-                    memCacheHeight: decodeHint.height,
-                  );
-                }
-                // 瀑布流分支按真实比例切 tile，cover 不再裁掉关键内容。
-                return MaskedImage(
+    final decodeHint = resolveMoviePlayerThumbnailDecodeHint(
+      imageWidth: thumbnail.width,
+      imageHeight: thumbnail.height,
+    );
+    final aspectRatio = resolveMoviePlayerThumbnailAspectRatio(
+      imageWidth: thumbnail.width,
+      imageHeight: thumbnail.height,
+    );
+    final image = _shouldBuildImageForIndex(index)
+        ? useAdaptiveFit
+              ? _AdaptiveFitThumbnailImage(
+                  url: thumbnail.image.bestAvailableUrl,
+                  memCacheWidth: decodeHint.width,
+                  memCacheHeight: decodeHint.height,
+                  knownAspectRatio: aspectRatio,
+                )
+              // 瀑布流分支按真实比例切 tile，cover 不再裁掉关键内容。
+              : MaskedImage(
                   url: thumbnail.image.bestAvailableUrl,
                   fit: BoxFit.cover,
                   memCacheWidth: decodeHint.width,
                   memCacheHeight: decodeHint.height,
-                );
-              },
-            )
-            : const _MovieMediaThumbnailImagePlaceholder();
+                )
+        : const _MovieMediaThumbnailImagePlaceholder();
 
     final child = KeyedSubtree(
       key: Key('${widget.keyPrefix}-thumb-$index'),
@@ -787,27 +789,25 @@ class _MovieMediaThumbnailGridState extends State<MovieMediaThumbnailGrid> {
           color: tileColor,
           borderRadius: context.appRadius.xsBorder,
           border: Border.all(color: borderColor, width: borderWidth),
-          boxShadow:
-              (isActive || isClipEndpoint) ? context.appShadows.panel : null,
+          boxShadow: (isActive || isClipEndpoint)
+              ? context.appShadows.panel
+              : null,
         ),
         child: ClipRRect(
           borderRadius: context.appRadius.xsBorder,
-          child:
-              isClipEndpoint
-                  ? Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      image,
-                      Positioned(
-                        top: 4,
-                        left: 4,
-                        child: _ClipEndpointBadge(
-                          label: isClipStart ? '起' : '终',
-                        ),
-                      ),
-                    ],
-                  )
-                  : image,
+          child: isClipEndpoint
+              ? Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    image,
+                    Positioned(
+                      top: 4,
+                      left: 4,
+                      child: _ClipEndpointBadge(label: isClipStart ? '起' : '终'),
+                    ),
+                  ],
+                )
+              : image,
         ),
       ),
     );
@@ -855,21 +855,24 @@ class _ClipEndpointBadge extends StatelessWidget {
   }
 }
 
-/// 关键帧缩略图：测得真实宽高比后选 cover/contain，再交标准入口 [MaskedImage] 渲染。
+/// 关键帧缩略图：按已有宽高比或运行时测量结果选 cover/contain，再交标准入口
+/// [MaskedImage] 渲染。
 ///
-/// 单独起一个测量 provider（与 [MaskedImage] 同 url、同 decode 提示 → 共享解码缓存键，
-/// 不触发额外整图解码），用既有「`ImageStreamListener` 读 `ImageInfo` 真实尺寸」范式
-/// （对齐 `MoviePlotThumbnail`）。blur / 占位 / URL 解析仍全部走 [MaskedImage]。
+/// 后端已提供尺寸时直接使用，不再为每张图额外建立测量流；旧数据缺尺寸时才回退
+/// `ImageStreamListener` 测量。回退测量与 [MaskedImage] 共享同一解码缓存键，不触发
+/// 额外整图解码。
 class _AdaptiveFitThumbnailImage extends ConsumerStatefulWidget {
   const _AdaptiveFitThumbnailImage({
     required this.url,
     required this.memCacheWidth,
     required this.memCacheHeight,
+    required this.knownAspectRatio,
   });
 
   final String url;
   final int? memCacheWidth;
   final int? memCacheHeight;
+  final double? knownAspectRatio;
 
   @override
   ConsumerState<_AdaptiveFitThumbnailImage> createState() =>
@@ -886,13 +889,21 @@ class _AdaptiveFitThumbnailImageState
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _resolveMeasureProvider();
+    if (widget.knownAspectRatio == null) {
+      _resolveMeasureProvider();
+    }
   }
 
   @override
   void didUpdateWidget(covariant _AdaptiveFitThumbnailImage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.url != widget.url ||
+    if (widget.knownAspectRatio != null) {
+      _stopListening();
+      _aspectRatio = null;
+      return;
+    }
+    if (oldWidget.knownAspectRatio != null ||
+        oldWidget.url != widget.url ||
         oldWidget.memCacheWidth != widget.memCacheWidth ||
         oldWidget.memCacheHeight != widget.memCacheHeight) {
       _resolveMeasureProvider();
@@ -974,7 +985,7 @@ class _AdaptiveFitThumbnailImageState
   Widget build(BuildContext context) {
     return MaskedImage(
       url: widget.url,
-      fit: resolveAdaptiveThumbnailFit(_aspectRatio),
+      fit: resolveAdaptiveThumbnailFit(widget.knownAspectRatio ?? _aspectRatio),
       memCacheWidth: widget.memCacheWidth,
       memCacheHeight: widget.memCacheHeight,
     );

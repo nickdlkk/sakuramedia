@@ -20,7 +20,7 @@ enum AppAdaptiveModalVariant {
 /// 平台自适应的通用弹窗壳。
 ///
 /// - `mobile` → [showAppBottomDrawer]（`mobileHeightFactor` / `mobileMaxHeightFactor`）；
-/// - 其余 → [showDialog] + [AppDesktopDialog]（`desktopWidth`）。
+/// - 其余 → [showDialog] + [AppDesktopDialog]（`desktopWidth` / `desktopHeight`）。
 ///
 /// [builder] 在两端共用；`modalKey` 透传为 drawer 分支的 `drawerKey`、dialog
 /// 分支的 `dialogKey`，供测试锚点。
@@ -33,6 +33,7 @@ Future<T?> showAppAdaptiveModal<T>({
   required WidgetBuilder builder,
   Key? modalKey,
   double? desktopWidth,
+  double? desktopHeight,
   double mobileHeightFactor = 0.9,
   double? mobileMaxHeightFactor,
   bool barrierDismissible = true,
@@ -59,6 +60,7 @@ Future<T?> showAppAdaptiveModal<T>({
         (dialogContext) => AppDesktopDialog(
           dialogKey: modalKey,
           width: desktopWidth ?? dialogContext.appLayoutTokens.dialogWidthMd,
+          height: desktopHeight,
           showCloseButton: showDesktopCloseButton,
           child: builder(dialogContext),
         ),

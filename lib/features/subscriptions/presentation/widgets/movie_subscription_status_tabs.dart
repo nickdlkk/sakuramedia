@@ -31,13 +31,18 @@ const List<MovieSubscriptionStatus?> kMovieSubscriptionStatusTabs =
 /// 需要人工介入才会有进展的状态——计数用警示色，把注意力从默认签上拉过去。
 ///
 /// 「缺资源」不在此列：它下一轮还会自动继续查，用户不做任何事也可能自己好。
-/// 「导入失败」在此列且永远不会自愈——文件已在盘上、后端也不会再给它查资源。
+/// 「未入库」在此列且永远不会自愈——文件已在盘上、后端也不会再给它查资源。
 bool _needsAttention(MovieSubscriptionStatus? status) =>
     status == MovieSubscriptionStatus.exhausted ||
     status == MovieSubscriptionStatus.importFailed ||
     status == MovieSubscriptionStatus.failed;
 
-String _labelOf(MovieSubscriptionStatus? status) => status?.label ?? '全部';
+String _labelOf(MovieSubscriptionStatus? status) {
+  if (status == MovieSubscriptionStatus.importFailed) {
+    return '未入库';
+  }
+  return status?.label ?? '全部';
+}
 
 /// 订阅管理页顶部的状态分段签，标签自带计数角标。
 ///
@@ -116,10 +121,9 @@ class _StatusTab extends StatelessWidget {
             TextSpan(
               text: '  $count',
               style: TextStyle(
-                color:
-                    highlight
-                        ? context.appTextPalette.warning
-                        : context.appTextPalette.muted,
+                color: highlight
+                    ? context.appTextPalette.warning
+                    : context.appTextPalette.muted,
               ),
             ),
           ],

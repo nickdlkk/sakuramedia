@@ -15,11 +15,12 @@ import 'package:sakuramedia/features/shared/presentation/widgets/paged_async_sec
 import 'package:sakuramedia/theme.dart';
 import 'package:sakuramedia/widgets/base/actions/app_button.dart';
 import 'package:sakuramedia/widgets/base/actions/app_icon_button.dart';
+import 'package:sakuramedia/widgets/base/feedback/app_inline_spinner.dart';
 import 'package:sakuramedia/widgets/base/layout/cards/app_badge.dart';
 import 'package:sakuramedia/widgets/base/layout/cards/app_content_card.dart';
 import 'package:sakuramedia/widgets/base/layout/cards/app_meta_chip.dart';
 import 'package:sakuramedia/widgets/base/layout/scrolling/app_filter_total_header.dart';
-import 'package:sakuramedia/widgets/base/overlays/app_desktop_dialog.dart';
+import 'package:sakuramedia/widgets/base/overlays/app_adaptive_modal.dart';
 
 /// 秒传批次历史 section：批次 tab 主体。
 ///
@@ -161,41 +162,42 @@ Future<void> _showRapidUploadBatchDetailDialog(
   BuildContext context,
   MediaRapidUploadBatchListItemDto batch,
 ) {
-  return showDialog<void>(
+  return showAppAdaptiveModal<void>(
     context: context,
-    builder:
-        (dialogContext) => AppDesktopDialog(
-          dialogKey: Key('rapid-upload-batch-detail-dialog-${batch.id}'),
-          closeButtonKey: Key('rapid-upload-batch-detail-close-${batch.id}'),
-          width: dialogContext.appLayoutTokens.dialogWidthMd,
-          height: MediaQuery.sizeOf(dialogContext).height * 0.72,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '批次 #${batch.id} 明细',
-                style: resolveAppTextStyle(
-                  dialogContext,
-                  size: AppTextSize.s18,
-                  weight: AppTextWeight.semibold,
-                  tone: AppTextTone.primary,
-                ),
-              ),
-              SizedBox(height: dialogContext.appSpacing.xs),
-              Text(
-                '共 ${batch.totalCount} 项 · 成功 ${batch.succeededCount} · 失败 ${batch.failedCount + batch.cleanupFailedCount}',
-                style: resolveAppTextStyle(
-                  dialogContext,
-                  size: AppTextSize.s12,
-                  weight: AppTextWeight.regular,
-                  tone: AppTextTone.muted,
-                ),
-              ),
-              SizedBox(height: dialogContext.appSpacing.lg),
-              Expanded(child: _RapidUploadBatchDetailBody(batchId: batch.id)),
-            ],
+    modalKey: Key('rapid-upload-batch-detail-dialog-${batch.id}'),
+    desktopWidth: context.appLayoutTokens.dialogWidthMd,
+    // 桌面保持原「0.72 屏高」的视觉（原 showDialog 版本显式给 height），
+    // 移动抽屉由 mobileHeightFactor 控制高度。
+    desktopHeight: MediaQuery.sizeOf(context).height * 0.72,
+    mobileHeightFactor: 0.85,
+    builder: (dialogContext) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '批次 #${batch.id} 明细',
+            style: resolveAppTextStyle(
+              dialogContext,
+              size: AppTextSize.s18,
+              weight: AppTextWeight.semibold,
+              tone: AppTextTone.primary,
+            ),
           ),
-        ),
+          SizedBox(height: dialogContext.appSpacing.xs),
+          Text(
+            '共 ${batch.totalCount} 项 · 成功 ${batch.succeededCount} · 失败 ${batch.failedCount + batch.cleanupFailedCount}',
+            style: resolveAppTextStyle(
+              dialogContext,
+              size: AppTextSize.s12,
+              weight: AppTextWeight.regular,
+              tone: AppTextTone.muted,
+            ),
+          ),
+          SizedBox(height: dialogContext.appSpacing.lg),
+          Expanded(child: _RapidUploadBatchDetailBody(batchId: batch.id)),
+        ],
+      );
+    },
   );
 }
 
@@ -371,14 +373,7 @@ class _RapidUploadBatchDetailBody extends ConsumerWidget {
       return Center(
         child: Padding(
           padding: EdgeInsets.symmetric(vertical: spacing.md),
-          child: SizedBox(
-            width: context.appComponentTokens.movieCardLoaderSize,
-            height: context.appComponentTokens.movieCardLoaderSize,
-            child: CircularProgressIndicator(
-              strokeWidth:
-                  context.appComponentTokens.movieCardLoaderStrokeWidth,
-            ),
-          ),
+          child: const AppInlineSpinner(),
         ),
       );
     }

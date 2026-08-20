@@ -15,6 +15,7 @@ import 'package:sakuramedia/widgets/base/feedback/app_confirm_dialog.dart';
 import 'package:sakuramedia/widgets/base/layout/scrolling/app_paged_load_more_footer.dart';
 import 'package:sakuramedia/widgets/base/layout/cards/app_badge.dart';
 import 'package:sakuramedia/widgets/base/feedback/app_empty_state.dart';
+import 'package:sakuramedia/widgets/base/feedback/app_filter_update_bar.dart';
 import 'package:sakuramedia/widgets/base/forms/app_select_field.dart';
 import 'package:sakuramedia/widgets/base/forms/app_text_field.dart';
 import 'package:sakuramedia/widgets/base/interaction/selection/app_selection_toolbar.dart';
@@ -65,6 +66,11 @@ List<Widget> buildResourceTaskSlivers({
           _ResourceTaskSubTabBar(controller: controller),
           SizedBox(height: context.appSpacing.lg),
           _ResourceTaskFilterBar(controller: controller),
+          AppFilterUpdateBar(
+            state: controller.filterUpdate,
+            hasPreviousItems: controller.activeRecords.isNotEmpty,
+            onRetry: controller.refreshRecords,
+          ),
           if (controller.supportsBatchReset) ...[
             SizedBox(height: context.appSpacing.md),
             _ResourceTaskSelectionBar(controller: controller),
@@ -84,6 +90,9 @@ List<Widget> buildResourceTaskSlivers({
     ),
   ];
 
+  if (controller.filterUpdate.hasFailed && controller.activeRecords.isEmpty) {
+    return slivers;
+  }
   if (controller.isLoadingRecords && controller.activeRecords.isEmpty) {
     slivers.add(const SliverToBoxAdapter(child: _ResourceTaskListLoading()));
     return slivers;
@@ -287,18 +296,16 @@ class _ResourceTaskSubTab extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.appColors;
     final counts = definition.stateCounts;
-    final badgeTone =
-        counts.failed > 0
-            ? AppBadgeTone.error
-            : counts.running > 0
-            ? AppBadgeTone.warning
-            : AppBadgeTone.neutral;
-    final badgeCount =
-        counts.failed > 0
-            ? counts.failed
-            : counts.running > 0
-            ? counts.running
-            : counts.total;
+    final badgeTone = counts.failed > 0
+        ? AppBadgeTone.error
+        : counts.running > 0
+        ? AppBadgeTone.warning
+        : AppBadgeTone.neutral;
+    final badgeCount = counts.failed > 0
+        ? counts.failed
+        : counts.running > 0
+        ? counts.running
+        : counts.total;
 
     return InkWell(
       onTap: onTap,
@@ -313,8 +320,9 @@ class _ResourceTaskSubTab extends StatelessWidget {
           color: isActive ? colors.selectionSurface : colors.surfaceMuted,
           borderRadius: context.appRadius.pillBorder,
           border: Border.all(
-            color:
-                isActive ? context.appTextPalette.accent : colors.borderSubtle,
+            color: isActive
+                ? context.appTextPalette.accent
+                : colors.borderSubtle,
           ),
         ),
         child: Row(
@@ -324,17 +332,17 @@ class _ResourceTaskSubTab extends StatelessWidget {
               definition.displayName.isEmpty
                   ? definition.taskKey
                   : definition.displayName,
-              style: resolveAppTextStyle(
-                context,
-                size: AppTextSize.s12,
-                weight: AppTextWeight.regular,
-                tone: AppTextTone.tertiary,
-              ).copyWith(
-                color:
-                    isActive
+              style:
+                  resolveAppTextStyle(
+                    context,
+                    size: AppTextSize.s12,
+                    weight: AppTextWeight.regular,
+                    tone: AppTextTone.tertiary,
+                  ).copyWith(
+                    color: isActive
                         ? context.appTextPalette.accent
                         : context.appTextPalette.secondary,
-              ),
+                  ),
             ),
             if (counts.total > 0) ...[
               SizedBox(width: context.appSpacing.sm),
@@ -407,8 +415,6 @@ class _ResourceTaskFilterBarState extends State<_ResourceTaskFilterBar> {
       weight: AppTextWeight.regular,
       tone: AppTextTone.tertiary,
     );
-    final isLoading = controller.isLoadingRecords;
-
     return Wrap(
       crossAxisAlignment: WrapCrossAlignment.center,
       spacing: context.appSpacing.md,
@@ -429,14 +435,11 @@ class _ResourceTaskFilterBarState extends State<_ResourceTaskFilterBar> {
                   ),
                 )
                 .toList(growable: false),
-            onChanged:
-                isLoading
-                    ? null
-                    : (value) => controller.applyFilter(
-                      controller.filter.copyWith(
-                        stateFilter: value ?? ResourceTaskRecordStateFilter.all,
-                      ),
-                    ),
+            onChanged: (value) => controller.applyFilter(
+              controller.filter.copyWith(
+                stateFilter: value ?? ResourceTaskRecordStateFilter.all,
+              ),
+            ),
           ),
         ),
         SizedBox(
@@ -447,7 +450,7 @@ class _ResourceTaskFilterBarState extends State<_ResourceTaskFilterBar> {
             hintText: '搜索影片番号或标题',
             textInputAction: TextInputAction.search,
             onFieldSubmitted: _submitSearch,
-            enabled: !isLoading,
+            enabled: true,
           ),
         ),
         SizedBox(
@@ -465,42 +468,14 @@ class _ResourceTaskFilterBarState extends State<_ResourceTaskFilterBar> {
                   ),
                 )
                 .toList(growable: false),
-            onChanged:
-                isLoading
-                    ? null
-                    : (value) => controller.applyFilter(
-                      controller.filter.copyWith(
-                        sort: value ?? ResourceTaskRecordSort.backendDefault,
-                      ),
-                    ),
+            onChanged: (value) => controller.applyFilter(
+              controller.filter.copyWith(
+                sort: value ?? ResourceTaskRecordSort.backendDefault,
+              ),
+            ),
           ),
         ),
-        _FilterLoadingDot(isVisible: isLoading),
       ],
-    );
-  }
-}
-
-class _FilterLoadingDot extends StatelessWidget {
-  const _FilterLoadingDot({required this.isVisible});
-
-  final bool isVisible;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 36,
-      height: 36,
-      child: Center(
-        child:
-            isVisible
-                ? const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator.adaptive(strokeWidth: 2.2),
-                )
-                : null,
-      ),
     );
   }
 }
@@ -545,10 +520,9 @@ class _ResourceTaskSelectionBar extends StatelessWidget {
     }
     final reasons = result.skipped.map((item) => item.reasonLabel).toSet();
     // 跳过原因唯一时直接点明，混合原因只给条数，避免 toast 过长。
-    final skippedText =
-        reasons.length == 1
-            ? '$skippedCount 条已跳过（${reasons.first}）'
-            : '$skippedCount 条已跳过';
+    final skippedText = reasons.length == 1
+        ? '$skippedCount 条已跳过（${reasons.first}）'
+        : '$skippedCount 条已跳过';
     return resetCount > 0
         ? '已重置 $resetCount 条，$skippedText'
         : '没有可重置的任务：$skippedText';
@@ -566,21 +540,19 @@ class _ResourceTaskSelectionBar extends StatelessWidget {
     final isBusy = controller.isResetting;
     // 有不可选项时，按钮自带计数 "全选可重置(N/M)" —— 用户在点之前就理解
     // "为什么全选没全中"，比事后靠 toast 解释更早。
-    final selectAllLabel =
-        allSelected
-            ? '取消全选'
-            : (failedTotal > failedCount
-                ? '全选可重置($failedCount/$failedTotal)'
-                : '全选');
+    final selectAllLabel = allSelected
+        ? '取消全选'
+        : (failedTotal > failedCount
+              ? '全选可重置($failedCount/$failedTotal)'
+              : '全选');
 
     return AppSelectionToolbar(
       countLabel: '已选 ${controller.selectedCount} 个',
       selectAllLabel: selectAllLabel,
       selectAllKey: const Key('resource-task-select-all-button'),
-      onToggleAll:
-          (isBusy || failedCount == 0)
-              ? null
-              : controller.toggleSelectAllVisibleFailed,
+      onToggleAll: (isBusy || failedCount == 0)
+          ? null
+          : controller.toggleSelectAllVisibleFailed,
       actions: [
         AppButton(
           key: const Key('resource-task-batch-reset-button'),
@@ -588,10 +560,9 @@ class _ResourceTaskSelectionBar extends StatelessWidget {
           variant: AppButtonVariant.primary,
           size: AppButtonSize.small,
           isLoading: isBusy,
-          onPressed:
-              (!hasSelection || isBusy)
-                  ? null
-                  : () => _handleConfirmReset(context),
+          onPressed: (!hasSelection || isBusy)
+              ? null
+              : () => _handleConfirmReset(context),
         ),
       ],
       exitKey: const Key('resource-task-exit-selection-button'),
@@ -645,27 +616,26 @@ class _ResourceTaskRecordTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.appColors;
     final resource = record.resource;
-    final titleText =
-        resource?.movieNumber?.trim().isNotEmpty == true
-            ? resource!.movieNumber!
-            : (resource?.title?.trim().isNotEmpty == true
-                ? resource!.title!
-                : '资源 #${record.resourceId}');
+    final titleText = resource?.movieNumber?.trim().isNotEmpty == true
+        ? resource!.movieNumber!
+        : (resource?.title?.trim().isNotEmpty == true
+              ? resource!.title!
+              : '资源 #${record.resourceId}');
     final subtitleText =
         resource?.title?.trim().isNotEmpty == true &&
-                resource!.title != titleText
-            ? resource.title!
-            : null;
+            resource!.title != titleText
+        ? resource.title!
+        : null;
     final lastAttempted = record.lastAttemptedAt;
     final lastAttemptedLabel = formatUpdatedAtLabel(lastAttempted);
-    final timeLabel =
-        lastAttemptedLabel != null ? '最近尝试 $lastAttemptedLabel' : '尚未执行';
+    final timeLabel = lastAttemptedLabel != null
+        ? '最近尝试 $lastAttemptedLabel'
+        : '尚未执行';
     final showAsBatchSelected = inSelectionMode && isBatchSelected;
     final dimmed = inSelectionMode && !isBatchSelectable;
-    final borderColor =
-        (showAsBatchSelected || isSelected)
-            ? colors.selectionBorder
-            : colors.borderSubtle;
+    final borderColor = (showAsBatchSelected || isSelected)
+        ? colors.selectionBorder
+        : colors.borderSubtle;
 
     return Material(
       color: Colors.transparent,
@@ -972,8 +942,8 @@ class _ResourceTaskDetailDrawer extends StatelessWidget {
                                   (record.lastTriggerType ?? '').isEmpty
                                       ? '未知'
                                       : _labelForResourceTaskTrigger(
-                                        record.lastTriggerType!,
-                                      ),
+                                          record.lastTriggerType!,
+                                        ),
                                 ),
                                 if (record.lastTaskRunId != null)
                                   _DetailRow(

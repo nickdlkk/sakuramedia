@@ -92,7 +92,7 @@ final class PlaylistsOverviewProvider
   }
 }
 
-String _$playlistsOverviewHash() => r'5bb133c0ef55af6cfae0fa4b3afd5136834076fc';
+String _$playlistsOverviewHash() => r'fdaf52dc346e656947546bf8434da2307ff929a8';
 
 /// 播放列表概览：加载全量列表 + 后台逐个填首图，支持拖排序（可选持久化）、
 /// 创建 / 编辑 / 删除的就地补丁。

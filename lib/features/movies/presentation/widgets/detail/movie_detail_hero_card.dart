@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:sakuramedia/theme.dart';
 import 'package:sakuramedia/widgets/base/media/images/masked_image.dart';
+import 'package:sakuramedia/widgets/domain/movies/subscription_heart_badge.dart';
 
 class MovieDetailHeroCard extends StatelessWidget {
   const MovieDetailHeroCard({
@@ -73,7 +74,11 @@ class MovieDetailHeroCard extends StatelessWidget {
               spacing: spacing.xs,
               runSpacing: spacing.xs,
               children: [
-                _HeroSubscriptionBadge(
+                SubscriptionHeartBadge(
+                  key: const Key('movie-detail-hero-subscription-icon'),
+                  loadingKey: const Key(
+                    'movie-detail-hero-subscription-loading',
+                  ),
                   isSubscribed: isSubscribed,
                   isUpdating: isSubscriptionUpdating,
                   onTap: onSubscriptionTap,
@@ -156,20 +161,19 @@ class MovieDetailHeroCard extends StatelessWidget {
                           ),
                           shape: BoxShape.circle,
                         ),
-                        child:
-                            isPlayLoading
-                                ? const Padding(
-                                  padding: EdgeInsets.all(22),
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 3,
-                                    color: Colors.white,
-                                  ),
-                                )
-                                : Icon(
-                                  Icons.play_arrow_rounded,
-                                  color: context.appTextPalette.onMedia,
-                                  size: tokens.iconSize4xl,
+                        child: isPlayLoading
+                            ? const Padding(
+                                padding: EdgeInsets.all(22),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 3,
+                                  color: Colors.white,
                                 ),
+                              )
+                            : Icon(
+                                Icons.play_arrow_rounded,
+                                color: context.appTextPalette.onMedia,
+                                size: tokens.iconSize4xl,
+                              ),
                       ),
                     ),
                   ),
@@ -190,25 +194,24 @@ class _HeroImageFrame extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final content =
-        imageUrl == null || imageUrl!.isEmpty
-            ? DecoratedBox(
-              decoration: BoxDecoration(
-                color: context.appColors.movieDetailEmptyBackground,
-                borderRadius: context.appRadius.mdBorder,
-              ),
-              child: Center(
-                child: Icon(
-                  Icons.image_outlined,
-                  size: context.appComponentTokens.iconSize3xl,
-                  color: context.appTextPalette.muted,
-                ),
-              ),
-            )
-            : ClipRRect(
+    final content = imageUrl == null || imageUrl!.isEmpty
+        ? DecoratedBox(
+            decoration: BoxDecoration(
+              color: context.appColors.movieDetailEmptyBackground,
               borderRadius: context.appRadius.mdBorder,
-              child: MaskedImage(url: imageUrl!, fit: BoxFit.fitHeight),
-            );
+            ),
+            child: Center(
+              child: Icon(
+                Icons.image_outlined,
+                size: context.appComponentTokens.iconSize3xl,
+                color: context.appTextPalette.muted,
+              ),
+            ),
+          )
+        : ClipRRect(
+            borderRadius: context.appRadius.mdBorder,
+            child: MaskedImage(url: imageUrl!, fit: BoxFit.fitHeight),
+          );
 
     return SizedBox(
       key: Key('movie-detail-main-image-$imageKey'),
@@ -238,10 +241,9 @@ class _HeroBadge extends StatelessWidget {
         vertical: context.appSpacing.xs,
       ),
       decoration: BoxDecoration(
-        color:
-            backgroundColorToken == _HeroBadgeColorToken.playable
-                ? colors.movieDetailPlayableBadgeBackground
-                : colors.movieDetailEmptyBackground.withValues(alpha: 0.9),
+        color: backgroundColorToken == _HeroBadgeColorToken.playable
+            ? colors.movieDetailPlayableBadgeBackground
+            : colors.movieDetailEmptyBackground.withValues(alpha: 0.9),
         borderRadius: context.appRadius.xsBorder,
       ),
       child: Text(
@@ -252,63 +254,6 @@ class _HeroBadge extends StatelessWidget {
           weight: AppTextWeight.regular,
           tone: AppTextTone.onMedia,
         ),
-      ),
-    );
-  }
-}
-
-class _HeroSubscriptionBadge extends StatelessWidget {
-  const _HeroSubscriptionBadge({
-    required this.isSubscribed,
-    required this.isUpdating,
-    required this.onTap,
-  });
-
-  final bool isSubscribed;
-  final bool isUpdating;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.appColors;
-    final tokens = context.appComponentTokens;
-
-    final badge = SizedBox(
-      key: const Key('movie-detail-hero-subscription-icon'),
-      width: tokens.movieCardStatusBadgeSize,
-      height: tokens.movieCardStatusBadgeSize,
-      child: Center(
-        child:
-            isUpdating
-                ? SizedBox(
-                  width: tokens.movieCardLoaderSize,
-                  height: tokens.movieCardLoaderSize,
-                  child: CircularProgressIndicator(
-                    key: const Key('movie-detail-hero-subscription-loading'),
-                    strokeWidth: tokens.movieCardLoaderStrokeWidth,
-                    color: colors.subscriptionHeartIcon,
-                  ),
-                )
-                : Icon(
-                  isSubscribed
-                      ? Icons.favorite_rounded
-                      : Icons.favorite_border_rounded,
-                  size: tokens.iconSizeXl,
-                  color: colors.subscriptionHeartIcon,
-                ),
-      ),
-    );
-
-    if (onTap == null || isUpdating) {
-      return badge;
-    }
-
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        behavior: HitTestBehavior.translucent,
-        onTap: onTap,
-        child: badge,
       ),
     );
   }
@@ -336,22 +281,21 @@ class _HeroMoreActionsButton extends StatelessWidget {
         borderRadius: context.appRadius.pillBorder,
         border: Border.all(color: colors.borderSubtle.withValues(alpha: 0.42)),
       ),
-      child:
-          isUpdating
-              ? SizedBox(
-                width: tokens.iconSizeSm,
-                height: tokens.iconSizeSm,
-                child: CircularProgressIndicator(
-                  key: const Key('movie-detail-hero-more-actions-loading'),
-                  strokeWidth: 2,
-                  color: context.appTextPalette.onMedia,
-                ),
-              )
-              : Icon(
-                Icons.more_horiz_rounded,
-                size: tokens.iconSizeSm,
+      child: isUpdating
+          ? SizedBox(
+              width: tokens.iconSizeSm,
+              height: tokens.iconSizeSm,
+              child: CircularProgressIndicator(
+                key: const Key('movie-detail-hero-more-actions-loading'),
+                strokeWidth: 2,
                 color: context.appTextPalette.onMedia,
               ),
+            )
+          : Icon(
+              Icons.more_horiz_rounded,
+              size: tokens.iconSizeSm,
+              color: context.appTextPalette.onMedia,
+            ),
     );
 
     if (onTap == null || isUpdating) {

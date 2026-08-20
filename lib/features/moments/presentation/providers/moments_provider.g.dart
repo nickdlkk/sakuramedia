@@ -10,8 +10,7 @@ part of 'moments_provider.dart';
 // ignore_for_file: type=lint, type=warning
 /// 时刻分页列表（排序 + 内容类型双维筛选,值对象 [MomentsFilter] 驱动）。
 ///
-/// - 切筛选走 [FilterReloadStrategy.spinner]（默认）:清列表闪骨架,与迁移前
-///   `setSortOrder/setKindFilter → reload()` 的视觉一致。
+/// - 切筛选先更新条件并保留旧列表，防抖请求成功后再替换结果。
 /// - autoDispose:离开页面即释放,对齐迁移前控制器随页面 State 生灭。
 /// - `fetchPage` 保留 `MediaPointListItemDto → MomentListItem` 的 ViewModel
 ///   映射（迁移前在控制器 override 里做）。
@@ -23,8 +22,7 @@ final momentsProvider = MomentsProvider._();
 
 /// 时刻分页列表（排序 + 内容类型双维筛选,值对象 [MomentsFilter] 驱动）。
 ///
-/// - 切筛选走 [FilterReloadStrategy.spinner]（默认）:清列表闪骨架,与迁移前
-///   `setSortOrder/setKindFilter → reload()` 的视觉一致。
+/// - 切筛选先更新条件并保留旧列表，防抖请求成功后再替换结果。
 /// - autoDispose:离开页面即释放,对齐迁移前控制器随页面 State 生灭。
 /// - `fetchPage` 保留 `MediaPointListItemDto → MomentListItem` 的 ViewModel
 ///   映射（迁移前在控制器 override 里做）。
@@ -34,8 +32,7 @@ final class MomentsProvider
     extends $AsyncNotifierProvider<Moments, MomentsState> {
   /// 时刻分页列表（排序 + 内容类型双维筛选,值对象 [MomentsFilter] 驱动）。
   ///
-  /// - 切筛选走 [FilterReloadStrategy.spinner]（默认）:清列表闪骨架,与迁移前
-  ///   `setSortOrder/setKindFilter → reload()` 的视觉一致。
+  /// - 切筛选先更新条件并保留旧列表，防抖请求成功后再替换结果。
   /// - autoDispose:离开页面即释放,对齐迁移前控制器随页面 State 生灭。
   /// - `fetchPage` 保留 `MediaPointListItemDto → MomentListItem` 的 ViewModel
   ///   映射（迁移前在控制器 override 里做）。
@@ -64,8 +61,7 @@ String _$momentsHash() => r'120f6ea6049d3cea3c560e93827d3cd22c17b591';
 
 /// 时刻分页列表（排序 + 内容类型双维筛选,值对象 [MomentsFilter] 驱动）。
 ///
-/// - 切筛选走 [FilterReloadStrategy.spinner]（默认）:清列表闪骨架,与迁移前
-///   `setSortOrder/setKindFilter → reload()` 的视觉一致。
+/// - 切筛选先更新条件并保留旧列表，防抖请求成功后再替换结果。
 /// - autoDispose:离开页面即释放,对齐迁移前控制器随页面 State 生灭。
 /// - `fetchPage` 保留 `MediaPointListItemDto → MomentListItem` 的 ViewModel
 ///   映射（迁移前在控制器 override 里做）。

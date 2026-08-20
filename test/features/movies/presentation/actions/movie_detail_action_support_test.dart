@@ -21,7 +21,7 @@ void main() {
   test(
     'buildMovieDetailActionDescriptors keeps action order and prerequisites',
     () {
-      final movie = _movieDetail(javdbId: '', desc: '');
+      final movie = _movieDetail(javdbId: '');
 
       final actions = buildMovieDetailActionDescriptors(
         movie: movie,
@@ -34,10 +34,8 @@ void main() {
         MovieDetailActionType.refreshMetadata,
         MovieDetailActionType.recomputeHeat,
         MovieDetailActionType.syncInteraction,
-        MovieDetailActionType.translateDescription,
       ]);
       expect(actions[4].enabled, isFalse);
-      expect(actions[5].enabled, isFalse);
     },
   );
 
@@ -93,33 +91,13 @@ void main() {
     expect(spec.resetPreview, isFalse);
   });
 
-  test(
-    'movieDetailRemoteActionSpecFor maps translate description action',
-    () async {
-      final spec = await _runRemoteActionSpec(
-        action: MovieDetailActionType.translateDescription,
-        expectedPath: '/system/resource-task-actions',
-        movieId: 77,
-        expectedBody: <String, dynamic>{
-          'task_key': 'movie_desc_translation',
-          'action': 'rerun',
-          'resource_ids': <int>[77],
-        },
-      );
-
-      expect(spec.successMessage, '翻译任务已提交，完成后刷新可见');
-      expect(spec.failureMessage, '提交翻译任务失败');
-      expect(spec.resetPreview, isFalse);
-    },
-  );
-
   test('queue-style specs refuse to run without an integer movie id', () {
     // 老后端详情响应不带 id 时（movieId 缺省 0），不能拿 0 去打统一 action
     // 端点——request 直接抛错，由 executeMovieDetailRemoteAction 的 catch
     // 转 failureMessage toast。
     final spec =
         movieDetailRemoteActionSpecFor(
-          action: MovieDetailActionType.translateDescription,
+          action: MovieDetailActionType.syncInteraction,
           movieNumber: 'ABC-001',
         )!;
 
@@ -262,8 +240,6 @@ Future<MovieDetailRemoteActionSpec> _runRemoteActionSpec({
       'is_subscribed': false,
       'can_play': true,
       'summary': '',
-      'desc_zh': '',
-      'desc': 'desc',
       'thin_cover_image': null,
       'plot_images': const <Map<String, dynamic>>[],
       'actors': const <Map<String, dynamic>>[],
@@ -322,14 +298,12 @@ Future<MovieDetailApplyResult> _runApplyReturnedMovieDetail(
 
 MovieDetailDto _movieDetail({
   String javdbId = 'movie-1',
-  String desc = 'desc',
   List<int> mediaIds = const <int>[10, 20],
 }) {
   return MovieDetailDto(
     javdbId: javdbId,
     movieNumber: 'ABC-001',
     title: 'Movie',
-    titleZh: '',
     seriesName: '',
     makerName: '',
     directorName: '',
@@ -352,8 +326,6 @@ MovieDetailDto _movieDetail({
     isSubscribed: false,
     canPlay: true,
     summary: '',
-    descZh: '',
-    desc: desc,
     thinCoverImage: null,
     plotImages: const <MovieImageDto>[],
     actors: const <MovieActorDto>[],
@@ -379,4 +351,3 @@ MovieDetailDto _movieDetail({
     playlists: const <MoviePlaylistSummaryDto>[],
   );
 }
-

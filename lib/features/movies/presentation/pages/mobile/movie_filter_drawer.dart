@@ -14,7 +14,7 @@ Future<void> showMobileMovieFilterDrawer(
   BuildContext context, {
   required MovieFilterState current,
   required ValueChanged<MovieFilterState> onChanged,
-  List<MovieFilterYearOption> yearOptions = const <MovieFilterYearOption>[],
+  List<MovieFilterYearOption>? yearOptions,
   bool isYearOptionsLoading = false,
   String? yearOptionsErrorMessage,
   VoidCallback? onYearOptionsRetry,
@@ -23,15 +23,14 @@ Future<void> showMobileMovieFilterDrawer(
     context: context,
     drawerKey: const Key('mobile-movies-filter-drawer'),
     maxHeightFactor: 0.6,
-    builder:
-        (sheetContext) => _MobileMovieFilterDrawerContent(
-          current: current,
-          onChanged: onChanged,
-          yearOptions: yearOptions,
-          isYearOptionsLoading: isYearOptionsLoading,
-          yearOptionsErrorMessage: yearOptionsErrorMessage,
-          onYearOptionsRetry: onYearOptionsRetry,
-        ),
+    builder: (sheetContext) => _MobileMovieFilterDrawerContent(
+      current: current,
+      onChanged: onChanged,
+      yearOptions: yearOptions,
+      isYearOptionsLoading: isYearOptionsLoading,
+      yearOptionsErrorMessage: yearOptionsErrorMessage,
+      onYearOptionsRetry: onYearOptionsRetry,
+    ),
   );
 }
 
@@ -47,7 +46,9 @@ class _MobileMovieFilterDrawerContent extends StatefulWidget {
 
   final MovieFilterState current;
   final ValueChanged<MovieFilterState> onChanged;
-  final List<MovieFilterYearOption> yearOptions;
+
+  /// 不传时使用普通影片库的前端年份范围；女优详情会传入后端聚合结果。
+  final List<MovieFilterYearOption>? yearOptions;
   final bool isYearOptionsLoading;
   final String? yearOptionsErrorMessage;
   final VoidCallback? onYearOptionsRetry;

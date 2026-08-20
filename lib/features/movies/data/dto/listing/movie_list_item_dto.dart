@@ -51,7 +51,6 @@ class MovieListItemDto {
     required this.javdbId,
     required this.movieNumber,
     required this.title,
-    this.titleZh = '',
     this.seriesId,
     this.seriesName = '',
     required this.coverImage,
@@ -71,7 +70,6 @@ class MovieListItemDto {
   final String javdbId;
   final String movieNumber;
   final String title;
-  final String titleZh;
   final int? seriesId;
   final String seriesName;
   final MovieImageDto? coverImage;
@@ -83,19 +81,13 @@ class MovieListItemDto {
   final bool canPlay;
   final double? similarityScore;
 
-  String get preferredTitle {
-    final resolvedTitleZh = titleZh.trim();
-    if (resolvedTitleZh.isNotEmpty) {
-      return resolvedTitleZh;
-    }
-    return title.trim();
-  }
+  /// DMM 中文标题字段已随后端下线（存量收拢进 [title]），这里保留 getter 只做 trim。
+  String get preferredTitle => title.trim();
 
   MovieListItemDto copyWith({
     String? javdbId,
     String? movieNumber,
     String? title,
-    String? titleZh,
     int? seriesId,
     String? seriesName,
     MovieImageDto? coverImage,
@@ -113,7 +105,6 @@ class MovieListItemDto {
       javdbId: javdbId ?? this.javdbId,
       movieNumber: movieNumber ?? this.movieNumber,
       title: title ?? this.title,
-      titleZh: titleZh ?? this.titleZh,
       seriesId: seriesId ?? this.seriesId,
       seriesName: seriesName ?? this.seriesName,
       coverImage: coverImage ?? this.coverImage,
@@ -133,7 +124,6 @@ class MovieListItemDto {
       javdbId: json['javdb_id'] as String? ?? '',
       movieNumber: json['movie_number'] as String? ?? '',
       title: json['title'] as String? ?? '',
-      titleZh: json['title_zh'] as String? ?? '',
       seriesId: _intFromJson(json['series_id']),
       seriesName: json['series_name'] as String? ?? '',
       coverImage: _movieImageFromJson(json['cover_image']),

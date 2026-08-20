@@ -22,8 +22,6 @@ hero:
 features:
   - title: 影片发现与观影
     details: 以影片为中心，整合搜索、订阅、下载、播放功能。
-  - title: 影片信息翻译
-    details: 支持调用大模型API将日语简介翻译为中文。
   - title: 缩略图辅助观影
     details: 播放界面侧边栏可选展示影片缩略图，用于快速预览不同画面，高效定位精彩片段。
   - title: VR 影片播放
@@ -35,10 +33,9 @@ features:
   - title: 多客户端支持
     details: 支持 Web端、并提供 Win/Mac/iOS/Android 平台 APP。
   - title: 排行榜
-    details: 支持定时同步各个站点影片排行榜，可以快速找到最近热门的影片。
+    details: 由已启用的排行榜插件提供来源和定时同步能力，可以快速找到最近热门的影片。
 ---
 
 <p align="center">
   <img src="/images/sakuramedia-home-hero.png" alt="SakuraMedia 海报图" />
 </p>
-

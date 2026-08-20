@@ -5,6 +5,7 @@ import 'package:sakuramedia/core/network/paginated_response_dto.dart';
 import 'package:sakuramedia/core/network/sse_event_stream_client.dart';
 import 'package:sakuramedia/features/downloads/data/download_candidate_dto.dart';
 import 'package:sakuramedia/features/downloads/data/download_request_dto.dart';
+import 'package:sakuramedia/features/downloads/data/download_task_file_dto.dart';
 import 'package:sakuramedia/features/downloads/data/download_task_stream_event_dto.dart';
 
 class DownloadsApi {
@@ -55,7 +56,7 @@ class DownloadsApi {
     int pageSize = 20,
     int? clientId,
     String? movieNumber,
-    String? downloadState,
+    List<String>? downloadStates,
     String? sort,
   }) async {
     final response = await _apiClient.get(
@@ -66,8 +67,8 @@ class DownloadsApi {
         if (clientId != null) 'client_id': clientId,
         if (movieNumber != null && movieNumber.trim().isNotEmpty)
           'movie_number': movieNumber,
-        if (downloadState != null && downloadState.trim().isNotEmpty)
-          'download_state': downloadState,
+        if (downloadStates != null && downloadStates.isNotEmpty)
+          'download_state': downloadStates,
         if (sort != null && sort.trim().isNotEmpty) 'sort': sort,
       },
     );
@@ -85,6 +86,12 @@ class DownloadsApi {
   Future<DownloadTaskActionResultDto> resumeDownloadTask(int taskId) async {
     final response = await _apiClient.post('/download-tasks/$taskId/resume');
     return DownloadTaskActionResultDto.fromJson(response);
+  }
+
+  /// 按任务实时拉取文件列表（qB 走 Web API，cloud115 走 115 SDK）。
+  Future<DownloadTaskFilesDto> getTaskFiles(int taskId) async {
+    final response = await _apiClient.get('/download-tasks/$taskId/files');
+    return DownloadTaskFilesDto.fromJson(response);
   }
 
   /// 删除下载任务；`deleteFiles=true` 时把双确认 `confirm_delete_files`

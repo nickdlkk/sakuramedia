@@ -5,18 +5,20 @@ import 'package:sakuramedia/features/shared/data/sort_direction.dart';
 export 'package:sakuramedia/features/shared/data/sort_direction.dart'
     show SortDirection, SortDirectionX;
 
-enum MovieStatusFilter { all, subscribed, playable }
+enum MovieStatusFilter { all, subscribed, unsubscribed, playable }
 
 extension MovieStatusFilterX on MovieStatusFilter {
   String get apiValue => switch (this) {
     MovieStatusFilter.all => 'all',
     MovieStatusFilter.subscribed => 'subscribed',
+    MovieStatusFilter.unsubscribed => 'unsubscribed',
     MovieStatusFilter.playable => 'playable',
   };
 
   String get label => switch (this) {
     MovieStatusFilter.all => '全部',
     MovieStatusFilter.subscribed => '已订阅',
+    MovieStatusFilter.unsubscribed => '未订阅',
     MovieStatusFilter.playable => '可播放',
   };
 }
@@ -99,13 +101,59 @@ extension MovieSortFieldX on MovieSortField {
 
 const Object _movieFilterUnset = Object();
 
+/// 普通影片库的年份筛选不依赖后端聚合：范围固定为 2008 年至当前年。
+///
+/// 女优详情会显式传入服务端返回的年份和数量，因此仍可保持「年份(影片数)」
+/// 的精确展示。
+const int movieFilterEarliestYear = 2008;
+
+/// 热度范围筛选的滑块上限：滑到顶即「无上界」（2w 及以上都包含）。
+///
+/// 与后端语义对齐：`heat_min` 传 0 等价于不传（全部包含），`heat_max`
+/// 传 20000 等价于不传（无上界），因此参数层用 `null` 表达「不限」。
+const int movieFilterHeatSliderMax = 20000;
+
+/// 滑块下限值 → 接口参数：0 即不限（不传 `heat_min`）。
+int? movieHeatMinFromSlider(int value) => value <= 0 ? null : value;
+
+/// 滑块上限值 → 接口参数：滑到顶即无上界（不传 `heat_max`）。
+int? movieHeatMaxFromSlider(int value) =>
+    value >= movieFilterHeatSliderMax ? null : value;
+
+/// 热度范围的展示文案，桌面浮层与移动抽屉、筛选入口共用一份。
+String movieHeatRangeLabel(int? heatMin, int? heatMax) {
+  if (heatMin != null && heatMax != null) {
+    return '$heatMin ~ $heatMax';
+  }
+  if (heatMin != null) {
+    return '≥ $heatMin';
+  }
+  if (heatMax != null) {
+    return '≤ $heatMax';
+  }
+  return '不限';
+}
+
+List<MovieFilterYearOption> buildDefaultMovieFilterYearOptions({
+  int? currentYear,
+}) {
+  final latestYear = currentYear ?? DateTime.now().year;
+  if (latestYear < movieFilterEarliestYear) {
+    return const <MovieFilterYearOption>[];
+  }
+  return <MovieFilterYearOption>[
+    for (var year = latestYear; year >= movieFilterEarliestYear; year--)
+      MovieFilterYearOption(year: year),
+  ];
+}
+
 class MovieFilterYearOption {
-  const MovieFilterYearOption({required this.year, required this.movieCount});
+  const MovieFilterYearOption({required this.year, this.movieCount});
 
   final int year;
-  final int movieCount;
+  final int? movieCount;
 
-  String get label => '$year($movieCount)';
+  String get label => movieCount == null ? '$year' : '$year($movieCount)';
 }
 
 class MovieFilterState {
@@ -116,6 +164,8 @@ class MovieFilterState {
     this.sortField = MovieSortField.releaseDate,
     this.sortDirection = SortDirection.desc,
     this.year,
+    this.heatMin,
+    this.heatMax,
   });
 
   final MovieStatusFilter status;
@@ -125,6 +175,12 @@ class MovieFilterState {
   final SortDirection sortDirection;
   final int? year;
 
+  /// 热度下限（接口 `heat_min` 语义）：null 表示不限。
+  final int? heatMin;
+
+  /// 热度上限（接口 `heat_max` 语义）：null 表示不限。
+  final int? heatMax;
+
   static const MovieFilterState initial = MovieFilterState();
 
   bool get isDefault =>
@@ -133,15 +189,23 @@ class MovieFilterState {
       numberSource == MovieNumberSourceFilter.all &&
       sortField == MovieSortField.releaseDate &&
       sortDirection == SortDirection.desc &&
-      year == null;
+      year == null &&
+      heatMin == null &&
+      heatMax == null;
+
+  bool get hasHeatRange => heatMin != null || heatMax != null;
 
   String get sortExpression =>
       '${sortField.apiValue}:${sortDirection.apiValue}';
 
   /// 筛选入口上显示的当前筛选摘要。**只反映一个主维度**——筛了年份就报年份，
-  /// 否则报状态；番号来源、排序等有独立分节，不堆在入口上避免文字变长。
-  /// 语义对齐 `MediaBrowseFilterState.triggerLabel`，桌面移动共用一份。
-  String get triggerLabel => year?.toString() ?? status.label;
+  /// 否则报热度范围，再否则报状态；番号来源、排序等有独立分节，不堆在入口上
+  /// 避免文字变长。语义对齐 `MediaBrowseFilterState.triggerLabel`，桌面移动共用。
+  String get triggerLabel => switch ((year, hasHeatRange)) {
+    (final int y, _) => '$y',
+    (_, true) => movieHeatRangeLabel(heatMin, heatMax),
+    _ => status.label,
+  };
 
   bool matches(MovieFilterState other) =>
       status == other.status &&
@@ -149,7 +213,9 @@ class MovieFilterState {
       numberSource == other.numberSource &&
       sortField == other.sortField &&
       sortDirection == other.sortDirection &&
-      year == other.year;
+      year == other.year &&
+      heatMin == other.heatMin &&
+      heatMax == other.heatMax;
 
   MovieFilterState copyWith({
     MovieStatusFilter? status,
@@ -158,6 +224,8 @@ class MovieFilterState {
     MovieSortField? sortField,
     SortDirection? sortDirection,
     Object? year = _movieFilterUnset,
+    Object? heatMin = _movieFilterUnset,
+    Object? heatMax = _movieFilterUnset,
   }) {
     return MovieFilterState(
       status: status ?? this.status,
@@ -166,6 +234,12 @@ class MovieFilterState {
       sortField: sortField ?? this.sortField,
       sortDirection: sortDirection ?? this.sortDirection,
       year: identical(year, _movieFilterUnset) ? this.year : year as int?,
+      heatMin: identical(heatMin, _movieFilterUnset)
+          ? this.heatMin
+          : heatMin as int?,
+      heatMax: identical(heatMax, _movieFilterUnset)
+          ? this.heatMax
+          : heatMax as int?,
     );
   }
 }

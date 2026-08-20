@@ -1,5 +1,8 @@
 /// 下载任务的状态筛选枚举，对应后端 `DownloadTask.download_state` 归一化后的取值。
 /// `all` 表示不带 `download_state` 查询参数。
+///
+/// 注意：`下载中` 同时包含 `downloading` 与 `stalled`（等待资源）——用户心智里
+/// 「等待资源」仍是下载进行中，只是暂时没有源，故并进同一档（见 [DownloadTaskStateFilterValue.apiValues]）。
 enum DownloadTaskStateFilter {
   all,
   downloading,
@@ -10,6 +13,7 @@ enum DownloadTaskStateFilter {
   queued,
   checking,
   stalled,
+  stalledDead,
   abandoned,
 }
 
@@ -24,20 +28,24 @@ extension DownloadTaskStateFilterValue on DownloadTaskStateFilter {
     DownloadTaskStateFilter.queued => '排队中',
     DownloadTaskStateFilter.checking => '校验中',
     DownloadTaskStateFilter.stalled => '停滞',
+    DownloadTaskStateFilter.stalledDead => '死种',
     DownloadTaskStateFilter.abandoned => '已放弃跟踪',
   };
 
-  String? get apiValue => switch (this) {
+  /// 对应后端 `download_state` 的查询值集合；空/null 表示不过滤（`all`）。
+  /// 「下载中」= downloading + stalled。
+  List<String>? get apiValues => switch (this) {
     DownloadTaskStateFilter.all => null,
-    DownloadTaskStateFilter.downloading => 'downloading',
-    DownloadTaskStateFilter.seeding => 'seeding',
-    DownloadTaskStateFilter.completed => 'completed',
-    DownloadTaskStateFilter.paused => 'paused',
-    DownloadTaskStateFilter.failed => 'failed',
-    DownloadTaskStateFilter.queued => 'queued',
-    DownloadTaskStateFilter.checking => 'checking',
-    DownloadTaskStateFilter.stalled => 'stalled',
-    DownloadTaskStateFilter.abandoned => 'abandoned',
+    DownloadTaskStateFilter.downloading => ['downloading', 'stalled'],
+    DownloadTaskStateFilter.seeding => ['seeding'],
+    DownloadTaskStateFilter.completed => ['completed'],
+    DownloadTaskStateFilter.paused => ['paused'],
+    DownloadTaskStateFilter.failed => ['failed'],
+    DownloadTaskStateFilter.queued => ['queued'],
+    DownloadTaskStateFilter.checking => ['checking'],
+    DownloadTaskStateFilter.stalled => ['stalled'],
+    DownloadTaskStateFilter.stalledDead => ['stalled_dead'],
+    DownloadTaskStateFilter.abandoned => ['abandoned'],
   };
 }
 

@@ -36,7 +36,7 @@ void main() {
           OverviewStatItem(
             id: 'external-data-sources',
             label: '外部数据源',
-            value: '未检测 JavDB / DMM',
+            value: '未检测 JavDB',
             valueTextSize: AppTextSize.s14,
             maxWidth: 260,
           ),
@@ -49,7 +49,7 @@ void main() {
       expect(tileSize.width, greaterThan(150));
       expect(tileSize.width, lessThanOrEqualTo(260));
 
-      final valueText = tester.widget<Text>(find.text('未检测 JavDB / DMM'));
+      final valueText = tester.widget<Text>(find.text('未检测 JavDB'));
       expect(valueText.style?.fontSize, 14);
       expect(valueText.style?.fontWeight, FontWeight.w600);
     },
@@ -65,7 +65,7 @@ void main() {
         OverviewStatItem(
           id: 'with-action',
           label: '外部数据源',
-          value: '未检测 JavDB / DMM',
+          value: '未检测 JavDB',
           valueTextSize: AppTextSize.s12,
           maxWidth: 260,
           action: IconButton(

@@ -133,19 +133,13 @@ void main() {
 
     await notifier.applySort('created_at:asc');
     expect(adapter.requests, hasLength(2));
-    expect(
-      adapter.requests.last.uri.queryParameters['sort'],
-      'created_at:asc',
-    );
+    expect(adapter.requests.last.uri.queryParameters['sort'], 'created_at:asc');
     final state = container.read(clipsOverviewProvider).requireValue;
     expect(state.filter.sort, 'created_at:asc');
     expect(state.paged.items.single.clipId, 2);
   });
 
-  test('applySort preserves old list during reload (preserveList strategy)',
-      () async {
-    // preserveList 策略：切排序时旧数据保留 + isReloading=true，与
-    // 迁移前控制器 `setSort → load()` 视觉一致。
+  test('initial filter update state is idle', () async {
     adapter.enqueueJson(
       method: 'GET',
       path: '/media-clips',
@@ -155,7 +149,7 @@ void main() {
     keepAlive();
     final initial = await container.read(clipsOverviewProvider.future);
     expect(initial.paged.items, hasLength(2));
-    expect(initial.isReloading, isFalse);
+    expect(initial.paged.filterUpdate.isIdle, isTrue);
   });
 
   test('removeClip drops the clip and decrements total', () async {
@@ -190,9 +184,9 @@ void main() {
 
     keepAlive();
     await container.read(clipsOverviewProvider.future);
-    container.read(clipsOverviewProvider.notifier).replaceClip(
-          _seedClip(clipId: 1, title: 'renamed'),
-        );
+    container
+        .read(clipsOverviewProvider.notifier)
+        .replaceClip(_seedClip(clipId: 1, title: 'renamed'));
 
     final state = container.read(clipsOverviewProvider).requireValue;
     expect(state.paged.items.first.title, 'renamed');

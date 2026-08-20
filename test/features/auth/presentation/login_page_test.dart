@@ -335,9 +335,10 @@ void main() {
     );
 
     final cardRect = tester.getRect(find.byKey(const Key('login-main-card')));
-    final viewportCenterY = tester.binding.renderView.size.height / 2;
+    final viewportHeight =
+        tester.view.physicalSize.height / tester.view.devicePixelRatio;
+    final viewportCenterY = viewportHeight / 2;
     final cardCenterY = cardRect.center.dy;
-    final viewportHeight = tester.binding.renderView.size.height;
 
     expect((cardCenterY - viewportCenterY).abs(), lessThan(2.0));
     expect(cardRect.height, lessThan(viewportHeight * 0.8));

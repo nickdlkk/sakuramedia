@@ -291,4 +291,67 @@ void main() {
     expect(titleText.style?.fontSize, sakuraMobileThemeData.appTextScale.s12);
     expect(numberText.style?.fontSize, sakuraMobileThemeData.appTextScale.s14);
   });
+
+  testWidgets(
+    'mobile follow movie card keeps 30 layout with 44 subscription hit area',
+    (WidgetTester tester) async {
+      final sessionStore = SessionStore.inMemory();
+      await sessionStore.saveBaseUrl('https://api.example.com');
+      var subscribed = false;
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [sessionStoreProvider.overrideWithValue(sessionStore)],
+          child: MaterialApp(
+            theme: sakuraThemeData,
+            home: Scaffold(
+              body: SizedBox(
+                width: 360,
+                child: MobileFollowMovieCard(
+                  movie: MovieListItemDto(
+                    javdbId: 'movie-hit-area',
+                    movieNumber: 'ABP-099',
+                    title: 'Movie 099',
+                    coverImage: const MovieImageDto(
+                      id: 1,
+                      origin: '/cover-origin.jpg',
+                      small: '/cover-small.jpg',
+                      medium: '/cover-medium.jpg',
+                      large: '/cover-large.jpg',
+                    ),
+                    releaseDate: DateTime(2024, 1, 1),
+                    durationMinutes: 120,
+                    heat: 0,
+                    isSubscribed: true,
+                    canPlay: false,
+                  ),
+                  onTap: () {},
+                  onSubscriptionTap: () {
+                    subscribed = true;
+                  },
+                  isSubscriptionUpdating: false,
+                  isDetailLoading: false,
+                  detailStillImageUrls: const <String>[],
+                  detailSummary: null,
+                  detailThinCoverUrl: null,
+                  detailCoverUrl: null,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      final button = find.byKey(
+        const Key('mobile-follow-movie-card-subscription-ABP-099'),
+      );
+      expect(tester.getSize(button).width, 30);
+      expect(tester.getSize(button).height, 30);
+
+      // 点击 30 视觉按钮外、44 命中区内的位置同样触发订阅。
+      await tester.tapAt(tester.getCenter(button) + const Offset(18, 0));
+      await tester.pump();
+      expect(subscribed, isTrue);
+    },
+  );
 }

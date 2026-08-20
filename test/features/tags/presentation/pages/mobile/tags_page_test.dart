@@ -56,9 +56,18 @@ void main() {
     return ProviderScope(
       overrides: bundle.riverpodOverrides(),
       child: OKToast(
-        child: MaterialApp(theme: sakuraThemeData, home: Scaffold(body: child)),
+        child: MaterialApp(
+          theme: sakuraThemeData,
+          home: Scaffold(body: child),
+        ),
       ),
     );
+  }
+
+  Future<void> settleFilterRequest(WidgetTester tester) async {
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 251));
+    await tester.pumpAndSettle();
   }
 
   testWidgets('caps popular tags to popularLimit and hides 展开全部', (
@@ -125,13 +134,13 @@ void main() {
         ..enqueueJson(method: 'GET', path: '/movies', body: moviesPage());
 
       await tester.pumpWidget(wrap(const MobileTagsPage(initialTagId: 1)));
-      await tester.pumpAndSettle();
+      await settleFilterRequest(tester);
 
       // 预选标签首拉影片默认走 or。
       expect(movieTagMatches(), <String?>['or']);
 
       await tester.tap(find.byKey(const Key('tags-match-and')));
-      await tester.pumpAndSettle();
+      await settleFilterRequest(tester);
 
       // 切到「全部」后追加一次 and 请求。
       expect(movieTagMatches(), <String?>['or', 'and']);
@@ -150,7 +159,7 @@ void main() {
       ..enqueueJson(method: 'GET', path: '/movies', body: moviesPage());
 
     await tester.pumpWidget(wrap(const MobileTagsPage(initialTagId: 1)));
-    await tester.pumpAndSettle();
+    await settleFilterRequest(tester);
 
     await tester.tap(find.byKey(const Key('mobile-tags-filter-button')));
     await tester.pumpAndSettle();
@@ -183,7 +192,7 @@ void main() {
       ..enqueueJson(method: 'GET', path: '/movies', body: moviesPage());
 
     await tester.pumpWidget(wrap(const MobileTagsPage(initialTagId: 1)));
-    await tester.pumpAndSettle();
+    await settleFilterRequest(tester);
 
     // 移动端多选入口挂在卡片长按上，顶栏不常驻「选择」。
     expect(

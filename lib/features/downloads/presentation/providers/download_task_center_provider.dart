@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+import 'package:sakuramedia/core/network/api_error_message.dart';
 import 'package:sakuramedia/core/network/paginated_response_dto.dart';
 import 'package:sakuramedia/features/configuration/data/dto/download_client_dto.dart';
 import 'package:sakuramedia/features/downloads/data/download_task_stream_event_dto.dart';
@@ -21,9 +22,7 @@ part 'download_task_center_provider.g.dart';
 /// 差异：
 /// - 首屏 loading / error 由外层 [AsyncValue] 表达（[AsyncLoading]/[AsyncError]）；
 ///   retry 走 `ref.invalidateSelf()`。
-/// - 筛选切换（[applyFilter]）**不走 [reload]**（那样会 AsyncLoading 让筛选栏消失），
-///   而是自定义流程：`state = AsyncData(旧 items + isReloading: true)` → 拉新首页 →
-///   写回。开始前调 [invalidateInFlightLoadMore] 让旧 loadMore 作废。
+/// - 筛选切换（[applyFilter]）先同步更新筛选控件，保留旧列表并防抖刷新第一页。
 /// - SSE 触发的「首页去抖合并」维持原生流程：独立 fetchPage(1) + 手工 upsert，
 ///   有 [_minMergeInterval] 限流兜底。
 @Riverpod(keepAlive: true, retry: kNoAsyncNotifierRetry)
@@ -40,6 +39,15 @@ class DownloadTaskCenter extends _$DownloadTaskCenter
   static const Duration _minMergeInterval = Duration(seconds: 15);
 
   DownloadTaskFilterState _activeFilter = DownloadTaskFilterState.initial;
+  int _filterGeneration = 0;
+  late final DebouncedLatestRequest _filterRequests = DebouncedLatestRequest();
+  bool _restartStreamAfterFilter = false;
+
+  /// 客户端列表先于任务首页返回时暂存，等 `build()` 完成后再合并，
+  /// 避免「state 尚未就绪 → 名字被静默丢弃」的竞态。
+  List<DownloadClientOption>? _pendingClientOptions;
+  Map<int, String>? _pendingClientNames;
+  Map<int, DownloadClientKind>? _pendingClientKinds;
 
   /// SSE 连接状态机：重连退避 / unsupported 轮询兜底 / 长断线补拉 / 微任务
   /// 合批全部由它承担，本 provider 只负责「事件怎么改状态」。
@@ -83,9 +91,10 @@ class DownloadTaskCenter extends _$DownloadTaskCenter
           page: page,
           pageSize: pageSize,
           clientId: filter.clientId,
-          movieNumber:
-              filter.normalizedSearch.isEmpty ? null : filter.normalizedSearch,
-          downloadState: filter.stateFilter.apiValue,
+          movieNumber: filter.normalizedSearch.isEmpty
+              ? null
+              : filter.normalizedSearch,
+          downloadStates: filter.stateFilter.apiValues,
           sort: 'created_at:desc',
         );
     final liveById = _liveOverlayById();
@@ -108,87 +117,124 @@ class DownloadTaskCenter extends _$DownloadTaskCenter
     invalidateOnSignOut(ref);
     attachDisposeGuard();
     ref.onDispose(() {
+      _filterRequests.dispose();
       unawaited(_shutdownChannel());
       _cancelMergeDebounce();
     });
     unawaited(_loadClientOptionsInBackground());
     final paged = await loadInitialPage();
-    return DownloadTaskCenterState.initial.copyWith(
-      paged: paged,
-      filter: _activeFilter,
+    return _mergePendingClientData(
+      DownloadTaskCenterState.initial.copyWith(
+        paged: paged,
+        filter: _activeFilter,
+      ),
     );
   }
 
-  /// 保留态刷新（不切 AsyncLoading）：Activity 页面手动"刷新"入口用。
-  /// 失败时返回中文错误消息由页面 toast；成功返回 null。
+  /// 保留态刷新：立即请求当前筛选，并复用筛选失败反馈。
   @override
   Future<String?> refresh() async {
-    return super.refresh();
+    await retryFilter();
+    return state.value?.paged.filterUpdate.errorMessage;
   }
 
-  /// 切换筛选条件：更新 filter → 保留旧 items + 顶部薄进度条 → 重新拉第一页。
-  /// 若 SSE 在跑则用新参数重连。遵循「筛选状态驱动」范式：值对象不变则短路。
-  Future<void> applyFilter(DownloadTaskFilterState next) async {
-    if (_activeFilter == next) return;
+  /// 切换筛选条件：State 立即更新，最终条件在 250ms 后请求并重连 SSE。
+  Future<void> applyFilter(DownloadTaskFilterState next) {
+    if (_activeFilter == next) return Future<void>.value();
     _activeFilter = next;
-
-    final wasStreamOn =
+    _filterGeneration++;
+    _restartStreamAfterFilter =
+        _restartStreamAfterFilter ||
         state.value?.streamState == DownloadTaskStreamState.live ||
         state.value?.streamState == DownloadTaskStreamState.connecting ||
         state.value?.streamState == DownloadTaskStreamState.reconnecting ||
         state.value?.streamState == DownloadTaskStreamState.polling;
-    if (wasStreamOn) {
-      await _shutdownChannel();
-      _cancelMergeDebounce();
-      final current = state.value;
-      if (current != null) {
-        state = AsyncData(
-          current.copyWith(streamState: DownloadTaskStreamState.idle),
-        );
-      }
-    }
-
     final current = state.value;
     if (current == null) {
-      // 尚未 build 完成，走 mixin 的 reload 兜底。
-      await reload(updateBaseState: (s) => s.copyWith(filter: next));
-      if (wasStreamOn && !isDisposed) {
-        unawaited(connectStream());
-      }
+      return _filterRequests.schedule(_loadSelectedFilter);
+    }
+
+    invalidateInFlightLoadMore();
+    state = AsyncData(
+      current.copyWith(
+        filter: next,
+        paged: current.paged.copyWith(
+          isLoadingMore: false,
+          loadMoreErrorMessage: null,
+          filterUpdate: const FilterUpdateState.loading(),
+        ),
+      ),
+    );
+    return _filterRequests.schedule(_loadSelectedFilter);
+  }
+
+  Future<void> retryFilter() {
+    final current = state.value;
+    if (current != null) {
+      invalidateInFlightLoadMore();
+      state = AsyncData(
+        current.copyWith(
+          paged: current.paged.copyWith(
+            isLoadingMore: false,
+            loadMoreErrorMessage: null,
+            filterUpdate: const FilterUpdateState.loading(),
+          ),
+        ),
+      );
+    }
+    return _filterRequests.runNow(_loadSelectedFilter);
+  }
+
+  Future<void> _loadSelectedFilter(int requestId) async {
+    final current = state.value;
+    if (current == null) {
+      await super.reload();
       return;
     }
 
-    // 用 isReloading（而非 AsyncLoading）：pane 保留筛选栏 + 速度栏 + 旧 items，
-    // 只在列表顶叠 LinearProgressIndicator。避免整页 spinner 造成的筛选栏闪烁。
-    invalidateInFlightLoadMore();
-    // 与 mixin 版 applyFilter 同款清理：被代次作废的 in-flight loadMore 失败/成功
-    // 都不会再回写，不清 isLoadingMore 会永远卡 loading——loadMore 短路、refresh
-    // 静默 no-op、SSE 首页合并也不碰该标志，列表死锁到换筛选成功为止。
-    final basePaged = current.paged.isLoadingMore
-        ? current.paged.copyWith(
-            isLoadingMore: false,
-            loadMoreErrorMessage: null,
-          )
-        : current.paged;
-    state = AsyncData(
-      current.copyWith(filter: next, paged: basePaged, isReloading: true),
-    );
-
+    if (_restartStreamAfterFilter) {
+      await _shutdownChannel();
+      _cancelMergeDebounce();
+      if (!_filterRequests.isCurrent(requestId) || isDisposed) return;
+      final now = state.value ?? current;
+      state = AsyncData(
+        now.copyWith(streamState: DownloadTaskStreamState.idle),
+      );
+    }
     try {
       final firstPage = await loadInitialPage();
-      if (isDisposed) return;
+      if (isDisposed || !_filterRequests.isCurrent(requestId)) return;
       final now = state.value ?? current;
-      state = AsyncData(now.copyWith(paged: firstPage, isReloading: false));
-    } catch (_) {
-      if (isDisposed) return;
-      // 切换失败保留旧 items（filter 已变——用户可再选触发重试）。
+      state = AsyncData(now.copyWith(paged: firstPage));
+    } catch (error) {
+      if (isDisposed || !_filterRequests.isCurrent(requestId)) return;
       final now = state.value ?? current;
-      state = AsyncData(now.copyWith(isReloading: false));
+      state = AsyncData(
+        now.copyWith(
+          paged: now.paged.copyWith(
+            filterUpdate: FilterUpdateState.failed(
+              apiErrorMessage(error, fallback: '筛选结果更新失败，请重试'),
+            ),
+          ),
+        ),
+      );
     }
 
-    if (wasStreamOn && !isDisposed) {
+    if (_filterRequests.isCurrent(requestId) &&
+        _restartStreamAfterFilter &&
+        !isDisposed) {
+      _restartStreamAfterFilter = false;
       unawaited(connectStream());
     }
+  }
+
+  @override
+  Future<void> loadMore() {
+    final current = state.value;
+    if (current != null && !current.paged.filterUpdate.isIdle) {
+      return Future<void>.value();
+    }
+    return super.loadMore();
   }
 
   /// 建连（幂等）。连接中 / 已连接 / 退避重连中 / 轮询中都直接返回——**退避期间
@@ -284,7 +330,12 @@ class DownloadTaskCenter extends _$DownloadTaskCenter
         kinds[client.id] = client.kind;
       }
       final current = state.value;
-      if (current == null) return;
+      if (current == null) {
+        _pendingClientOptions = options;
+        _pendingClientNames = names;
+        _pendingClientKinds = kinds;
+        return;
+      }
       state = AsyncData(
         current.copyWith(
           clientOptions: options,
@@ -295,6 +346,25 @@ class DownloadTaskCenter extends _$DownloadTaskCenter
     } catch (_) {
       // 静默：客户端名加载失败展示 `客户端 #<id>` 兜底。
     }
+  }
+
+  DownloadTaskCenterState _mergePendingClientData(
+    DownloadTaskCenterState state,
+  ) {
+    final options = _pendingClientOptions;
+    final names = _pendingClientNames;
+    final kinds = _pendingClientKinds;
+    if (options == null || names == null || kinds == null) {
+      return state;
+    }
+    _pendingClientOptions = null;
+    _pendingClientNames = null;
+    _pendingClientKinds = null;
+    return state.copyWith(
+      clientOptions: options,
+      clientNames: names,
+      clientKinds: kinds,
+    );
   }
 
   Future<void> _shutdownChannel() async {
@@ -310,16 +380,14 @@ class DownloadTaskCenter extends _$DownloadTaskCenter
     if (isDisposed) return;
     final channel = SseChannel<DownloadTaskStreamEvent>(
       // 筛选条件在连流那一刻才读，applyFilter 重连自然带上新参数。
-      connect:
-          ({String? afterEventId}) => ref
-              .read(downloadsApiProvider)
-              .streamDownloadTasks(
-                clientId: _activeFilter.clientId,
-                movieNumber:
-                    _activeFilter.normalizedSearch.isEmpty
-                        ? null
-                        : _activeFilter.normalizedSearch,
-              ),
+      connect: ({String? afterEventId}) => ref
+          .read(downloadsApiProvider)
+          .streamDownloadTasks(
+            clientId: _activeFilter.clientId,
+            movieNumber: _activeFilter.normalizedSearch.isEmpty
+                ? null
+                : _activeFilter.normalizedSearch,
+          ),
       mergeMode: SseMergeMode.microtask,
       pollingInterval: _pollingInterval,
       longDisconnectThreshold: _longDisconnectThreshold,
@@ -356,11 +424,16 @@ class DownloadTaskCenter extends _$DownloadTaskCenter
   /// 轮询 tick 与长断线补拉共用：整段替换第一页。这两条路径本来就是「本地可能
   /// 已经落后很多」的场景，以服务端为准，不做 upsert 合并。
   Future<void> _reloadFirstPage() async {
+    final currentBefore = state.value;
+    if (currentBefore == null || !currentBefore.paged.filterUpdate.isIdle) {
+      return;
+    }
+    final filterGeneration = _filterGeneration;
     try {
       final firstPage = await loadInitialPage();
-      if (isDisposed) return;
+      if (isDisposed || filterGeneration != _filterGeneration) return;
       final current = state.value;
-      if (current == null) return;
+      if (current == null || !current.paged.filterUpdate.isIdle) return;
       state = AsyncData(current.copyWith(paged: firstPage));
     } catch (_) {
       // 保留最后一次成功状态。
@@ -371,7 +444,7 @@ class DownloadTaskCenter extends _$DownloadTaskCenter
     if (isDisposed || events.isEmpty) return;
 
     final initial = state.value;
-    if (initial == null) return;
+    if (initial == null || !initial.paged.filterUpdate.isIdle) return;
 
     final firstPageComplete = initial.paged.items.length >= initial.paged.total;
 
@@ -451,8 +524,9 @@ class DownloadTaskCenter extends _$DownloadTaskCenter
           );
           nextMap[health.clientId] = existing.copyWith(
             isAvailable: health.isAvailable,
-            unavailableMessage:
-                health.isAvailable ? null : health.message ?? '客户端不可用',
+            unavailableMessage: health.isAvailable
+                ? null
+                : health.message ?? '客户端不可用',
             downloadSpeedBytes: health.isAvailable ? null : 0,
             uploadSpeedBytes: health.isAvailable ? null : 0,
           );
@@ -599,8 +673,9 @@ class DownloadTaskCenter extends _$DownloadTaskCenter
       final movie = progress.movieNumber?.trim().toUpperCase() ?? '';
       if (movie != search.toUpperCase()) return false;
     }
-    final expectedState = _activeFilter.stateFilter.apiValue;
-    if (expectedState != null && progress.downloadState != expectedState) {
+    final expectedStates = _activeFilter.stateFilter.apiValues;
+    if (expectedStates != null &&
+        !expectedStates.contains(progress.downloadState)) {
       return false;
     }
     return true;
@@ -616,8 +691,8 @@ class DownloadTaskCenter extends _$DownloadTaskCenter
       final movie = row.task.movieNumber?.trim().toUpperCase() ?? '';
       if (movie != search.toUpperCase()) return false;
     }
-    final expectedState = _activeFilter.stateFilter.apiValue;
-    if (expectedState != null && row.downloadState != expectedState) {
+    final expectedStates = _activeFilter.stateFilter.apiValues;
+    if (expectedStates != null && !expectedStates.contains(row.downloadState)) {
       return false;
     }
     return true;
@@ -627,11 +702,16 @@ class DownloadTaskCenter extends _$DownloadTaskCenter
     _cancelMergeDebounce();
     _mergeDebounceTimer = Timer(_mergeDebounce, () async {
       if (isDisposed) return;
+      final currentBefore = state.value;
+      if (currentBefore == null || !currentBefore.paged.filterUpdate.isIdle) {
+        return;
+      }
+      final filterGeneration = _filterGeneration;
       try {
         final firstPage = await loadInitialPage();
-        if (isDisposed) return;
+        if (isDisposed || filterGeneration != _filterGeneration) return;
         final current = state.value;
-        if (current == null) return;
+        if (current == null || !current.paged.filterUpdate.isIdle) return;
         final merged = _mergeUpsertFirstPage(
           current.paged.items,
           firstPage.items,

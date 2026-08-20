@@ -1,3 +1,4 @@
+import 'package:sakuramedia/core/json/json_parse.dart';
 import 'package:sakuramedia/features/movies/data/dto/listing/movie_list_item_dto.dart';
 
 class DailyRecommendationMovieDto {
@@ -30,8 +31,8 @@ class DailyRecommendationMovieDto {
       generatedAt: _dateTimeFromJson(json['generated_at']),
       rank: _intFromJson(json['rank']) ?? 0,
       recommendationScore: _doubleFromJson(json['recommendation_score']) ?? 0,
-      reasonCodes: _stringListFromJson(json['reason_codes']),
-      reasonTexts: _stringListFromJson(json['reason_texts']),
+      reasonCodes: asStringList(json['reason_codes'], trim: true),
+      reasonTexts: asStringList(json['reason_texts'], trim: true),
       signalScores: _signalScoresFromJson(json['signal_scores']),
       isStale: json['is_stale'] as bool? ?? false,
     );
@@ -66,17 +67,6 @@ double? _doubleFromJson(dynamic value) {
     return double.tryParse(value);
   }
   return null;
-}
-
-List<String> _stringListFromJson(dynamic value) {
-  if (value is! List) {
-    return const <String>[];
-  }
-  return value
-      .whereType<String>()
-      .map((item) => item.trim())
-      .where((item) => item.isNotEmpty)
-      .toList(growable: false);
 }
 
 Map<String, double> _signalScoresFromJson(dynamic value) {

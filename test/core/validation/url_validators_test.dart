@@ -10,15 +10,6 @@ void main() {
       expect(isValidHttpUrl('api.example.com'), isFalse);
     });
 
-    test('validates proxy urls', () {
-      expect(isValidProxyUrl('http://127.0.0.1:7890'), isTrue);
-      expect(isValidProxyUrl('https://proxy.example.com'), isTrue);
-      expect(isValidProxyUrl('socks5://127.0.0.1:1080'), isTrue);
-      expect(isValidProxyUrl('socks5h://proxy.example.com:1080'), isTrue);
-      expect(isValidProxyUrl('ftp://proxy.example.com'), isFalse);
-      expect(isValidProxyUrl('proxy.example.com:1080'), isFalse);
-    });
-
     test('validates bare hostnames for javdb host', () {
       expect(isValidHostname('jdforrepam.com'), isTrue);
       expect(isValidHostname('sub.javdb.example'), isTrue);

@@ -5,9 +5,9 @@ import 'package:sakuramedia/features/movies/presentation/providers/movie_summary
 import 'package:sakuramedia/routes/app_navigation_actions.dart';
 import 'package:sakuramedia/theme.dart';
 import 'package:sakuramedia/widgets/base/feedback/app_empty_state.dart';
-import 'package:sakuramedia/widgets/base/feedback/app_inline_spinner.dart';
 import 'package:sakuramedia/widgets/base/layout/scrolling/app_paged_load_more_footer.dart';
 import 'package:sakuramedia/widgets/domain/actors/actor_avatar.dart';
+import 'package:sakuramedia/widgets/domain/movies/subscription_heart_badge.dart';
 
 class DesktopActorDetailPage extends StatefulWidget {
   const DesktopActorDetailPage({super.key, required this.actorId});
@@ -26,11 +26,10 @@ class _DesktopActorDetailPageState extends State<DesktopActorDetailPage> {
       surfaceColor: context.appColors.surfaceElevated,
       contentKey: const Key('actor-detail-page'),
       sectionSpacing: context.appSpacing.lg,
-      onMovieTap:
-          (context, movieNumber) => context.pushDesktopMovieDetail(
-            movieNumber: movieNumber,
-            fallbackPath: '/desktop/library/actors/${widget.actorId}',
-          ),
+      onMovieTap: (context, movieNumber) => context.pushDesktopMovieDetail(
+        movieNumber: movieNumber,
+        fallbackPath: '/desktop/library/actors/${widget.actorId}',
+      ),
       headerBuilder:
           (
             context,
@@ -47,15 +46,13 @@ class _DesktopActorDetailPageState extends State<DesktopActorDetailPage> {
             onSubscriptionTap: onSubscriptionTap,
           ),
       loadingBuilder: (_) => const _ActorDetailLoadingSkeleton(),
-      errorBuilder:
-          (context, message, onRetry) =>
-              _ActorDetailErrorState(message: message, onRetry: onRetry),
+      errorBuilder: (context, message, onRetry) =>
+          _ActorDetailErrorState(message: message, onRetry: onRetry),
       footerBuilder: _buildLoadMoreFooter,
-      bodyBuilder:
-          (context, scrollController, child, _) => CustomScrollView(
-            controller: scrollController,
-            slivers: <Widget>[child],
-          ),
+      bodyBuilder: (context, scrollController, child, _) => CustomScrollView(
+        controller: scrollController,
+        slivers: <Widget>[child],
+      ),
     );
   }
 
@@ -117,8 +114,9 @@ class _ActorDetailHeader extends StatelessWidget {
           ),
         ),
         SizedBox(width: context.appSpacing.lg),
-        _ActorSubscriptionBadge(
-          actorId: actor.id,
+        SubscriptionHeartBadge(
+          key: Key('actor-detail-subscription-${actor.id}'),
+          loadingKey: Key('actor-detail-subscription-loading-${actor.id}'),
           isSubscribed: isSubscribed,
           isUpdating: isSubscriptionUpdating,
           onTap: onSubscriptionTap,
@@ -135,60 +133,6 @@ class _ActorDetailHeader extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-class _ActorSubscriptionBadge extends StatelessWidget {
-  const _ActorSubscriptionBadge({
-    required this.actorId,
-    required this.isSubscribed,
-    required this.isUpdating,
-    required this.onTap,
-  });
-
-  final int actorId;
-  final bool isSubscribed;
-  final bool isUpdating;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final componentTokens = context.appComponentTokens;
-    final colors = context.appColors;
-
-    final badge = SizedBox(
-      key: Key('actor-detail-subscription-$actorId'),
-      width: componentTokens.movieCardStatusBadgeSize,
-      height: componentTokens.movieCardStatusBadgeSize,
-      child: Center(
-        child:
-            isUpdating
-                ? AppInlineSpinner(
-                  key: Key('actor-detail-subscription-loading-$actorId'),
-                  color: colors.subscriptionHeartIcon,
-                )
-                : Icon(
-                  isSubscribed
-                      ? Icons.favorite_rounded
-                      : Icons.favorite_border_rounded,
-                  size: componentTokens.iconSizeXl,
-                  color: colors.subscriptionHeartIcon,
-                ),
-      ),
-    );
-
-    if (onTap == null || isUpdating) {
-      return badge;
-    }
-
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        behavior: HitTestBehavior.translucent,
-        onTap: onTap,
-        child: badge,
-      ),
     );
   }
 }

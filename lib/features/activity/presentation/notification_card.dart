@@ -142,49 +142,11 @@ class NotificationFilterBar extends StatelessWidget {
                 ),
               ),
             ],
-            onChanged:
-                state.isRefreshing
-                    ? null
-                    : (value) =>
-                        onFilterChanged(state.filter.copyWith(category: value)),
+            onChanged: (value) =>
+                onFilterChanged(state.filter.copyWith(category: value)),
           ),
         ),
-        _FilterRefreshIndicator(
-          indicatorKey: const Key('notification-filter-loading'),
-          isVisible: state.isRefreshing,
-        ),
       ],
-    );
-  }
-}
-
-class _FilterRefreshIndicator extends StatelessWidget {
-  const _FilterRefreshIndicator({
-    required this.indicatorKey,
-    required this.isVisible,
-  });
-
-  final Key indicatorKey;
-  final bool isVisible;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 36,
-      height: 36,
-      child: Center(
-        child:
-            isVisible
-                ? SizedBox(
-                  key: indicatorKey,
-                  width: 18,
-                  height: 18,
-                  child: const CircularProgressIndicator.adaptive(
-                    strokeWidth: 2.2,
-                  ),
-                )
-                : null,
-      ),
     );
   }
 }

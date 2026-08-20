@@ -3,7 +3,7 @@ import 'package:sakuramedia/features/configuration/data/dto/indexer_settings_dto
 import 'package:sakuramedia/features/system_diagnostics/data/diagnostic_fix_target.dart';
 import 'package:sakuramedia/features/system_diagnostics/presentation/hints/diagnostic_hints.dart';
 
-/// 索引器（Jackett）先校验静态配置，再进行真实搜索连通性检测。
+/// 索引器（Torznab）先校验静态配置，再进行真实搜索连通性检测。
 ///
 /// 「索引器」在配置页分类列表里的索引（`desktop_configuration_page.dart`）。
 const DiagnosticFixTarget _indexerTarget = DiagnosticFixTarget.configurationTab(
@@ -19,20 +19,10 @@ const DiagnosticHint _noIndexersHint = DiagnosticHint(
 );
 
 const Map<String, DiagnosticHint> indexerHints = <String, DiagnosticHint>{
-  'type-missing': DiagnosticHint(
-    cause: '还没有选择索引器类型。',
-    fixHint: '在「索引器」页选择你部署的类型并填上 API Key。',
-    fixTarget: _indexerTarget,
-  ),
-  'api-key-missing': DiagnosticHint(
-    cause: 'API Key 没填。',
-    fixHint: 'API Key 在 Jackett 面板顶部，复制到「索引器」页。换了 Jackett 也要重新填。',
-    fixTarget: _indexerTarget,
-  ),
   'entries-empty': _noIndexersHint,
   'entry-url-invalid': DiagnosticHint(
     cause: '有站点的地址是空的，或者格式不对。',
-    fixHint: '在「索引器」页检查每个站点的地址，从 Jackett 里重新复制一遍。',
+    fixHint: '在「索引器」页检查每个站点的地址。',
     fixTarget: _indexerTarget,
   ),
   'entry-client-missing': DiagnosticHint(
@@ -46,9 +36,9 @@ const Map<String, DiagnosticHint> indexerHints = <String, DiagnosticHint>{
     fixTarget: _indexerTarget,
   ),
   'no-indexers-configured': _noIndexersHint,
-  'jackett-request-error': DiagnosticHint(
+  'torznab-request-error': DiagnosticHint(
     cause: '搜索测试失败了。',
-    fixHint: '确认 Jackett 能访问，然后在「索引器」页核对 API Key 和各站点地址。',
+    fixHint: '确认索引器服务能访问，然后在「索引器」页核对各站点地址与 API Key。',
     fixTarget: _indexerTarget,
   ),
 };
@@ -60,8 +50,6 @@ String? resolveIndexerConfigHintKey({
   required IndexerSettingsDto settings,
   required List<DownloadClientDto> existingClients,
 }) {
-  if (settings.type.trim().isEmpty) return 'type-missing';
-  if (settings.apiKey.trim().isEmpty) return 'api-key-missing';
   if (settings.indexers.isEmpty) return 'entries-empty';
   final existingIds = existingClients.map((c) => c.id).toSet();
   for (final entry in settings.indexers) {
@@ -82,9 +70,9 @@ String resolveIndexerConnectionHintKey(String? errorType) {
   switch (errorType?.trim()) {
     case 'no_indexers_configured':
       return 'no-indexers-configured';
-    case 'jackett_request_error':
+    case 'torznab_request_error':
     default:
-      return 'jackett-request-error';
+      return 'torznab-request-error';
   }
 }
 

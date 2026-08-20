@@ -128,15 +128,15 @@ void main() {
       final sectionGap = AppComponentTokens.mobile().movieDetailSectionGap;
       final seriesBottom = tester.getBottomLeft(find.text('系列 · Attackers')).dy;
       final makerTop = tester.getTopLeft(find.text('厂商 · S1 NO.1 STYLE')).dy;
-      final makerBottom =
-          tester.getBottomLeft(find.text('厂商 · S1 NO.1 STYLE')).dy;
+      final makerBottom = tester
+          .getBottomLeft(find.text('厂商 · S1 NO.1 STYLE'))
+          .dy;
       final directorTop = tester.getTopLeft(find.text('导演 · 紋℃')).dy;
-      final metaGroupBottom =
-          tester
-              .getBottomLeft(
-                find.byKey(const Key('movie-detail-inline-meta-group')),
-              )
-              .dy;
+      final metaGroupBottom = tester
+          .getBottomLeft(
+            find.byKey(const Key('movie-detail-inline-meta-group')),
+          )
+          .dy;
       final tagTop = tester.getTopLeft(find.text('标签')).dy;
       final tagWrapBottom = tester.getBottomLeft(find.byType(MovieTagWrap)).dy;
       final actorTop = tester.getTopLeft(find.text('演员')).dy;
@@ -148,6 +148,8 @@ void main() {
       expect(tagTop - metaGroupBottom, sectionGap);
       expect(actorTop - tagWrapBottom, sectionGap);
       expect(find.text('媒体源'), findsOneWidget);
+      expect(find.byKey(const Key('movie-subtitles-title')), findsNothing);
+      expect(find.byKey(const Key('movie-similar-movies-title')), findsNothing);
     },
   );
 }
@@ -157,7 +159,6 @@ MovieDetailDto _movieDetail({int? seriesId}) {
     javdbId: 'javdb-1',
     movieNumber: 'ABC-001',
     title: 'Sample Movie',
-    titleZh: '',
     seriesId: seriesId,
     seriesName: 'Attackers',
     makerName: 'S1 NO.1 STYLE',
@@ -175,8 +176,6 @@ MovieDetailDto _movieDetail({int? seriesId}) {
     isSubscribed: false,
     canPlay: false,
     summary: '',
-    descZh: '中文简介',
-    desc: '',
     thinCoverImage: null,
     plotImages: const <MovieImageDto>[],
     actors: const <MovieActorDto>[

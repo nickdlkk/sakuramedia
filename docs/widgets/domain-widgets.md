@@ -54,7 +54,8 @@
 
 ### MovieFilterSectionGroup / MovieFilterChoiceSection&lt;T&gt; / MovieYearFilterSection / MovieSortSection
 - **路径**: `lib/widgets/domain/movies/movie_filter_sections.dart`
-- **用途**: 影片筛选分节组(状态 / 合集类型 / 番号来源 / 年份 / 排序),**双端共用同一份**:桌面塞进 `AppListHeader.filterPanelBuilder` 的就地浮层,移动塞进 `showMobileMovieFilterDrawer` 的底部抽屉。年份 section 独立(有年份选项 loading / error / retry 三态)。
+- **用途**: 影片筛选分节组(状态 / 合集类型 / 番号来源 / 年份 / 排序),**双端共用同一份**:桌面塞进 `AppListHeader.filterPanelBuilder` 的就地浮层,移动塞进 `showMobileMovieFilterDrawer` 的底部抽屉。年份 section 独立，收起时按实际面板宽度最多展示两行，支持展开/收起。
+- **年份来源**: `yearOptions` 不传时自动生成从当前年到 2008 年的纯年份 chip（普通影片库 / 标签影片）；女优详情显式传入 `GET /actors/{actor_id}/years` 的选项，以显示 `年份(数量)`，并保留 loading / error / retry 三态。
 - **required**: `filterState` · `onChanged`;可选 `yearOptions` · `isYearOptionsLoading` · `yearOptionsErrorMessage` · `onYearOptionsRetry`
 - **`MovieFilterChoiceSection` 可选 `optionKeyBuilder`**: 给每个 chip 挂稳定 Key(videos / moments / hot_reviews 侧都用它生成测试锚点)。
 - **注意**: 已无 `MovieFilterToolbar`——桌面筛选入口统一由 `AppListHeader` 提供,重置走 `AppFilterPanelFooter`。**移动抽屉的内容是打开瞬间的快照**(不像桌面浮层会随 `didUpdateWidget` 重建),所以懒加载的年份必须在弹抽屉**之前** await 回来,否则分节会永远停在转圈态(女优详情页踩过)。
@@ -110,6 +111,7 @@
 - **用途**: 合集封面卡——`CollectionCard` 是内部私有 `._` 构造(不直接 new),`CollectionCoverCard` 是**对外的合集封面卡**(标题 + 计数 + 封面 + 编辑 / 删除菜单)。
 - **CollectionCoverCard required**: `title` · `count` · `coverUrl` · `onTap`;可选 `tapKey` / `menuKey` · `coverFit`(默认 cover) · `placeholderIcon`(默认 `video_library_outlined`) · `onEdit` / `onDelete`
 - **何时用**: 切片合集 / 视频合集的网格。
+- **CollectionCardSkeleton / CollectionCardSkeletonRow**: 与合集卡相同的 `16:9` 封面 + 标题结构，用于合集横滑区首屏加载；卡片与横滑行容器均由移动端与桌面端共用，行容器通过参数适配尺寸。
 
 ### CollectionMemberRow / CollectionMemberCard
 - **路径**: `lib/widgets/domain/collections/collection_member_views.dart`
@@ -257,6 +259,6 @@
 
 - **域内的展示件**(单域用)保留在 `lib/features/<域>/presentation/widgets/`,**不要**移到 `lib/widgets/<域>/`;真被两个 feature 借用了再上抬。
 - **卡片上下文菜单**:clip / collection 封面 / collection 成员 / video 四处**共享** `showAppCardContextMenu<T>`(见 [sheets-dialogs.md](./sheets-dialogs.md))。调用方保留私有 enum + items 组装 + 派发 switch; 弹菜单骨架统一走原子件。
-- **SubscriptionHeartBadge**: `lib/widgets/domain/movies/subscription_heart_badge.dart`——movie / actor 卡片右上/左上角的心形订阅徽标(loader + Icon + hit region),两卡共用。移动端 IconButton 变体命中区不同,不走这里。
+- **SubscriptionHeartBadge**: `lib/widgets/domain/movies/subscription_heart_badge.dart`——movie / actor 摘要卡片、影片详情 hero、演员详情（桌面 / 移动）共用的心形订阅徽标。视觉图标与布局盒固定 24，命中区经 `expand_tap_area` 外扩到 `subscriptionHeartHitSize`（44），不改变布局与相邻对齐；加载态用 `AppInlineSpinner`。移动端 follow 卡片仍是 IconButton 变体（带水波纹），视觉按钮保持 30、命中区同为 44。
 - **多选勾选标记**统一走 `SelectionCheckBadge`(见 [data-loading.md](./data-loading.md)),别再自绘。
-- **筛选状态**:filter state 是纯数据模型,变化后驱动 controller `reload()`(见各域的 `feature/CLAUDE.md`)。本目录只是**渲染 UI**,不管状态。
+- **筛选状态**:filter state 是纯数据模型；控件变化后先同步写入状态，再由 Provider 经过 250ms 尾随防抖刷新服务端结果。本目录只是**渲染 UI**,不发请求、不等待接口后再点亮选中态。

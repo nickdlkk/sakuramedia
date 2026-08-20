@@ -10,8 +10,7 @@ part 'moments_provider.g.dart';
 
 /// 时刻分页列表（排序 + 内容类型双维筛选,值对象 [MomentsFilter] 驱动）。
 ///
-/// - 切筛选走 [FilterReloadStrategy.spinner]（默认）:清列表闪骨架,与迁移前
-///   `setSortOrder/setKindFilter → reload()` 的视觉一致。
+/// - 切筛选先更新条件并保留旧列表，防抖请求成功后再替换结果。
 /// - autoDispose:离开页面即释放,对齐迁移前控制器随页面 State 生灭。
 /// - `fetchPage` 保留 `MediaPointListItemDto → MomentListItem` 的 ViewModel
 ///   映射（迁移前在控制器 override 里做）。
@@ -38,8 +37,7 @@ class Moments extends _$Moments
   @override
   MomentsFilter get initialFilter => MomentsFilter.initial;
 
-  /// 当前生效筛选,供页面在 [AsyncLoading] 期间（state 无值）渲染顶栏标签,
-  /// 避免切筛选加载中标签闪回默认值。
+  /// 当前选中筛选；首次加载尚无 state 时供页面渲染默认标签。
   MomentsFilter get filter => activeFilter;
 
   @override

@@ -38,7 +38,7 @@ void main() {
     _enqueueDefinitions(bundle);
     _enqueuePage(
       bundle,
-      taskKey: 'movie_desc_sync',
+      taskKey: 'movie_interaction_sync',
       page: 1,
       total: 1,
       items: <Map<String, dynamic>>[_recordJson(id: 1001)],
@@ -53,7 +53,7 @@ void main() {
 
     expect(controller.initialized, isTrue);
     expect(controller.definitions, hasLength(2));
-    expect(controller.activeTaskKey, 'movie_desc_sync');
+    expect(controller.activeTaskKey, 'movie_interaction_sync');
     expect(controller.activeDefinition?.displayName, '影片描述回填');
     expect(controller.activeRecords, hasLength(1));
     expect(controller.activeRecords.single.resourceId, 1001);
@@ -70,11 +70,10 @@ void main() {
       1,
     );
     expect(bundle.adapter.hitCount('GET', '/system/resource-task-states'), 1);
-    final recordRequest =
-        bundle.adapter.requests
-            .where((req) => req.path == '/system/resource-task-states')
-            .single;
-    expect(recordRequest.uri.queryParameters['task_key'], 'movie_desc_sync');
+    final recordRequest = bundle.adapter.requests
+        .where((req) => req.path == '/system/resource-task-states')
+        .single;
+    expect(recordRequest.uri.queryParameters['task_key'], 'movie_interaction_sync');
     expect(recordRequest.uri.queryParameters['page'], '1');
     expect(recordRequest.uri.queryParameters['page_size'], '20');
     expect(recordRequest.uri.queryParameters['state'], 'failed');
@@ -86,7 +85,7 @@ void main() {
     _enqueueDefinitions(bundle);
     _enqueuePage(
       bundle,
-      taskKey: 'movie_desc_sync',
+      taskKey: 'movie_interaction_sync',
       page: 1,
       total: 1,
       items: <Map<String, dynamic>>[_recordJson(id: 1001)],
@@ -117,8 +116,8 @@ void main() {
     expect(controller.activeRecords, hasLength(2));
 
     // 切回原 task 不应再次请求。
-    await controller.selectTaskKey('movie_desc_sync');
-    expect(controller.activeTaskKey, 'movie_desc_sync');
+    await controller.selectTaskKey('movie_interaction_sync');
+    expect(controller.activeTaskKey, 'movie_interaction_sync');
     expect(controller.activeRecords, hasLength(1));
     expect(bundle.adapter.hitCount('GET', '/system/resource-task-states'), 2);
   });
@@ -127,7 +126,7 @@ void main() {
     _enqueueDefinitions(bundle);
     _enqueuePage(
       bundle,
-      taskKey: 'movie_desc_sync',
+      taskKey: 'movie_interaction_sync',
       page: 1,
       total: 1,
       items: <Map<String, dynamic>>[_recordJson(id: 1001)],
@@ -142,27 +141,32 @@ void main() {
 
     _enqueuePage(
       bundle,
-      taskKey: 'movie_desc_sync',
+      taskKey: 'movie_interaction_sync',
       page: 1,
       total: 1,
       items: <Map<String, dynamic>>[_recordJson(id: 1002, state: 'failed')],
     );
 
-    await controller.applyFilter(
-      const ResourceTaskRecordFilterState(
-        stateFilter: ResourceTaskRecordStateFilter.failed,
-        search: ' SSIS ',
-        sort: ResourceTaskRecordSort.lastErrorAtDesc,
-      ),
+    const nextFilter = ResourceTaskRecordFilterState(
+      stateFilter: ResourceTaskRecordStateFilter.failed,
+      search: ' SSIS ',
+      sort: ResourceTaskRecordSort.lastErrorAtDesc,
     );
+    final update = controller.applyFilter(nextFilter);
+
+    expect(controller.activeFilter, nextFilter);
+    expect(controller.filterUpdateLoading, isTrue);
+    expect(controller.activeRecords.single.resourceId, 1001);
+    expect(bundle.adapter.hitCount('GET', '/system/resource-task-states'), 1);
+
+    await update;
 
     expect(controller.activeRecords, hasLength(1));
     expect(controller.activeRecords.single.resourceId, 1002);
 
-    final requests =
-        bundle.adapter.requests
-            .where((req) => req.path == '/system/resource-task-states')
-            .toList();
+    final requests = bundle.adapter.requests
+        .where((req) => req.path == '/system/resource-task-states')
+        .toList();
     expect(requests, hasLength(2));
     final filtered = requests.last;
     expect(filtered.uri.queryParameters['state'], 'failed');
@@ -174,7 +178,7 @@ void main() {
     _enqueueDefinitions(bundle);
     _enqueuePage(
       bundle,
-      taskKey: 'movie_desc_sync',
+      taskKey: 'movie_interaction_sync',
       page: 1,
       pageSize: 2,
       total: 3,
@@ -195,7 +199,7 @@ void main() {
 
     _enqueuePage(
       bundle,
-      taskKey: 'movie_desc_sync',
+      taskKey: 'movie_interaction_sync',
       page: 2,
       pageSize: 2,
       total: 3,
@@ -212,10 +216,9 @@ void main() {
     ]);
     expect(controller.hasMoreRecords, isFalse);
     expect(controller.recordsLoadMoreErrorMessage, isNull);
-    final pageRequest =
-        bundle.adapter.requests
-            .where((req) => req.path == '/system/resource-task-states')
-            .last;
+    final pageRequest = bundle.adapter.requests
+        .where((req) => req.path == '/system/resource-task-states')
+        .last;
     expect(pageRequest.uri.queryParameters['page'], '2');
   });
 
@@ -223,7 +226,7 @@ void main() {
     _enqueueDefinitions(bundle);
     _enqueuePage(
       bundle,
-      taskKey: 'movie_desc_sync',
+      taskKey: 'movie_interaction_sync',
       page: 1,
       total: 2,
       items: <Map<String, dynamic>>[
@@ -241,7 +244,7 @@ void main() {
 
     _enqueuePage(
       bundle,
-      taskKey: 'movie_desc_sync',
+      taskKey: 'movie_interaction_sync',
       page: 1,
       total: 1,
       items: <Map<String, dynamic>>[_recordJson(id: 1003)],
@@ -251,10 +254,9 @@ void main() {
 
     expect(controller.activeRecords.map((r) => r.resourceId), <int>[1003]);
     expect(controller.hasMoreRecords, isFalse);
-    final requests =
-        bundle.adapter.requests
-            .where((req) => req.path == '/system/resource-task-states')
-            .toList();
+    final requests = bundle.adapter.requests
+        .where((req) => req.path == '/system/resource-task-states')
+        .toList();
     expect(requests, hasLength(2));
     expect(requests.last.uri.queryParameters['page'], '1');
   });
@@ -263,7 +265,7 @@ void main() {
     _enqueueDefinitions(bundle);
     _enqueuePage(
       bundle,
-      taskKey: 'movie_desc_sync',
+      taskKey: 'movie_interaction_sync',
       page: 1,
       total: 1,
       items: <Map<String, dynamic>>[_recordJson(id: 1001)],
@@ -313,7 +315,7 @@ void main() {
     _enqueueDefinitions(bundle);
     _enqueuePage(
       bundle,
-      taskKey: 'movie_desc_sync',
+      taskKey: 'movie_interaction_sync',
       page: 1,
       pageSize: 2,
       total: 3,
@@ -351,7 +353,7 @@ void main() {
       _enqueueDefinitions(bundle);
       _enqueuePage(
         bundle,
-        taskKey: 'movie_desc_sync',
+        taskKey: 'movie_interaction_sync',
         page: 1,
         total: 0,
         items: const <Map<String, dynamic>>[],
@@ -378,12 +380,12 @@ void main() {
       expect(controller.supportsBatchReset, isTrue);
       _enqueuePage(
         bundle,
-        taskKey: 'movie_desc_sync',
+        taskKey: 'movie_interaction_sync',
         page: 1,
         total: 0,
         items: const <Map<String, dynamic>>[],
       );
-      await controller.selectTaskKey('movie_desc_sync');
+      await controller.selectTaskKey('movie_interaction_sync');
       expect(controller.supportsBatchReset, isFalse);
     });
 
@@ -391,7 +393,7 @@ void main() {
       _enqueueDefinitions(bundle);
       _enqueuePage(
         bundle,
-        taskKey: 'movie_desc_sync',
+        taskKey: 'movie_interaction_sync',
         page: 1,
         total: 1,
         items: <Map<String, dynamic>>[_recordJson(id: 1001, state: 'failed')],
@@ -523,12 +525,12 @@ void main() {
 
       _enqueuePage(
         bundle,
-        taskKey: 'movie_desc_sync',
+        taskKey: 'movie_interaction_sync',
         page: 1,
         total: 0,
         items: const <Map<String, dynamic>>[],
       );
-      await controller.selectTaskKey('movie_desc_sync');
+      await controller.selectTaskKey('movie_interaction_sync');
       expect(controller.selectionMode, isFalse);
       expect(controller.selectedCount, 0);
     });
@@ -586,7 +588,7 @@ void main() {
         path: '/system/resource-task-states/definitions',
         body: <Map<String, dynamic>>[
           <String, dynamic>{
-            'task_key': 'movie_desc_sync',
+            'task_key': 'movie_interaction_sync',
             'resource_type': 'movie',
             'display_name': '影片描述回填',
             'default_sort': 'last_attempted_at:desc',
@@ -821,6 +823,10 @@ class _ResourceTaskCenterHarness {
   bool get hasLoadedActiveRecords => _state.hasLoadedActiveRecords;
   bool get isLoadingRecords => _state.isLoadingRecords;
   bool get hasMoreRecords => _state.hasMoreRecords;
+  ResourceTaskRecordFilterState get activeFilter =>
+      _state.activeBucket?.filter ?? ResourceTaskRecordFilterState.initial;
+  bool get filterUpdateLoading =>
+      _state.activeBucket?.filterUpdate.isLoading ?? false;
   String? get recordsLoadErrorMessage => _state.recordsLoadErrorMessage;
   String? get recordsLoadMoreErrorMessage => _state.recordsLoadMoreErrorMessage;
   bool get isDetailOpen => _state.isDetailOpen;
@@ -859,7 +865,7 @@ void _enqueueDefinitions(TestApiBundle bundle) {
     path: '/system/resource-task-states/definitions',
     body: <Map<String, dynamic>>[
       <String, dynamic>{
-        'task_key': 'movie_desc_sync',
+        'task_key': 'movie_interaction_sync',
         'resource_type': 'movie',
         'display_name': '影片描述回填',
         'default_sort': 'last_attempted_at:desc',
@@ -910,7 +916,7 @@ void _enqueuePage(
 
 Map<String, dynamic> _recordJson({
   required int id,
-  String taskKey = 'movie_desc_sync',
+  String taskKey = 'movie_interaction_sync',
   String state = 'pending',
   bool? valid,
   bool hasResource = true,
@@ -929,14 +935,13 @@ Map<String, dynamic> _recordJson({
     'last_trigger_type': 'scheduled',
     'created_at': '2026-04-01T00:00:00Z',
     'updated_at': '2026-04-18T10:00:00Z',
-    'resource':
-        hasResource
-            ? <String, dynamic>{
-              'resource_id': id,
-              'movie_number': 'SSIS-$id',
-              'title': '示例-$id',
-              if (valid != null) 'valid': valid,
-            }
-            : null,
+    'resource': hasResource
+        ? <String, dynamic>{
+            'resource_id': id,
+            'movie_number': 'SSIS-$id',
+            'title': '示例-$id',
+            if (valid != null) 'valid': valid,
+          }
+        : null,
   };
 }

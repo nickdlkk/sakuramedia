@@ -67,6 +67,12 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  Future<void> settleFilterRequest(WidgetTester tester) async {
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 251));
+    await tester.pumpAndSettle();
+  }
+
   testWidgets('caps popular tags to popularLimit and hides 展开全部', (
     WidgetTester tester,
   ) async {
@@ -139,13 +145,13 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    await settleFilterRequest(tester);
 
     // 预选标签首拉影片默认走 or。
     expect(movieTagMatches(), <String?>['or']);
 
     await tester.tap(find.byKey(const Key('tags-match-and')));
-    await tester.pumpAndSettle();
+    await settleFilterRequest(tester);
 
     // 切到「全部」后追加一次 and 请求。
     expect(movieTagMatches(), <String?>['or', 'and']);

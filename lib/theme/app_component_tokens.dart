@@ -43,9 +43,13 @@ class AppComponentTokens extends ThemeExtension<AppComponentTokens> {
     required this.buttonGapXs,
     required this.buttonGap2xs,
     required this.buttonGap3xs,
+    required this.switchTrackWidth,
+    required this.switchTrackHeight,
+    required this.switchThumbDiameter,
     required this.movieCardLoaderSize,
     required this.movieCardLoaderStrokeWidth,
     required this.movieCardStatusBadgeSize,
+    required this.subscriptionHeartHitSize,
     required this.downloadTaskCoverWidth,
     required this.downloadTaskCardMinHeight,
     required this.downloadTaskProgressHeight,
@@ -125,9 +129,13 @@ class AppComponentTokens extends ThemeExtension<AppComponentTokens> {
       buttonGapXs = 4,
       buttonGap2xs = 4,
       buttonGap3xs = 2,
+      switchTrackWidth = 36,
+      switchTrackHeight = 20,
+      switchThumbDiameter = 16,
       movieCardLoaderSize = 18,
       movieCardLoaderStrokeWidth = 2,
       movieCardStatusBadgeSize = 24,
+      subscriptionHeartHitSize = 44,
       downloadTaskCoverWidth = 220,
       downloadTaskCardMinHeight = 120,
       downloadTaskProgressHeight = 6,
@@ -206,9 +214,13 @@ class AppComponentTokens extends ThemeExtension<AppComponentTokens> {
       buttonGapXs = 4,
       buttonGap2xs = 4,
       buttonGap3xs = 2,
+      switchTrackWidth = 44,
+      switchTrackHeight = 24,
+      switchThumbDiameter = 18,
       movieCardLoaderSize = 18,
       movieCardLoaderStrokeWidth = 2,
       movieCardStatusBadgeSize = 24,
+      subscriptionHeartHitSize = 44,
       downloadTaskCoverWidth = 220,
       downloadTaskCardMinHeight = 120,
       downloadTaskProgressHeight = 6,
@@ -286,9 +298,18 @@ class AppComponentTokens extends ThemeExtension<AppComponentTokens> {
   final double buttonGapXs;
   final double buttonGap2xs;
   final double buttonGap3xs;
+
+  /// 紧凑启停开关（[AppSwitch]）的轨道宽 / 轨道高 / 拇指直径。
+  final double switchTrackWidth;
+  final double switchTrackHeight;
+  final double switchThumbDiameter;
+
   final double movieCardLoaderSize;
   final double movieCardLoaderStrokeWidth;
   final double movieCardStatusBadgeSize;
+
+  /// 订阅心形等小图标的命中区尺寸：视觉图标保持 24，外层点击区扩大到该值。
+  final double subscriptionHeartHitSize;
   final double downloadTaskCoverWidth;
   final double downloadTaskCardMinHeight;
   final double downloadTaskProgressHeight;
@@ -375,9 +396,13 @@ class AppComponentTokens extends ThemeExtension<AppComponentTokens> {
     double? buttonGapXs,
     double? buttonGap2xs,
     double? buttonGap3xs,
+    double? switchTrackWidth,
+    double? switchTrackHeight,
+    double? switchThumbDiameter,
     double? movieCardLoaderSize,
     double? movieCardLoaderStrokeWidth,
     double? movieCardStatusBadgeSize,
+    double? subscriptionHeartHitSize,
     double? downloadTaskCoverWidth,
     double? downloadTaskCardMinHeight,
     double? downloadTaskProgressHeight,
@@ -476,11 +501,16 @@ class AppComponentTokens extends ThemeExtension<AppComponentTokens> {
       buttonGapXs: buttonGapXs ?? this.buttonGapXs,
       buttonGap2xs: buttonGap2xs ?? this.buttonGap2xs,
       buttonGap3xs: buttonGap3xs ?? this.buttonGap3xs,
+      switchTrackWidth: switchTrackWidth ?? this.switchTrackWidth,
+      switchTrackHeight: switchTrackHeight ?? this.switchTrackHeight,
+      switchThumbDiameter: switchThumbDiameter ?? this.switchThumbDiameter,
       movieCardLoaderSize: movieCardLoaderSize ?? this.movieCardLoaderSize,
       movieCardLoaderStrokeWidth:
           movieCardLoaderStrokeWidth ?? this.movieCardLoaderStrokeWidth,
       movieCardStatusBadgeSize:
           movieCardStatusBadgeSize ?? this.movieCardStatusBadgeSize,
+      subscriptionHeartHitSize:
+          subscriptionHeartHitSize ?? this.subscriptionHeartHitSize,
       downloadTaskCoverWidth:
           downloadTaskCoverWidth ?? this.downloadTaskCoverWidth,
       downloadTaskCardMinHeight:
@@ -568,72 +598,71 @@ class AppComponentTokens extends ThemeExtension<AppComponentTokens> {
       return this;
     }
     return AppComponentTokens(
-      desktopTitleBarHeight:
-          lerpDouble(desktopTitleBarHeight, other.desktopTitleBarHeight, t)!,
-      desktopMacTrafficLightInsetWidth:
-          lerpDouble(
-            desktopMacTrafficLightInsetWidth,
-            other.desktopMacTrafficLightInsetWidth,
-            t,
-          )!,
-      desktopTitleBarControlGap:
-          lerpDouble(
-            desktopTitleBarControlGap,
-            other.desktopTitleBarControlGap,
-            t,
-          )!,
-      overviewStatTileMinWidth:
-          lerpDouble(
-            overviewStatTileMinWidth,
-            other.overviewStatTileMinWidth,
-            t,
-          )!,
-      overviewStatTileMaxWidth:
-          lerpDouble(
-            overviewStatTileMaxWidth,
-            other.overviewStatTileMaxWidth,
-            t,
-          )!,
-      overviewStatSkeletonLabelWidth:
-          lerpDouble(
-            overviewStatSkeletonLabelWidth,
-            other.overviewStatSkeletonLabelWidth,
-            t,
-          )!,
-      overviewStatSkeletonLabelHeight:
-          lerpDouble(
-            overviewStatSkeletonLabelHeight,
-            other.overviewStatSkeletonLabelHeight,
-            t,
-          )!,
-      overviewStatSkeletonValueWidth:
-          lerpDouble(
-            overviewStatSkeletonValueWidth,
-            other.overviewStatSkeletonValueWidth,
-            t,
-          )!,
-      overviewStatSkeletonValueHeight:
-          lerpDouble(
-            overviewStatSkeletonValueHeight,
-            other.overviewStatSkeletonValueHeight,
-            t,
-          )!,
-      movieCardTargetWidth:
-          lerpDouble(movieCardTargetWidth, other.movieCardTargetWidth, t)!,
-      movieThumbnailTargetWidth:
-          lerpDouble(
-            movieThumbnailTargetWidth,
-            other.movieThumbnailTargetWidth,
-            t,
-          )!,
-      movieCardAspectRatio:
-          lerpDouble(movieCardAspectRatio, other.movieCardAspectRatio, t)!,
-      movieCardCoverVisibleWidthFactor:
-          lerpDouble(
-            movieCardCoverVisibleWidthFactor,
-            other.movieCardCoverVisibleWidthFactor,
-            t,
-          )!,
+      desktopTitleBarHeight: lerpDouble(
+        desktopTitleBarHeight,
+        other.desktopTitleBarHeight,
+        t,
+      )!,
+      desktopMacTrafficLightInsetWidth: lerpDouble(
+        desktopMacTrafficLightInsetWidth,
+        other.desktopMacTrafficLightInsetWidth,
+        t,
+      )!,
+      desktopTitleBarControlGap: lerpDouble(
+        desktopTitleBarControlGap,
+        other.desktopTitleBarControlGap,
+        t,
+      )!,
+      overviewStatTileMinWidth: lerpDouble(
+        overviewStatTileMinWidth,
+        other.overviewStatTileMinWidth,
+        t,
+      )!,
+      overviewStatTileMaxWidth: lerpDouble(
+        overviewStatTileMaxWidth,
+        other.overviewStatTileMaxWidth,
+        t,
+      )!,
+      overviewStatSkeletonLabelWidth: lerpDouble(
+        overviewStatSkeletonLabelWidth,
+        other.overviewStatSkeletonLabelWidth,
+        t,
+      )!,
+      overviewStatSkeletonLabelHeight: lerpDouble(
+        overviewStatSkeletonLabelHeight,
+        other.overviewStatSkeletonLabelHeight,
+        t,
+      )!,
+      overviewStatSkeletonValueWidth: lerpDouble(
+        overviewStatSkeletonValueWidth,
+        other.overviewStatSkeletonValueWidth,
+        t,
+      )!,
+      overviewStatSkeletonValueHeight: lerpDouble(
+        overviewStatSkeletonValueHeight,
+        other.overviewStatSkeletonValueHeight,
+        t,
+      )!,
+      movieCardTargetWidth: lerpDouble(
+        movieCardTargetWidth,
+        other.movieCardTargetWidth,
+        t,
+      )!,
+      movieThumbnailTargetWidth: lerpDouble(
+        movieThumbnailTargetWidth,
+        other.movieThumbnailTargetWidth,
+        t,
+      )!,
+      movieCardAspectRatio: lerpDouble(
+        movieCardAspectRatio,
+        other.movieCardAspectRatio,
+        t,
+      )!,
+      movieCardCoverVisibleWidthFactor: lerpDouble(
+        movieCardCoverVisibleWidthFactor,
+        other.movieCardCoverVisibleWidthFactor,
+        t,
+      )!,
       iconSizeXs: lerpDouble(iconSizeXs, other.iconSizeXs, t)!,
       iconSize2xs: lerpDouble(iconSize2xs, other.iconSize2xs, t)!,
       iconSize3xs: lerpDouble(iconSize3xs, other.iconSize3xs, t)!,
@@ -649,243 +678,261 @@ class AppComponentTokens extends ThemeExtension<AppComponentTokens> {
       buttonHeightXs: lerpDouble(buttonHeightXs, other.buttonHeightXs, t)!,
       buttonHeight2xs: lerpDouble(buttonHeight2xs, other.buttonHeight2xs, t)!,
       buttonHeight3xs: lerpDouble(buttonHeight3xs, other.buttonHeight3xs, t)!,
-      buttonHorizontalPaddingMd:
-          lerpDouble(
-            buttonHorizontalPaddingMd,
-            other.buttonHorizontalPaddingMd,
-            t,
-          )!,
-      buttonHorizontalPaddingSm:
-          lerpDouble(
-            buttonHorizontalPaddingSm,
-            other.buttonHorizontalPaddingSm,
-            t,
-          )!,
-      buttonHorizontalPaddingXs:
-          lerpDouble(
-            buttonHorizontalPaddingXs,
-            other.buttonHorizontalPaddingXs,
-            t,
-          )!,
-      buttonHorizontalPadding2xs:
-          lerpDouble(
-            buttonHorizontalPadding2xs,
-            other.buttonHorizontalPadding2xs,
-            t,
-          )!,
-      buttonHorizontalPadding3xs:
-          lerpDouble(
-            buttonHorizontalPadding3xs,
-            other.buttonHorizontalPadding3xs,
-            t,
-          )!,
+      buttonHorizontalPaddingMd: lerpDouble(
+        buttonHorizontalPaddingMd,
+        other.buttonHorizontalPaddingMd,
+        t,
+      )!,
+      buttonHorizontalPaddingSm: lerpDouble(
+        buttonHorizontalPaddingSm,
+        other.buttonHorizontalPaddingSm,
+        t,
+      )!,
+      buttonHorizontalPaddingXs: lerpDouble(
+        buttonHorizontalPaddingXs,
+        other.buttonHorizontalPaddingXs,
+        t,
+      )!,
+      buttonHorizontalPadding2xs: lerpDouble(
+        buttonHorizontalPadding2xs,
+        other.buttonHorizontalPadding2xs,
+        t,
+      )!,
+      buttonHorizontalPadding3xs: lerpDouble(
+        buttonHorizontalPadding3xs,
+        other.buttonHorizontalPadding3xs,
+        t,
+      )!,
       buttonGapMd: lerpDouble(buttonGapMd, other.buttonGapMd, t)!,
       buttonGapSm: lerpDouble(buttonGapSm, other.buttonGapSm, t)!,
       buttonGapXs: lerpDouble(buttonGapXs, other.buttonGapXs, t)!,
       buttonGap2xs: lerpDouble(buttonGap2xs, other.buttonGap2xs, t)!,
       buttonGap3xs: lerpDouble(buttonGap3xs, other.buttonGap3xs, t)!,
-      movieCardLoaderSize:
-          lerpDouble(movieCardLoaderSize, other.movieCardLoaderSize, t)!,
-      movieCardLoaderStrokeWidth:
-          lerpDouble(
-            movieCardLoaderStrokeWidth,
-            other.movieCardLoaderStrokeWidth,
-            t,
-          )!,
-      movieCardStatusBadgeSize:
-          lerpDouble(
-            movieCardStatusBadgeSize,
-            other.movieCardStatusBadgeSize,
-            t,
-          )!,
-      downloadTaskCoverWidth:
-          lerpDouble(downloadTaskCoverWidth, other.downloadTaskCoverWidth, t)!,
-      downloadTaskCardMinHeight:
-          lerpDouble(
-            downloadTaskCardMinHeight,
-            other.downloadTaskCardMinHeight,
-            t,
-          )!,
-      downloadTaskProgressHeight:
-          lerpDouble(
-            downloadTaskProgressHeight,
-            other.downloadTaskProgressHeight,
-            t,
-          )!,
-      mediaManagementRowHeight:
-          lerpDouble(
-            mediaManagementRowHeight,
-            other.mediaManagementRowHeight,
-            t,
-          )!,
-      subscriptionRowCoverWidth:
-          lerpDouble(
-            subscriptionRowCoverWidth,
-            other.subscriptionRowCoverWidth,
-            t,
-          )!,
-      subscriptionRowMinHeight:
-          lerpDouble(
-            subscriptionRowMinHeight,
-            other.subscriptionRowMinHeight,
-            t,
-          )!,
-      movieDetailHeroHeight:
-          lerpDouble(movieDetailHeroHeight, other.movieDetailHeroHeight, t)!,
-      movieDetailThinCoverWidth:
-          lerpDouble(
-            movieDetailThinCoverWidth,
-            other.movieDetailThinCoverWidth,
-            t,
-          )!,
-      movieDetailPlotThumbnailWidth:
-          lerpDouble(
-            movieDetailPlotThumbnailWidth,
-            other.movieDetailPlotThumbnailWidth,
-            t,
-          )!,
-      movieDetailPlotThumbnailHeight:
-          lerpDouble(
-            movieDetailPlotThumbnailHeight,
-            other.movieDetailPlotThumbnailHeight,
-            t,
-          )!,
-      movieDetailActorAvatarSize:
-          lerpDouble(
-            movieDetailActorAvatarSize,
-            other.movieDetailActorAvatarSize,
-            t,
-          )!,
-      movieDetailActorCardWidth:
-          lerpDouble(
-            movieDetailActorCardWidth,
-            other.movieDetailActorCardWidth,
-            t,
-          )!,
-      movieDetailSectionGap:
-          lerpDouble(movieDetailSectionGap, other.movieDetailSectionGap, t)!,
-      movieDetailSectionTitleGap:
-          lerpDouble(
-            movieDetailSectionTitleGap,
-            other.movieDetailSectionTitleGap,
-            t,
-          )!,
-      movieDetailPillHorizontalPadding:
-          lerpDouble(
-            movieDetailPillHorizontalPadding,
-            other.movieDetailPillHorizontalPadding,
-            t,
-          )!,
-      movieDetailPillVerticalPadding:
-          lerpDouble(
-            movieDetailPillVerticalPadding,
-            other.movieDetailPillVerticalPadding,
-            t,
-          )!,
-      movieDetailPillGap:
-          lerpDouble(movieDetailPillGap, other.movieDetailPillGap, t)!,
-      movieDetailBottomBarMinHeight:
-          lerpDouble(
-            movieDetailBottomBarMinHeight,
-            other.movieDetailBottomBarMinHeight,
-            t,
-          )!,
-      movieDetailMediaRowMinHeight:
-          lerpDouble(
-            movieDetailMediaRowMinHeight,
-            other.movieDetailMediaRowMinHeight,
-            t,
-          )!,
-      movieDetailMoreEntryHeight:
-          lerpDouble(
-            movieDetailMoreEntryHeight,
-            other.movieDetailMoreEntryHeight,
-            t,
-          )!,
-      movieDetailDialogWidth:
-          lerpDouble(movieDetailDialogWidth, other.movieDetailDialogWidth, t)!,
-      movieDetailDialogMinHeight:
-          lerpDouble(
-            movieDetailDialogMinHeight,
-            other.movieDetailDialogMinHeight,
-            t,
-          )!,
-      movieDetailPlotPreviewMaxWidth:
-          lerpDouble(
-            movieDetailPlotPreviewMaxWidth,
-            other.movieDetailPlotPreviewMaxWidth,
-            t,
-          )!,
-      movieDetailPlotPreviewMaxHeight:
-          lerpDouble(
-            movieDetailPlotPreviewMaxHeight,
-            other.movieDetailPlotPreviewMaxHeight,
-            t,
-          )!,
-      movieDetailPlotPreviewThumbnailWidth:
-          lerpDouble(
-            movieDetailPlotPreviewThumbnailWidth,
-            other.movieDetailPlotPreviewThumbnailWidth,
-            t,
-          )!,
-      movieDetailPlotPreviewThumbnailHeight:
-          lerpDouble(
-            movieDetailPlotPreviewThumbnailHeight,
-            other.movieDetailPlotPreviewThumbnailHeight,
-            t,
-          )!,
-      playlistBannerHeight:
-          lerpDouble(playlistBannerHeight, other.playlistBannerHeight, t)!,
-      playlistDialogWidth:
-          lerpDouble(playlistDialogWidth, other.playlistDialogWidth, t)!,
-      clipPlayerDialogWidth:
-          lerpDouble(clipPlayerDialogWidth, other.clipPlayerDialogWidth, t)!,
-      mobileBottomNavHeight:
-          lerpDouble(mobileBottomNavHeight, other.mobileBottomNavHeight, t)!,
-      mobileTopTabHeight:
-          lerpDouble(mobileTopTabHeight, other.mobileTopTabHeight, t)!,
-      mobileFilterEntryMaxLabelWidth:
-          lerpDouble(
-            mobileFilterEntryMaxLabelWidth,
-            other.mobileFilterEntryMaxLabelWidth,
-            t,
-          )!,
-      mobileSubpageLeadingWidth:
-          lerpDouble(
-            mobileSubpageLeadingWidth,
-            other.mobileSubpageLeadingWidth,
-            t,
-          )!,
-      mobileLatestMovieCardWidth:
-          lerpDouble(
-            mobileLatestMovieCardWidth,
-            other.mobileLatestMovieCardWidth,
-            t,
-          )!,
-      mobileFollowMovieCardHeight:
-          lerpDouble(
-            mobileFollowMovieCardHeight,
-            other.mobileFollowMovieCardHeight,
-            t,
-          )!,
-      mobileFollowMovieThinCoverWidth:
-          lerpDouble(
-            mobileFollowMovieThinCoverWidth,
-            other.mobileFollowMovieThinCoverWidth,
-            t,
-          )!,
-      mobileFollowMovieStillWidth:
-          lerpDouble(
-            mobileFollowMovieStillWidth,
-            other.mobileFollowMovieStillWidth,
-            t,
-          )!,
-      moviePlayerThumbnailAspectRatio:
-          lerpDouble(
-            moviePlayerThumbnailAspectRatio,
-            other.moviePlayerThumbnailAspectRatio,
-            t,
-          )!,
+      switchTrackWidth: lerpDouble(
+        switchTrackWidth,
+        other.switchTrackWidth,
+        t,
+      )!,
+      switchTrackHeight: lerpDouble(
+        switchTrackHeight,
+        other.switchTrackHeight,
+        t,
+      )!,
+      switchThumbDiameter: lerpDouble(
+        switchThumbDiameter,
+        other.switchThumbDiameter,
+        t,
+      )!,
+      movieCardLoaderSize: lerpDouble(
+        movieCardLoaderSize,
+        other.movieCardLoaderSize,
+        t,
+      )!,
+      movieCardLoaderStrokeWidth: lerpDouble(
+        movieCardLoaderStrokeWidth,
+        other.movieCardLoaderStrokeWidth,
+        t,
+      )!,
+      movieCardStatusBadgeSize: lerpDouble(
+        movieCardStatusBadgeSize,
+        other.movieCardStatusBadgeSize,
+        t,
+      )!,
+      subscriptionHeartHitSize: lerpDouble(
+        subscriptionHeartHitSize,
+        other.subscriptionHeartHitSize,
+        t,
+      )!,
+      downloadTaskCoverWidth: lerpDouble(
+        downloadTaskCoverWidth,
+        other.downloadTaskCoverWidth,
+        t,
+      )!,
+      downloadTaskCardMinHeight: lerpDouble(
+        downloadTaskCardMinHeight,
+        other.downloadTaskCardMinHeight,
+        t,
+      )!,
+      downloadTaskProgressHeight: lerpDouble(
+        downloadTaskProgressHeight,
+        other.downloadTaskProgressHeight,
+        t,
+      )!,
+      mediaManagementRowHeight: lerpDouble(
+        mediaManagementRowHeight,
+        other.mediaManagementRowHeight,
+        t,
+      )!,
+      subscriptionRowCoverWidth: lerpDouble(
+        subscriptionRowCoverWidth,
+        other.subscriptionRowCoverWidth,
+        t,
+      )!,
+      subscriptionRowMinHeight: lerpDouble(
+        subscriptionRowMinHeight,
+        other.subscriptionRowMinHeight,
+        t,
+      )!,
+      movieDetailHeroHeight: lerpDouble(
+        movieDetailHeroHeight,
+        other.movieDetailHeroHeight,
+        t,
+      )!,
+      movieDetailThinCoverWidth: lerpDouble(
+        movieDetailThinCoverWidth,
+        other.movieDetailThinCoverWidth,
+        t,
+      )!,
+      movieDetailPlotThumbnailWidth: lerpDouble(
+        movieDetailPlotThumbnailWidth,
+        other.movieDetailPlotThumbnailWidth,
+        t,
+      )!,
+      movieDetailPlotThumbnailHeight: lerpDouble(
+        movieDetailPlotThumbnailHeight,
+        other.movieDetailPlotThumbnailHeight,
+        t,
+      )!,
+      movieDetailActorAvatarSize: lerpDouble(
+        movieDetailActorAvatarSize,
+        other.movieDetailActorAvatarSize,
+        t,
+      )!,
+      movieDetailActorCardWidth: lerpDouble(
+        movieDetailActorCardWidth,
+        other.movieDetailActorCardWidth,
+        t,
+      )!,
+      movieDetailSectionGap: lerpDouble(
+        movieDetailSectionGap,
+        other.movieDetailSectionGap,
+        t,
+      )!,
+      movieDetailSectionTitleGap: lerpDouble(
+        movieDetailSectionTitleGap,
+        other.movieDetailSectionTitleGap,
+        t,
+      )!,
+      movieDetailPillHorizontalPadding: lerpDouble(
+        movieDetailPillHorizontalPadding,
+        other.movieDetailPillHorizontalPadding,
+        t,
+      )!,
+      movieDetailPillVerticalPadding: lerpDouble(
+        movieDetailPillVerticalPadding,
+        other.movieDetailPillVerticalPadding,
+        t,
+      )!,
+      movieDetailPillGap: lerpDouble(
+        movieDetailPillGap,
+        other.movieDetailPillGap,
+        t,
+      )!,
+      movieDetailBottomBarMinHeight: lerpDouble(
+        movieDetailBottomBarMinHeight,
+        other.movieDetailBottomBarMinHeight,
+        t,
+      )!,
+      movieDetailMediaRowMinHeight: lerpDouble(
+        movieDetailMediaRowMinHeight,
+        other.movieDetailMediaRowMinHeight,
+        t,
+      )!,
+      movieDetailMoreEntryHeight: lerpDouble(
+        movieDetailMoreEntryHeight,
+        other.movieDetailMoreEntryHeight,
+        t,
+      )!,
+      movieDetailDialogWidth: lerpDouble(
+        movieDetailDialogWidth,
+        other.movieDetailDialogWidth,
+        t,
+      )!,
+      movieDetailDialogMinHeight: lerpDouble(
+        movieDetailDialogMinHeight,
+        other.movieDetailDialogMinHeight,
+        t,
+      )!,
+      movieDetailPlotPreviewMaxWidth: lerpDouble(
+        movieDetailPlotPreviewMaxWidth,
+        other.movieDetailPlotPreviewMaxWidth,
+        t,
+      )!,
+      movieDetailPlotPreviewMaxHeight: lerpDouble(
+        movieDetailPlotPreviewMaxHeight,
+        other.movieDetailPlotPreviewMaxHeight,
+        t,
+      )!,
+      movieDetailPlotPreviewThumbnailWidth: lerpDouble(
+        movieDetailPlotPreviewThumbnailWidth,
+        other.movieDetailPlotPreviewThumbnailWidth,
+        t,
+      )!,
+      movieDetailPlotPreviewThumbnailHeight: lerpDouble(
+        movieDetailPlotPreviewThumbnailHeight,
+        other.movieDetailPlotPreviewThumbnailHeight,
+        t,
+      )!,
+      playlistBannerHeight: lerpDouble(
+        playlistBannerHeight,
+        other.playlistBannerHeight,
+        t,
+      )!,
+      playlistDialogWidth: lerpDouble(
+        playlistDialogWidth,
+        other.playlistDialogWidth,
+        t,
+      )!,
+      clipPlayerDialogWidth: lerpDouble(
+        clipPlayerDialogWidth,
+        other.clipPlayerDialogWidth,
+        t,
+      )!,
+      mobileBottomNavHeight: lerpDouble(
+        mobileBottomNavHeight,
+        other.mobileBottomNavHeight,
+        t,
+      )!,
+      mobileTopTabHeight: lerpDouble(
+        mobileTopTabHeight,
+        other.mobileTopTabHeight,
+        t,
+      )!,
+      mobileFilterEntryMaxLabelWidth: lerpDouble(
+        mobileFilterEntryMaxLabelWidth,
+        other.mobileFilterEntryMaxLabelWidth,
+        t,
+      )!,
+      mobileSubpageLeadingWidth: lerpDouble(
+        mobileSubpageLeadingWidth,
+        other.mobileSubpageLeadingWidth,
+        t,
+      )!,
+      mobileLatestMovieCardWidth: lerpDouble(
+        mobileLatestMovieCardWidth,
+        other.mobileLatestMovieCardWidth,
+        t,
+      )!,
+      mobileFollowMovieCardHeight: lerpDouble(
+        mobileFollowMovieCardHeight,
+        other.mobileFollowMovieCardHeight,
+        t,
+      )!,
+      mobileFollowMovieThinCoverWidth: lerpDouble(
+        mobileFollowMovieThinCoverWidth,
+        other.mobileFollowMovieThinCoverWidth,
+        t,
+      )!,
+      mobileFollowMovieStillWidth: lerpDouble(
+        mobileFollowMovieStillWidth,
+        other.mobileFollowMovieStillWidth,
+        t,
+      )!,
+      moviePlayerThumbnailAspectRatio: lerpDouble(
+        moviePlayerThumbnailAspectRatio,
+        other.moviePlayerThumbnailAspectRatio,
+        t,
+      )!,
     );
   }
 }

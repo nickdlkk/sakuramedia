@@ -8,16 +8,16 @@ part of 'indexer_connection_test_provider.dart';
 
 // GENERATED CODE - DO NOT MODIFY BY HAND
 // ignore_for_file: type=lint, type=warning
-/// 以组件 identity 隔离的 Jackett 测试状态，请求由调用方传入以支持草稿测试。
+/// 以组件 identity 隔离的 Torznab 测试状态，请求由调用方传入以支持草稿测试。
 
 @ProviderFor(IndexerConnectionTest)
 final indexerConnectionTestProvider = IndexerConnectionTestFamily._();
 
-/// 以组件 identity 隔离的 Jackett 测试状态，请求由调用方传入以支持草稿测试。
+/// 以组件 identity 隔离的 Torznab 测试状态，请求由调用方传入以支持草稿测试。
 final class IndexerConnectionTestProvider
     extends
         $NotifierProvider<IndexerConnectionTest, IndexerConnectionTestState> {
-  /// 以组件 identity 隔离的 Jackett 测试状态，请求由调用方传入以支持草稿测试。
+  /// 以组件 identity 隔离的 Torznab 测试状态，请求由调用方传入以支持草稿测试。
   IndexerConnectionTestProvider._({
     required IndexerConnectionTestFamily super.from,
     required Object super.argument,
@@ -63,9 +63,9 @@ final class IndexerConnectionTestProvider
 }
 
 String _$indexerConnectionTestHash() =>
-    r'd1522631294ce3040d43d14fa54e9b0badcb7f18';
+    r'b8ef20cec41af521cd91382b8dc5b7b1a7e19a5d';
 
-/// 以组件 identity 隔离的 Jackett 测试状态，请求由调用方传入以支持草稿测试。
+/// 以组件 identity 隔离的 Torznab 测试状态，请求由调用方传入以支持草稿测试。
 
 final class IndexerConnectionTestFamily extends $Family
     with
@@ -85,7 +85,7 @@ final class IndexerConnectionTestFamily extends $Family
         isAutoDispose: true,
       );
 
-  /// 以组件 identity 隔离的 Jackett 测试状态，请求由调用方传入以支持草稿测试。
+  /// 以组件 identity 隔离的 Torznab 测试状态，请求由调用方传入以支持草稿测试。
 
   IndexerConnectionTestProvider call(Object scope) =>
       IndexerConnectionTestProvider._(argument: scope, from: this);
@@ -94,7 +94,7 @@ final class IndexerConnectionTestFamily extends $Family
   String toString() => r'indexerConnectionTestProvider';
 }
 
-/// 以组件 identity 隔离的 Jackett 测试状态，请求由调用方传入以支持草稿测试。
+/// 以组件 identity 隔离的 Torznab 测试状态，请求由调用方传入以支持草稿测试。
 
 abstract class _$IndexerConnectionTest
     extends $Notifier<IndexerConnectionTestState> {

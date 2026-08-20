@@ -58,6 +58,37 @@ void main() {
     );
   });
 
+  testWidgets(
+    'movie summary grid allows desktop previews to raise column cap',
+    (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(2200, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: sakuraThemeData,
+          home: const Scaffold(
+            body: MovieSummaryGrid(
+              items: [],
+              isLoading: true,
+              placeholderCount: 24,
+              maxColumns: 10,
+            ),
+          ),
+        ),
+      );
+
+      final gridView = tester.widget<GridView>(
+        find.byKey(const Key('movie-summary-grid')),
+      );
+      final delegate =
+          gridView.gridDelegate as SliverGridDelegateWithFixedCrossAxisCount;
+      expect(delegate.crossAxisCount, 10);
+    },
+  );
+
   testWidgets('movie summary card uses component token aspect ratio', (
     WidgetTester tester,
   ) async {

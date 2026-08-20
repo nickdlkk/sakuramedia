@@ -68,8 +68,9 @@ class _MobileRankingsPageState extends ConsumerState<MobileRankingsPage>
         .obtain(
           key: mobileRankingsPageCacheKey(),
           resolveLinks: () {
-            final link =
-                ref.read(rankingSummaryProvider(_scope).notifier).cacheLink;
+            final link = ref
+                .read(rankingSummaryProvider(_scope).notifier)
+                .cacheLink;
             return link == null ? const [] : [link];
           },
         );
@@ -149,36 +150,36 @@ class _MobileRankingsPageState extends ConsumerState<MobileRankingsPage>
                   else
                     _buildHeader(context, summary),
                   SizedBox(height: context.appSpacing.md),
-                  if (summary.filters.errorMessage != null) ...[
+                  if (summary.filters.errorMessage != null &&
+                      summary.paged.filterUpdate.isIdle) ...[
                     _FilterErrorBanner(
                       message: summary.filters.errorMessage!,
-                      onRetry:
-                          () =>
-                              ref
-                                  .read(rankingSummaryProvider(_scope).notifier)
-                                  .reloadFiltersAndData(),
+                      onRetry: () => ref
+                          .read(rankingSummaryProvider(_scope).notifier)
+                          .reloadFiltersAndData(),
                     ),
                     SizedBox(height: context.appSpacing.md),
                   ],
                 ],
               ),
             ),
-            if (hasNoSources)
+            if (hasNoSources &&
+                !(summary.paged.filterUpdate.hasFailed &&
+                    summary.paged.items.isEmpty))
               const SliverToBoxAdapter(child: AppEmptyState(message: '暂无可用排行榜'))
-            else
+            else if (!summary.paged.filterUpdate.hasFailed ||
+                summary.paged.items.isNotEmpty)
               RankedMovieSummarySliver(
                 items: summary.paged.items,
-                isLoading:
-                    summary.filters.isLoading
-                        ? summary.paged.items.isEmpty
-                        : summary.isListLoading,
+                isLoading: summary.filters.isLoading
+                    ? summary.paged.items.isEmpty
+                    : summary.isListLoading,
                 errorMessage: summary.initialErrorMessage,
-                onMovieTap:
-                    (movie) => context.pushMobileMovieDetail(
-                      movieNumber: movie.movieNumber,
-                    ),
-                onMovieMenuRequest:
-                    (movie, globalPosition) => requestMovieCollectionMenu(
+                onMovieTap: (movie) => context.pushMobileMovieDetail(
+                  movieNumber: movie.movieNumber,
+                ),
+                onMovieMenuRequest: (movie, globalPosition) =>
+                    requestMovieCollectionMenu(
                       context,
                       movie.movieNumber,
                       globalPosition,
@@ -188,16 +189,15 @@ class _MobileRankingsPageState extends ConsumerState<MobileRankingsPage>
                         toggleSelect(movie.movieNumber);
                       },
                     ),
-                onMovieSubscriptionTap:
-                    (movie) => _toggleMovieSubscription(movie.movieNumber),
-                isMovieSubscriptionUpdating:
-                    (movie) =>
-                        summary.isSubscriptionUpdating(movie.movieNumber),
+                onMovieSubscriptionTap: (movie) =>
+                    _toggleMovieSubscription(movie.movieNumber),
+                isMovieSubscriptionUpdating: (movie) =>
+                    summary.isSubscriptionUpdating(movie.movieNumber),
                 emptyMessage: '暂无榜单数据',
                 selectionMode: selectionMode,
                 isMovieSelected: (movie) => isSelected(movie.movieNumber),
-                onMovieSelectedChanged:
-                    (movie, _) => toggleSelect(movie.movieNumber),
+                onMovieSelectedChanged: (movie, _) =>
+                    toggleSelect(movie.movieNumber),
               ),
             if (showFooter)
               SliverToBoxAdapter(
@@ -206,11 +206,9 @@ class _MobileRankingsPageState extends ConsumerState<MobileRankingsPage>
                   child: AppPagedLoadMoreFooter(
                     isLoading: summary.paged.isLoadingMore,
                     errorMessage: summary.paged.loadMoreErrorMessage,
-                    onRetry:
-                        () =>
-                            ref
-                                .read(rankingSummaryProvider(_scope).notifier)
-                                .loadMore(),
+                    onRetry: () => ref
+                        .read(rankingSummaryProvider(_scope).notifier)
+                        .loadMore(),
                   ),
                 ),
               ),
@@ -221,8 +219,9 @@ class _MobileRankingsPageState extends ConsumerState<MobileRankingsPage>
   }
 
   Future<void> _handleRefresh() async {
-    final error =
-        await ref.read(rankingSummaryProvider(_scope).notifier).refresh();
+    final error = await ref
+        .read(rankingSummaryProvider(_scope).notifier)
+        .refresh();
     if (error != null && mounted) {
       showToast('刷新失败');
     }
@@ -243,7 +242,12 @@ class _MobileRankingsPageState extends ConsumerState<MobileRankingsPage>
       filterTooltip: '筛选',
       filterIcon: Icons.leaderboard_outlined,
       filterLabel: boardLabel,
-      filterEnabled: !summary.filters.isLoading,
+      filterEnabled: summary.filters.sources.isNotEmpty,
+      filterUpdate: summary.paged.filterUpdate,
+      hasPreviousFilterItems: summary.paged.items.isNotEmpty,
+      onRetryFilter: () => unawaited(
+        ref.read(rankingSummaryProvider(_scope).notifier).retryFilter(),
+      ),
       onFilterTap: () => _openFilterDrawer(initialAnchor: null),
       informationSlots: [
         AppListHeaderInfo(
@@ -265,7 +269,14 @@ class _MobileRankingsPageState extends ConsumerState<MobileRankingsPage>
       context,
       scope: _scope,
       initialAnchor: initialAnchor,
+      onFilterChanged: _scrollToTop,
     );
+  }
+
+  void _scrollToTop() {
+    if (_scrollController.hasClients) {
+      _scrollController.jumpTo(0);
+    }
   }
 }
 

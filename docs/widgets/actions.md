@@ -1,6 +1,6 @@
 # actions —— 按钮系
 
-四件套,**别再自己 wrap `ElevatedButton`/`TextButton`/`IconButton`**。选一个填就完事。
+按钮四件套 + 启停开关,**别再自己 wrap `ElevatedButton`/`TextButton`/`IconButton`/`Switch`**。选一个填就完事。
 
 ## AppButton
 - **路径**: `lib/widgets/base/actions/app_button.dart`
@@ -32,6 +32,14 @@
 - **required**: `icon` · `onTap`
 - **何时用**: `MoviePlayerPlaybackInfo` / 详情页正文中间那种"删除 / 复制"极小图标。
 - **和 `AppIconButton` 的边界**: 前者有 hover 背景 / tooltip / size 系统;这个更轻,只在**紧凑排版**中用。别当默认 IconButton 用。
+
+## AppSwitch
+- **路径**: `lib/widgets/base/actions/app_switch.dart`
+- **用途**: 紧凑启停开关(桌面 36×20 / 移动 44×24),开启态走品牌色,禁用态置灰。
+- **required**: `value` · `onChanged`
+- **关键可选**: `onChanged` 传 `null` 即禁用。
+- **何时用**: 设置 / 管理列表行尾的"启用 / 停用"。
+- **何时不用**: 需要选中态按钮 → `AppButton(isSelected:)`;状态只读展示 → `AppBadge`。
 
 ---
 

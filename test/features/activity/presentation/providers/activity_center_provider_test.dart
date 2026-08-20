@@ -143,9 +143,16 @@ void main() {
       addTearDown(controller.dispose);
 
       await controller.initialize();
-      await controller.applyTaskFilter(
+      final update = controller.applyTaskFilter(
         controller.taskFilter.copyWith(state: 'failed'),
       );
+
+      expect(controller.taskFilter.state, 'failed');
+      expect(controller.taskFilterUpdateLoading, isTrue);
+      expect(controller.taskRuns.single.id, 201);
+      expect(bundle.adapter.hitCount('GET', '/system/task-runs'), 0);
+
+      await update;
 
       expect(controller.isRefreshingTaskHistory, isFalse);
       expect(controller.activeTaskRuns.single.id, 88);
@@ -168,7 +175,18 @@ void main() {
     () async {
       _enqueueInitialActivityState(
         bundle,
-        jobs: <Map<String, dynamic>>[_jobJson(taskKey: 'ranking_sync')],
+        jobs: <Map<String, dynamic>>[
+          _jobJson(
+            taskKey: 'example_plugin_sync',
+            paramsSchema: <String, dynamic>{
+              'type': 'object',
+              'properties': <String, dynamic>{
+                'movie_number': <String, dynamic>{'type': 'string'},
+              },
+              'required': <String>['movie_number'],
+            },
+          ),
+        ],
       );
       bundle.adapter.enqueueSse(
         method: 'GET',
@@ -185,7 +203,7 @@ void main() {
       await controller.initialize();
       await Future<void>.delayed(const Duration(milliseconds: 20));
 
-      expect(controller.jobs.single.taskKey, 'ranking_sync');
+      expect(controller.jobs.single.taskKey, 'example_plugin_sync');
       expect(controller.jobErrorMessage, isNull);
     },
   );
@@ -246,7 +264,18 @@ void main() {
     () async {
       _enqueueInitialActivityState(
         bundle,
-        jobs: <Map<String, dynamic>>[_jobJson(taskKey: 'ranking_sync')],
+        jobs: <Map<String, dynamic>>[
+          _jobJson(
+            taskKey: 'example_plugin_sync',
+            paramsSchema: <String, dynamic>{
+              'type': 'object',
+              'properties': <String, dynamic>{
+                'movie_number': <String, dynamic>{'type': 'string'},
+              },
+              'required': <String>['movie_number'],
+            },
+          ),
+        ],
       );
       bundle.adapter.enqueueSse(
         method: 'GET',
@@ -256,10 +285,10 @@ void main() {
       );
       bundle.adapter.enqueueJson(
         method: 'POST',
-        path: '/system/jobs/ranking_sync/run',
+        path: '/system/jobs/example_plugin_sync/run',
         body: <String, dynamic>{
           'task_run_id': 13,
-          'task_key': 'ranking_sync',
+          'task_key': 'example_plugin_sync',
           'state': 'pending',
         },
       );
@@ -291,12 +320,25 @@ void main() {
       addTearDown(controller.dispose);
 
       await controller.initialize();
-      final response = await controller.triggerJob('ranking_sync');
+      final response = await controller.triggerJob(
+        'example_plugin_sync',
+        params: <String, dynamic>{'movie_number': 'SSIS-123'},
+      );
 
       expect(response.taskRunId, 13);
       expect(controller.activeTab, ActivityTab.tasks);
       expect(controller.highlightedTaskRunId, 13);
       expect(controller.activeTaskRuns.single.id, 13);
+      expect(
+        bundle.adapter.requests
+            .where(
+              (request) =>
+                  request.path == '/system/jobs/example_plugin_sync/run',
+            )
+            .single
+            .body,
+        <String, dynamic>{'movie_number': 'SSIS-123'},
+      );
     },
   );
 
@@ -304,7 +346,7 @@ void main() {
     _enqueueInitialActivityState(
       bundle,
       activeTasks: <Map<String, dynamic>>[_runningTaskJson()],
-      jobs: <Map<String, dynamic>>[_jobJson(taskKey: 'ranking_sync')],
+      jobs: <Map<String, dynamic>>[_jobJson(taskKey: 'example_plugin_sync')],
     );
     bundle.adapter.enqueueSse(
       method: 'GET',
@@ -314,7 +356,7 @@ void main() {
     );
     bundle.adapter.enqueueJson(
       method: 'POST',
-      path: '/system/jobs/ranking_sync/run',
+      path: '/system/jobs/example_plugin_sync/run',
       statusCode: 409,
       body: <String, dynamic>{
         'error': <String, dynamic>{
@@ -334,13 +376,13 @@ void main() {
 
     await controller.initialize();
     await expectLater(
-      controller.triggerJob('ranking_sync'),
+      controller.triggerJob('example_plugin_sync'),
       throwsA(isA<Exception>()),
     );
 
     expect(controller.activeTab, ActivityTab.tasks);
     expect(controller.highlightedTaskRunId, 88);
-    expect(controller.isTriggeringJob('ranking_sync'), isFalse);
+    expect(controller.isTriggeringJob('example_plugin_sync'), isFalse);
   });
 
   test('heartbeat keeps live state without redundant notifications', () async {
@@ -424,7 +466,7 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 20));
       expect(controller.connectionState, ActivityConnectionState.reconnecting);
 
-    await Future<void>.delayed(const Duration(milliseconds: 2200));
+      await Future<void>.delayed(const Duration(milliseconds: 2200));
       expect(streamClient.connectCount, 2);
       expect(controller.connectionState, ActivityConnectionState.live);
     },
@@ -523,6 +565,7 @@ class _ActivityCenterHarness {
   String? get jobErrorMessage => _state.jobErrorMessage;
   String? get initialErrorMessage => _state.initialErrorMessage;
   bool get isRefreshingTaskHistory => _state.isRefreshingTaskHistory;
+  bool get taskFilterUpdateLoading => _state.taskFilterUpdate.isLoading;
   bool get hasMoreTasks => _state.hasMoreTasks;
   String? get taskRefreshErrorMessage => _state.taskRefreshErrorMessage;
   ActivityTaskFilterState get taskFilter => _state.taskFilter;
@@ -533,8 +576,10 @@ class _ActivityCenterHarness {
   Future<void> applyTaskFilter(ActivityTaskFilterState next) =>
       _notifier.applyTaskFilter(next);
   Future<void> loadMoreTasks() => _notifier.loadMoreTasks();
-  Future<ManualJobTriggerResponseDto> triggerJob(String taskKey) =>
-      _notifier.triggerJob(taskKey);
+  Future<ManualJobTriggerResponseDto> triggerJob(
+    String taskKey, {
+    Map<String, dynamic>? params,
+  }) => _notifier.triggerJob(taskKey, params: params);
 }
 
 void _enqueueInitialActivityState(
@@ -658,6 +703,7 @@ Map<String, dynamic> _failedTaskJson({required int id}) {
 Map<String, dynamic> _jobJson({
   required String taskKey,
   bool manualTriggerAllowed = true,
+  Map<String, dynamic>? paramsSchema,
   Map<String, dynamic>? lastTaskRun,
 }) {
   return <String, dynamic>{
@@ -668,6 +714,7 @@ Map<String, dynamic> _jobJson({
     'cron_setting': '${taskKey}_cron',
     'cron_expr': '0 2 * * *',
     'manual_trigger_allowed': manualTriggerAllowed,
+    'params_schema': paramsSchema,
     'last_task_run': lastTaskRun,
   };
 }

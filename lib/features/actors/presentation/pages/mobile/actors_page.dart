@@ -10,6 +10,7 @@ import 'package:sakuramedia/features/actors/presentation/controllers/listing/act
 import 'package:sakuramedia/features/actors/presentation/pages/mobile/actor_filter_drawer.dart';
 import 'package:sakuramedia/features/actors/presentation/providers/actor_summary_provider.dart';
 import 'package:sakuramedia/features/actors/presentation/providers/actor_summary_scope.dart';
+import 'package:sakuramedia/features/shared/presentation/providers/paged_async_notifier.dart';
 import 'package:sakuramedia/features/subscriptions/presentation/subscription_feedback.dart';
 import 'package:sakuramedia/routes/mobile_routes.dart';
 import 'package:sakuramedia/theme.dart';
@@ -40,8 +41,9 @@ class _MobileActorsPageState extends ConsumerState<MobileActorsPage> {
         .obtain(
           key: mobileActorsPageCacheKey(),
           resolveLinks: () {
-            final link =
-                ref.read(actorSummaryProvider(_scope).notifier).cacheLink;
+            final link = ref
+                .read(actorSummaryProvider(_scope).notifier)
+                .cacheLink;
             return link == null ? const [] : [link];
           },
         );
@@ -101,8 +103,9 @@ class _MobileActorsPageState extends ConsumerState<MobileActorsPage> {
     final filter = summary?.filter ?? ActorFilterState.initial;
     final items = paged?.items ?? const [];
     final isInitialLoading = actorsAsync.isLoading && summary == null;
-    final initialErrorMessage =
-        actorsAsync.hasError && summary == null ? '女优列表加载失败，请稍后重试' : null;
+    final initialErrorMessage = actorsAsync.hasError && summary == null
+        ? '女优列表加载失败，请稍后重试'
+        : null;
     final showFooter =
         items.isNotEmpty &&
         (paged!.isLoadingMore || paged.loadMoreErrorMessage != null);
@@ -127,6 +130,14 @@ class _MobileActorsPageState extends ConsumerState<MobileActorsPage> {
                       filterTooltip: '筛选',
                       filterLabel: filter.triggerLabel,
                       onFilterTap: _openFilterDrawer,
+                      filterUpdate:
+                          paged?.filterUpdate ?? const FilterUpdateState.idle(),
+                      hasPreviousFilterItems: items.isNotEmpty,
+                      onRetryFilter: () => unawaited(
+                        ref
+                            .read(actorSummaryProvider(_scope).notifier)
+                            .retryFilter(),
+                      ),
                       informationSlots: [
                         AppListHeaderInfo(
                           key: const Key('mobile-actors-total'),
@@ -138,22 +149,22 @@ class _MobileActorsPageState extends ConsumerState<MobileActorsPage> {
                   ],
                 ),
               ),
-              ActorSummarySliver(
-                items: items,
-                isLoading: isInitialLoading,
-                errorMessage: initialErrorMessage,
-                onActorTap:
-                    (actor) => MobileActorDetailRouteData(
-                      actorId: actor.id,
-                    ).push(context),
-                onActorSubscriptionTap:
-                    (actor) => _toggleActorSubscription(actor.id),
-                isActorSubscriptionUpdating:
-                    (actor) =>
-                        summary?.isSubscriptionUpdating(actor.id) ?? false,
-                emptyMessage:
-                    filter.isDefault ? '暂无女优，去搜索看看吧' : '当前筛选条件下暂无匹配女优',
-              ),
+              if (!(paged?.filterUpdate.hasFailed ?? false) || items.isNotEmpty)
+                ActorSummarySliver(
+                  items: items,
+                  isLoading: isInitialLoading,
+                  errorMessage: initialErrorMessage,
+                  onActorTap: (actor) => MobileActorDetailRouteData(
+                    actorId: actor.id,
+                  ).push(context),
+                  onActorSubscriptionTap: (actor) =>
+                      _toggleActorSubscription(actor.id),
+                  isActorSubscriptionUpdating: (actor) =>
+                      summary?.isSubscriptionUpdating(actor.id) ?? false,
+                  emptyMessage: filter.isDefault
+                      ? '暂无女优，去搜索看看吧'
+                      : '当前筛选条件下暂无匹配女优',
+                ),
               if (showFooter)
                 SliverToBoxAdapter(
                   child: Padding(
@@ -161,11 +172,9 @@ class _MobileActorsPageState extends ConsumerState<MobileActorsPage> {
                     child: AppPagedLoadMoreFooter(
                       isLoading: paged.isLoadingMore,
                       errorMessage: paged.loadMoreErrorMessage,
-                      onRetry:
-                          () =>
-                              ref
-                                  .read(actorSummaryProvider(_scope).notifier)
-                                  .loadMore(),
+                      onRetry: () => ref
+                          .read(actorSummaryProvider(_scope).notifier)
+                          .loadMore(),
                     ),
                   ),
                 ),
@@ -177,8 +186,9 @@ class _MobileActorsPageState extends ConsumerState<MobileActorsPage> {
   }
 
   Future<void> _handleRefresh() async {
-    final error =
-        await ref.read(actorSummaryProvider(_scope).notifier).refresh();
+    final error = await ref
+        .read(actorSummaryProvider(_scope).notifier)
+        .refresh();
     if (error != null && mounted) {
       showToast('刷新失败');
     }

@@ -1,9 +1,8 @@
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
 import 'package:sakuramedia/features/image_search/presentation/image_search_file_system_stub.dart'
     if (dart.library.io) 'package:sakuramedia/features/image_search/presentation/image_search_file_system_io.dart'
     as file_system;
+import 'package:sakuramedia/features/shared/presentation/file_picker_with_bytes.dart';
 
 export 'package:sakuramedia/core/format/image_file_extension.dart'
     show guessImageFileExtension;
@@ -54,41 +53,24 @@ Future<ImageSearchPickedFile?> pickImageSearchFile() async {
 
   try {
     final initialDirectory = await resolveImageSearchInitialDirectory();
-    final result = await FilePicker.platform.pickFiles(
-      initialDirectory: initialDirectory,
-      type: FileType.custom,
+    final picked = await pickFileWithBytes(
       allowedExtensions: const <String>['jpg', 'jpeg', 'png', 'gif', 'webp'],
-      allowMultiple: false,
-      withData: true,
+      initialDirectory: initialDirectory,
+      readPathFallback: file_system.readFileBytes,
+      unreadableMessage: '无法读取所选图片，请换一张再试',
+      pickerUnavailableMessage: '图片选择器尚未加载，请完整重启应用后再试',
+      openFailureMessage: '打开图片选择器失败，请稍后再试',
     );
-    if (result == null || result.files.isEmpty) {
+    if (picked == null) {
       return null;
     }
-
-    final file = result.files.single;
-    Uint8List? bytes = file.bytes;
-    if (bytes == null && file.path != null) {
-      bytes = await file_system.readFileBytes(file.path!);
-    }
-    if (bytes == null || bytes.isEmpty) {
-      throw const ImageSearchFilePickerException('无法读取所选图片，请换一张再试');
-    }
-
     return ImageSearchPickedFile(
-      bytes: bytes,
-      fileName: file.name,
-      mimeType: guessImageMimeType(file.name),
+      bytes: picked.bytes,
+      fileName: picked.fileName,
+      mimeType: guessImageMimeType(picked.fileName),
     );
-  } on MissingPluginException catch (error, stackTrace) {
-    debugPrint('Image search file picker plugin is unavailable: $error');
-    debugPrintStack(stackTrace: stackTrace);
-    throw const ImageSearchFilePickerException('图片选择器尚未加载，请完整重启应用后再试');
-  } on PlatformException catch (error, stackTrace) {
-    debugPrint(
-      'Image search file picker failed: ${error.message ?? error.code}',
-    );
-    debugPrintStack(stackTrace: stackTrace);
-    throw ImageSearchFilePickerException(error.message ?? '打开图片选择器失败，请稍后再试');
+  } on FilePickerWithBytesException catch (error) {
+    throw ImageSearchFilePickerException(error.message);
   }
 }
 
@@ -104,39 +86,23 @@ Future<ImageSearchPickedFile?> pickMobileImageSearchFile() async {
   }
 
   try {
-    final result = await FilePicker.platform.pickFiles(
+    final picked = await pickFileWithBytes(
       type: FileType.image,
-      allowMultiple: false,
-      allowCompression: false,
-      withData: true,
+      readPathFallback: file_system.readFileBytes,
+      unreadableMessage: '无法读取所选图片，请换一张再试',
+      pickerUnavailableMessage: '图片选择器尚未加载，请完整重启应用后再试',
+      openFailureMessage: '打开图片选择器失败，请稍后再试',
     );
-    if (result == null || result.files.isEmpty) {
+    if (picked == null) {
       return null;
     }
-
-    final file = result.files.single;
-    Uint8List? bytes = file.bytes;
-    if (bytes == null && file.path != null) {
-      bytes = await file_system.readFileBytes(file.path!);
-    }
-    if (bytes == null || bytes.isEmpty) {
-      throw const ImageSearchFilePickerException('无法读取所选图片，请换一张再试');
-    }
     return ImageSearchPickedFile(
-      bytes: bytes,
-      fileName: file.name,
-      mimeType: guessImageMimeType(file.name),
+      bytes: picked.bytes,
+      fileName: picked.fileName,
+      mimeType: guessImageMimeType(picked.fileName),
     );
-  } on MissingPluginException catch (error, stackTrace) {
-    debugPrint('Mobile image file picker plugin is unavailable: $error');
-    debugPrintStack(stackTrace: stackTrace);
-    throw const ImageSearchFilePickerException('图片选择器尚未加载，请完整重启应用后再试');
-  } on PlatformException catch (error, stackTrace) {
-    debugPrint(
-      'Mobile image file picker failed: ${error.message ?? error.code}',
-    );
-    debugPrintStack(stackTrace: stackTrace);
-    throw ImageSearchFilePickerException(error.message ?? '打开图片选择器失败，请稍后再试');
+  } on FilePickerWithBytesException catch (error) {
+    throw ImageSearchFilePickerException(error.message);
   }
 }
 

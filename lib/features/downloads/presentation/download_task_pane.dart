@@ -12,21 +12,26 @@ import 'package:sakuramedia/core/network/api_error_message.dart';
 import 'package:sakuramedia/core/network/api_exception.dart';
 import 'package:sakuramedia/features/configuration/data/dto/download_client_dto.dart';
 import 'package:sakuramedia/features/downloads/data/download_request_dto.dart';
+import 'package:sakuramedia/features/downloads/data/download_task_file_dto.dart';
 import 'package:sakuramedia/features/downloads/presentation/download_task_filter_state.dart';
 import 'package:sakuramedia/features/downloads/presentation/providers/download_task_center_provider.dart';
 import 'package:sakuramedia/features/downloads/presentation/providers/download_task_center_state.dart';
+import 'package:sakuramedia/features/downloads/presentation/providers/downloads_api_provider.dart';
 import 'package:sakuramedia/routes/app_navigation_actions.dart';
 import 'package:sakuramedia/routes/app_route_paths.dart';
 import 'package:sakuramedia/theme.dart';
 import 'package:sakuramedia/widgets/base/actions/app_icon_button.dart';
 import 'package:sakuramedia/widgets/base/feedback/app_confirm_dialog.dart';
 import 'package:sakuramedia/widgets/base/feedback/app_empty_state.dart';
+import 'package:sakuramedia/widgets/base/feedback/app_filter_update_bar.dart';
+import 'package:sakuramedia/widgets/base/feedback/app_inline_spinner.dart';
 import 'package:sakuramedia/widgets/base/forms/app_select_field.dart';
 import 'package:sakuramedia/widgets/base/forms/app_text_field.dart';
 import 'package:sakuramedia/widgets/base/layout/cards/app_badge.dart';
 import 'package:sakuramedia/widgets/base/layout/cards/app_left_cover_card.dart';
 import 'package:sakuramedia/widgets/base/layout/scrolling/app_paged_load_more_footer.dart';
 import 'package:sakuramedia/widgets/base/media/images/masked_image.dart';
+import 'package:sakuramedia/widgets/base/overlays/app_adaptive_modal.dart';
 
 /// 构建「下载任务」Tab 的 sliver 列表。
 ///
@@ -69,21 +74,25 @@ List<Widget> buildDownloadTaskSlivers({
         child: _DownloadFilterBar(state: state),
       ),
     ),
-    // 筛选切换等 reload 场景下顶部一条薄进度条作为轻量加载反馈。
-    // 保留筛选栏 + 速度栏 + 旧 items 不动，避免整页 spinner 让筛选栏消失/重建
-    // 造成的视觉闪烁与 AppSelectField 内部动画/焦点丢失。
-    if (state.isReloading)
+    if (!state.paged.filterUpdate.isIdle)
       SliverToBoxAdapter(
         key: const Key('download-tasks-reloading-indicator'),
         child: Padding(
           padding: EdgeInsets.only(bottom: context.appSpacing.md),
-          child: const LinearProgressIndicator(minHeight: 2),
+          child: AppFilterUpdateBar(
+            state: state.paged.filterUpdate,
+            hasPreviousItems: state.paged.items.isNotEmpty,
+            onRetry: () => unawaited(
+              ref.read(downloadTaskCenterProvider.notifier).retryFilter(),
+            ),
+          ),
         ),
       ),
   ];
 
   final items = state.paged.items;
   if (items.isEmpty) {
+    if (state.paged.filterUpdate.hasFailed) return slivers;
     // 有筛选时给一个可以「清除筛选」的重试入口，避免用户困惑「明明有任务却看不到」。
     final hasFilter = !state.filter.isDefault;
     slivers.add(
@@ -91,14 +100,13 @@ List<Widget> buildDownloadTaskSlivers({
         child: AppEmptyState(
           message: hasFilter ? '没有符合筛选条件的下载任务' : '暂无下载任务',
           icon: hasFilter ? Icons.search_off_rounded : Icons.download_outlined,
-          onRetry:
-              hasFilter
-                  ? () => unawaited(
-                    ref
-                        .read(downloadTaskCenterProvider.notifier)
-                        .applyFilter(DownloadTaskFilterState.initial),
-                  )
-                  : null,
+          onRetry: hasFilter
+              ? () => unawaited(
+                  ref
+                      .read(downloadTaskCenterProvider.notifier)
+                      .applyFilter(DownloadTaskFilterState.initial),
+                )
+              : null,
           retryLabel: '清除筛选',
           retryKey: const Key('download-empty-clear-filter'),
         ),
@@ -129,10 +137,9 @@ List<Widget> buildDownloadTaskSlivers({
             AppPagedLoadMoreFooter(
               isLoading: state.paged.isLoadingMore,
               errorMessage: state.paged.loadMoreErrorMessage,
-              onRetry:
-                  () => unawaited(
-                    ref.read(downloadTaskCenterProvider.notifier).loadMore(),
-                  ),
+              onRetry: () => unawaited(
+                ref.read(downloadTaskCenterProvider.notifier).loadMore(),
+              ),
             ),
             SizedBox(height: context.appSpacing.xl),
           ],
@@ -171,9 +178,8 @@ class _DownloadClientSpeedBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.appColors;
-    final transfers =
-        state.clientTransfers.values.toList()
-          ..sort((a, b) => a.clientId.compareTo(b.clientId));
+    final transfers = state.clientTransfers.values.toList()
+      ..sort((a, b) => a.clientId.compareTo(b.clientId));
     final hasAnyLiveData = transfers.isNotEmpty;
     final totalDown = state.totalDownloadSpeedBytes;
     final totalUp = state.totalUploadSpeedBytes;
@@ -339,13 +345,12 @@ class _DownloadTaskCard extends ConsumerWidget {
       cover: _DownloadTaskCover(
         coverUrl: coverUrl,
         movieNumber: hasMovieNumber ? movieNumber : null,
-        onTap:
-            hasMovieNumber
-                ? () => context.pushDesktopMovieDetail(
-                  movieNumber: movieNumber!,
-                  fallbackPath: desktopActivityPath,
-                )
-                : null,
+        onTap: hasMovieNumber
+            ? () => context.pushDesktopMovieDetail(
+                movieNumber: movieNumber!,
+                fallbackPath: desktopActivityPath,
+              )
+            : null,
       ),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -463,22 +468,42 @@ class _DownloadTaskCard extends ConsumerWidget {
                   ],
                 ),
               ),
+              // 文件列表：按需拉取（qB / 115 通用），不进 SSE 快照保持列表轻量。
+              SizedBox(width: context.appSpacing.sm),
+              AppIconButton(
+                key: Key('download-task-files-${task.id}'),
+                icon: const Icon(Icons.folder_open_outlined),
+                tooltip: '文件列表',
+                semanticLabel: '文件列表',
+                onPressed: () => showAppAdaptiveModal(
+                  context: context,
+                  modalKey: Key('download-task-files-dialog-${task.id}'),
+                  desktopWidth: 560,
+                  desktopHeight: 480,
+                  builder: (_) => _DownloadTaskFilesDialog(
+                    taskId: task.id,
+                    taskName: displayTitle,
+                  ),
+                ),
+              ),
               // 已完成不显示暂停/恢复；做种态可以暂停（停止上传）。
               if (!isCloud115 && downloadState == 'paused')
                 AppIconButton(
                   key: Key('download-task-resume-${task.id}'),
                   icon: const Icon(Icons.play_arrow_rounded),
                   tooltip: '恢复',
-                  onPressed:
-                      isPending ? null : () => _resume(context, ref, task.id),
+                  onPressed: isPending
+                      ? null
+                      : () => _resume(context, ref, task.id),
                 )
               else if (!isCloud115 && downloadState != 'completed')
                 AppIconButton(
                   key: Key('download-task-pause-${task.id}'),
                   icon: const Icon(Icons.pause_rounded),
                   tooltip: '暂停',
-                  onPressed:
-                      isPending ? null : () => _pause(context, ref, task.id),
+                  onPressed: isPending
+                      ? null
+                      : () => _pause(context, ref, task.id),
                 ),
               if (!isCloud115 && downloadState != 'completed')
                 SizedBox(width: context.appSpacing.xs),
@@ -486,15 +511,14 @@ class _DownloadTaskCard extends ConsumerWidget {
                 key: Key('download-task-delete-${task.id}'),
                 icon: const Icon(Icons.delete_outline_rounded),
                 tooltip: isImportRunning ? '任务正在导入，无法删除' : '删除',
-                onPressed:
-                    (isPending || isImportRunning)
-                        ? null
-                        : () => _confirmDelete(
-                          context,
-                          ref,
-                          task,
-                          isCloud115: isCloud115,
-                        ),
+                onPressed: (isPending || isImportRunning)
+                    ? null
+                    : () => _confirmDelete(
+                        context,
+                        ref,
+                        task,
+                        isCloud115: isCloud115,
+                      ),
               ),
             ],
           ),
@@ -741,6 +765,7 @@ String _labelForDownloadState(String state) {
     'paused' => '已暂停',
     'failed' => '失败',
     'stalled' => '等待资源',
+    'stalled_dead' => '死种',
     'checking' => '校验中',
     'queued' => '排队中',
     'abandoned' => '已放弃跟踪',
@@ -757,6 +782,8 @@ AppBadgeTone _toneForDownloadState(String state) {
     'paused' => AppBadgeTone.neutral,
     'failed' => AppBadgeTone.error,
     'stalled' => AppBadgeTone.warning,
+    // 死种：qB 侧 stalledDL 躺太久被本地判死，比"等待资源"更严重，用 error 提示。
+    'stalled_dead' => AppBadgeTone.error,
     'checking' => AppBadgeTone.info,
     'queued' => AppBadgeTone.neutral,
     'abandoned' => AppBadgeTone.warning,
@@ -808,8 +835,6 @@ class _DownloadFilterBar extends HookConsumerWidget {
       weight: AppTextWeight.regular,
       tone: AppTextTone.tertiary,
     );
-    // reload 时也 disable，防止用户在加载中再点击导致排队多次请求。
-    final isBusy = state.isReloading;
     final clientOptions = state.clientOptions;
 
     Future<void> submitSearch(String value) async {
@@ -831,7 +856,7 @@ class _DownloadFilterBar extends HookConsumerWidget {
             hintText: '按番号搜索',
             textInputAction: TextInputAction.search,
             onFieldSubmitted: submitSearch,
-            enabled: !isBusy,
+            enabled: true,
           ),
         ),
         SizedBox(
@@ -849,17 +874,13 @@ class _DownloadFilterBar extends HookConsumerWidget {
                   ),
                 )
                 .toList(growable: false),
-            onChanged:
-                isBusy
-                    ? null
-                    : (value) => ref
-                        .read(downloadTaskCenterProvider.notifier)
-                        .applyFilter(
-                          state.filter.copyWith(
-                            stateFilter:
-                                value ?? DownloadTaskStateFilter.downloading,
-                          ),
-                        ),
+            onChanged: (value) => ref
+                .read(downloadTaskCenterProvider.notifier)
+                .applyFilter(
+                  state.filter.copyWith(
+                    stateFilter: value ?? DownloadTaskStateFilter.downloading,
+                  ),
+                ),
           ),
         ),
         if (clientOptions.length >= 2)
@@ -881,15 +902,211 @@ class _DownloadFilterBar extends HookConsumerWidget {
                     ),
                   ),
               ],
-              onChanged:
-                  isBusy
-                      ? null
-                      : (value) => ref
-                          .read(downloadTaskCenterProvider.notifier)
-                          .applyFilter(state.filter.copyWith(clientId: value)),
+              onChanged: (value) => ref
+                  .read(downloadTaskCenterProvider.notifier)
+                  .applyFilter(state.filter.copyWith(clientId: value)),
             ),
           ),
       ],
+    );
+  }
+}
+
+/// 下载任务文件列表弹窗。
+///
+/// 打开时按任务 id 实时拉取（qB / 115 各自从远端取），失败可原地重试；
+/// 纯查看型展示，不参与任何导入/删除逻辑。
+class _DownloadTaskFilesDialog extends ConsumerStatefulWidget {
+  const _DownloadTaskFilesDialog({
+    required this.taskId,
+    required this.taskName,
+  });
+
+  final int taskId;
+  final String taskName;
+
+  @override
+  ConsumerState<_DownloadTaskFilesDialog> createState() =>
+      _DownloadTaskFilesDialogState();
+}
+
+class _DownloadTaskFilesDialogState
+    extends ConsumerState<_DownloadTaskFilesDialog> {
+  late Future<DownloadTaskFilesDto> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = _fetch();
+  }
+
+  Future<DownloadTaskFilesDto> _fetch() =>
+      ref.read(downloadsApiProvider).getTaskFiles(widget.taskId);
+
+  void _reload() {
+    setState(() {
+      _future = _fetch();
+    });
+  }
+
+  bool _isSourceUnavailable(Object error) {
+    return error is ApiException &&
+        error.error?.code == 'cloud115_download_task_source_unavailable';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final spacing = context.appSpacing;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '文件列表',
+          style: resolveAppTextStyle(
+            context,
+            size: AppTextSize.s16,
+            weight: AppTextWeight.medium,
+            tone: AppTextTone.primary,
+          ),
+        ),
+        SizedBox(height: spacing.xs),
+        Text(
+          widget.taskName,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: resolveAppTextStyle(
+            context,
+            size: AppTextSize.s12,
+            weight: AppTextWeight.regular,
+            tone: AppTextTone.muted,
+          ),
+        ),
+        SizedBox(height: spacing.md),
+        Expanded(
+          child: FutureBuilder<DownloadTaskFilesDto>(
+            future: _future,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: AppInlineSpinner());
+              }
+              if (snapshot.hasError) {
+                final sourceUnavailable = _isSourceUnavailable(snapshot.error!);
+                return AppEmptyState(
+                  key: const Key('download-task-files-error'),
+                  icon: Icons.folder_off_outlined,
+                  title: sourceUnavailable ? '源目录已不存在' : '读取文件列表失败',
+                  message: apiErrorMessage(
+                    snapshot.error!,
+                    fallback: sourceUnavailable
+                        ? '115 下载任务的源目录已被清理或删除，无法读取文件列表'
+                        : '请稍后重试',
+                  ),
+                  onRetry: sourceUnavailable ? null : _reload,
+                );
+              }
+              final files =
+                  snapshot.data?.files ?? const <DownloadTaskFileDto>[];
+              if (files.isEmpty) {
+                return const AppEmptyState(
+                  key: Key('download-task-files-empty'),
+                  icon: Icons.folder_open_outlined,
+                  message: '该任务暂无文件记录',
+                );
+              }
+              return ListView.separated(
+                key: const Key('download-task-files-list'),
+                itemCount: files.length,
+                separatorBuilder: (context, index) =>
+                    SizedBox(height: spacing.sm),
+                itemBuilder: (context, index) =>
+                    _DownloadTaskFileRow(file: files[index]),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// 常见光盘镜像后缀，仅用于文件列表里视觉提示"这个格式导不进去"，
+/// 不参与任何导入判定（导入判定以后端扩展名白名单为准）。
+const Set<String> _kUnsupportedDiskImageExtensions = {
+  'iso',
+  'img',
+  'mdf',
+  'nrg',
+  'bin',
+  'cue',
+};
+
+bool _isUnsupportedDiskImage(String name) {
+  final dot = name.lastIndexOf('.');
+  if (dot <= 0 || dot == name.length - 1) {
+    return false;
+  }
+  return _kUnsupportedDiskImageExtensions.contains(
+    name.substring(dot + 1).toLowerCase(),
+  );
+}
+
+class _DownloadTaskFileRow extends StatelessWidget {
+  const _DownloadTaskFileRow({required this.file});
+
+  final DownloadTaskFileDto file;
+
+  @override
+  Widget build(BuildContext context) {
+    final spacing = context.appSpacing;
+    final palette = context.appTextPalette;
+    final unsupported = !file.isDir && _isUnsupportedDiskImage(file.name);
+    final displayPath = (file.path?.isNotEmpty ?? false)
+        ? file.path
+        : file.name;
+    return Tooltip(
+      message: unsupported ? '$displayPath（不支持的媒体格式，无法导入）' : displayPath,
+      child: Row(
+        children: [
+          Icon(
+            file.isDir
+                ? Icons.folder_outlined
+                : unsupported
+                ? Icons.dangerous_outlined
+                : Icons.insert_drive_file_outlined,
+            size: context.appComponentTokens.iconSize3xs,
+            color: unsupported
+                ? palette.error
+                : file.isDir
+                ? palette.muted
+                : palette.secondary,
+          ),
+          SizedBox(width: spacing.sm),
+          Expanded(
+            child: Text(
+              file.name,
+              key: Key('download-task-file-${file.name}'),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: resolveAppTextStyle(
+                context,
+                size: AppTextSize.s12,
+                weight: AppTextWeight.regular,
+                tone: unsupported ? AppTextTone.error : AppTextTone.primary,
+              ),
+            ),
+          ),
+          SizedBox(width: spacing.sm),
+          Text(
+            formatFileSize(file.size),
+            style: resolveAppTextStyle(
+              context,
+              size: AppTextSize.s12,
+              weight: AppTextWeight.regular,
+              tone: AppTextTone.muted,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

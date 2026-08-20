@@ -53,10 +53,9 @@ class DownloadTaskRowState {
   }) {
     return DownloadTaskRowState(
       task: task ?? this.task,
-      live:
-          identical(live, _sentinel)
-              ? this.live
-              : live as DownloadTaskProgressDto?,
+      live: identical(live, _sentinel)
+          ? this.live
+          : live as DownloadTaskProgressDto?,
     );
   }
 
@@ -92,10 +91,9 @@ class DownloadClientTransferState {
       downloadSpeedBytes: downloadSpeedBytes ?? this.downloadSpeedBytes,
       uploadSpeedBytes: uploadSpeedBytes ?? this.uploadSpeedBytes,
       isAvailable: isAvailable ?? this.isAvailable,
-      unavailableMessage:
-          identical(unavailableMessage, _sentinel)
-              ? this.unavailableMessage
-              : unavailableMessage as String?,
+      unavailableMessage: identical(unavailableMessage, _sentinel)
+          ? this.unavailableMessage
+          : unavailableMessage as String?,
     );
   }
 }
@@ -108,7 +106,7 @@ const Object _sentinel = Object();
 /// - [filter] 走「筛选状态驱动」范式；改后由 notifier 走独立 reload 路径（非
 ///   mixin.reload，保留旧 items + LinearProgressIndicator 反馈）。
 /// - [streamState] / [clientTransfers] / [clientOptions] / [clientNames] /
-///   [clientKinds] / [pendingActionTaskIds] / [isReloading] 是 UI 观察字段，
+///   [clientKinds] / [pendingActionTaskIds] 是 UI 观察字段，
 ///   由 notifier 内部字段/timer/subscription 驱动它们变更。
 @immutable
 class DownloadTaskCenterState {
@@ -121,7 +119,6 @@ class DownloadTaskCenterState {
     this.clientNames = const <int, String>{},
     this.clientKinds = const <int, DownloadClientKind>{},
     this.pendingActionTaskIds = const <int>{},
-    this.isReloading = false,
   });
 
   static final DownloadTaskCenterState initial = DownloadTaskCenterState(
@@ -137,7 +134,6 @@ class DownloadTaskCenterState {
   final Map<int, String> clientNames;
   final Map<int, DownloadClientKind> clientKinds;
   final Set<int> pendingActionTaskIds;
-  final bool isReloading;
 
   bool isTaskPending(int taskId) => pendingActionTaskIds.contains(taskId);
 
@@ -172,7 +168,6 @@ class DownloadTaskCenterState {
     Map<int, String>? clientNames,
     Map<int, DownloadClientKind>? clientKinds,
     Set<int>? pendingActionTaskIds,
-    bool? isReloading,
   }) {
     return DownloadTaskCenterState(
       paged: paged ?? this.paged,
@@ -183,7 +178,6 @@ class DownloadTaskCenterState {
       clientNames: clientNames ?? this.clientNames,
       clientKinds: clientKinds ?? this.clientKinds,
       pendingActionTaskIds: pendingActionTaskIds ?? this.pendingActionTaskIds,
-      isReloading: isReloading ?? this.isReloading,
     );
   }
 }

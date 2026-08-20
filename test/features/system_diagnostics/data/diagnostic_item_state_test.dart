@@ -21,9 +21,9 @@ void main() {
 
     test('probing factory 落 probing 态', () {
       final state = DiagnosticItemState.probing(
-        kind: DiagnosticItemKind.llm,
-        itemKey: 'llm',
-        displayName: 'LLM',
+        kind: DiagnosticItemKind.joyTag,
+        itemKey: 'joytag',
+        displayName: 'JoyTag 推理',
       );
       expect(state.status, DiagnosticItemStatus.probing);
     });

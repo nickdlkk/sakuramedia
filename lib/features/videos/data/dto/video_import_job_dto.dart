@@ -47,7 +47,6 @@ class VideoImportJobListItemDto implements ImportJobCardData {
   final int? taskRunId;
   @override
   final String state;
-  @override
   final TransferMode transferMode;
   @override
   final int importedCount;
@@ -69,9 +68,11 @@ class VideoImportJobListItemDto implements ImportJobCardData {
   @override
   bool get canMutateFailedSource => false;
 
+  @override
+  String? get importModeLabel => transferMode.label;
+
   /// 115 目录作业按 `sourceCid` 还原、本地作业按 `sourcePath` 还原；单文件（FID）
   /// 来源前端没有对应的导入请求形状，直接判为不可还原。
-  @override
   MediaImportSource? get reimportSource {
     if (sourceFid != null) {
       return null;
@@ -82,6 +83,9 @@ class VideoImportJobListItemDto implements ImportJobCardData {
     }
     return sourcePath.isEmpty ? null : MediaImportSource.local(sourcePath);
   }
+
+  @override
+  bool get canReimport => reimportSource != null;
 
   /// 终态（completed / failed）才允许失败文件的重导。
   @override
@@ -143,20 +147,19 @@ class VideoImportJobDto extends VideoImportJobListItemDto
   factory VideoImportJobDto.fromJson(Map<String, dynamic> json) {
     final base = VideoImportJobListItemDto.fromJson(json);
     final rawFiles = json['failed_files'];
-    final failedFiles =
-        rawFiles is List
-            ? rawFiles
-                .whereType<Map>()
-                .map(
-                  (item) => FailedFileDto.fromJson(
-                    item.map(
-                      (dynamic key, dynamic value) =>
-                          MapEntry(key.toString(), value),
-                    ),
+    final failedFiles = rawFiles is List
+        ? rawFiles
+              .whereType<Map>()
+              .map(
+                (item) => FailedFileDto.fromJson(
+                  item.map(
+                    (dynamic key, dynamic value) =>
+                        MapEntry(key.toString(), value),
                   ),
-                )
-                .toList(growable: false)
-            : const <FailedFileDto>[];
+                ),
+              )
+              .toList(growable: false)
+        : const <FailedFileDto>[];
 
     return VideoImportJobDto(
       id: base.id,

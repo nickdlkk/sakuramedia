@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -27,24 +26,26 @@ import 'package:sakuramedia/theme.dart';
 import 'package:sakuramedia/widgets/base/actions/app_button.dart';
 import 'package:sakuramedia/widgets/base/actions/app_text_button.dart';
 
-typedef _FetchMovieReviews = Future<List<MovieReviewDto>> Function({
-  required String movieNumber,
-  required int page,
-  required int pageSize,
-  required MovieReviewSort sort,
-});
-typedef _FetchMediaThumbnails = Future<List<MovieMediaThumbnailDto>> Function({
-  required int mediaId,
-});
-typedef _SearchCandidates = Future<List<DownloadCandidateDto>> Function({
-  required String movieNumber,
-  String? indexerKind,
-});
-typedef _CreateDownloadRequest = Future<DownloadRequestResponseDto> Function({
-  required String movieNumber,
-  required int clientId,
-  required DownloadCandidateDto candidate,
-});
+typedef _FetchMovieReviews =
+    Future<List<MovieReviewDto>> Function({
+      required String movieNumber,
+      required int page,
+      required int pageSize,
+      required MovieReviewSort sort,
+    });
+typedef _FetchMediaThumbnails =
+    Future<List<MovieMediaThumbnailDto>> Function({required int mediaId});
+typedef _SearchCandidates =
+    Future<List<DownloadCandidateDto>> Function({
+      required String movieNumber,
+      String? indexerKind,
+    });
+typedef _CreateDownloadRequest =
+    Future<DownloadRequestResponseDto> Function({
+      required String movieNumber,
+      required int clientId,
+      required DownloadCandidateDto candidate,
+    });
 
 /// 只覆盖 inspector 需要的两个方法，其余交给 super（走 [ApiClient]，测试里
 /// 不会命中）；调用未 stub 的方法应当立即出错以暴露漏 override 的 case。
@@ -109,50 +110,52 @@ class _FakeDownloadsApi extends DownloadsApi {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('inspector releases its three providers when the panel unmounts', (
-    WidgetTester tester,
-  ) async {
-    final container = await _pumpInspectorPanel(
-      tester,
-      panelHeight: 480,
-      fetchMovieReviews: ({
-        required String movieNumber,
-        required int page,
-        required int pageSize,
-        required MovieReviewSort sort,
-      }) async => const <MovieReviewDto>[],
-    );
-    await tester.pump();
+  testWidgets(
+    'inspector releases its three providers when the panel unmounts',
+    (WidgetTester tester) async {
+      final container = await _pumpInspectorPanel(
+        tester,
+        panelHeight: 480,
+        fetchMovieReviews:
+            ({
+              required String movieNumber,
+              required int page,
+              required int pageSize,
+              required MovieReviewSort sort,
+            }) async => const <MovieReviewDto>[],
+      );
+      await tester.pump();
 
-    // 打开期间三者都被面板收编的 KeepAliveLink 保活：切 Tab 不丢已加载数据。
-    expect(container.exists(movieDetailReviewProvider('ABC-001')), isTrue);
-    expect(container.exists(movieDetailMagnetProvider('ABC-001')), isTrue);
-    expect(
-      container.exists(movieDetailThumbnailProvider(mediaId: null)),
-      isTrue,
-    );
+      // 打开期间三者都被面板收编的 KeepAliveLink 保活：切 Tab 不丢已加载数据。
+      expect(container.exists(movieDetailReviewProvider('ABC-001')), isTrue);
+      expect(container.exists(movieDetailMagnetProvider('ABC-001')), isTrue);
+      expect(
+        container.exists(movieDetailThumbnailProvider(mediaId: null)),
+        isTrue,
+      );
 
-    // 只换掉面板、保留同一个 scope：ProviderScope 卸载时会 cancel 掉 riverpod
-    // 的 vsync timer，整棵树拆掉的话待释放队列永远不会结算。
-    await tester.pumpWidget(
-      UncontrolledProviderScope(
-        container: container,
-        child: const MaterialApp(home: SizedBox.shrink()),
-      ),
-    );
-    // autoDispose 的实际释放挂在 `Timer(Duration.zero)`，要推进时钟才结算。
-    await tester.pump(const Duration(milliseconds: 16));
+      // 只换掉面板、保留同一个 scope：ProviderScope 卸载时会 cancel 掉 riverpod
+      // 的 vsync timer，整棵树拆掉的话待释放队列永远不会结算。
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const MaterialApp(home: SizedBox.shrink()),
+        ),
+      );
+      // autoDispose 的实际释放挂在 `Timer(Duration.zero)`，要推进时钟才结算。
+      await tester.pump(const Duration(milliseconds: 16));
 
-    // 回归守卫：link 必须由面板在 dispose 里 close。provider 自持 link 而无人
-    // close 会形成「link 不关 → 永不 dispose → onDispose 里的 close 永不执行」
-    // 的死锁式泄漏，打开过检查器的影片会常驻到登出。
-    expect(container.exists(movieDetailReviewProvider('ABC-001')), isFalse);
-    expect(container.exists(movieDetailMagnetProvider('ABC-001')), isFalse);
-    expect(
-      container.exists(movieDetailThumbnailProvider(mediaId: null)),
-      isFalse,
-    );
-  });
+      // 回归守卫：link 必须由面板在 dispose 里 close。provider 自持 link 而无人
+      // close 会形成「link 不关 → 永不 dispose → onDispose 里的 close 永不执行」
+      // 的死锁式泄漏，打开过检查器的影片会常驻到登出。
+      expect(container.exists(movieDetailReviewProvider('ABC-001')), isFalse);
+      expect(container.exists(movieDetailMagnetProvider('ABC-001')), isFalse);
+      expect(
+        container.exists(movieDetailThumbnailProvider(mediaId: null)),
+        isFalse,
+      );
+    },
+  );
 
   testWidgets(
     'movie detail inspector review loading skeleton keeps at least three items',
@@ -167,14 +170,15 @@ void main() {
       await _pumpInspectorPanel(
         tester,
         panelHeight: 280,
-        fetchMovieReviews: ({
-          required String movieNumber,
-          required int page,
-          required int pageSize,
-          required MovieReviewSort sort,
-        }) {
-          return pendingReviews.future;
-        },
+        fetchMovieReviews:
+            ({
+              required String movieNumber,
+              required int page,
+              required int pageSize,
+              required MovieReviewSort sort,
+            }) {
+              return pendingReviews.future;
+            },
       );
       await tester.pump();
 
@@ -203,14 +207,15 @@ void main() {
       await _pumpInspectorPanel(
         tester,
         panelHeight: 640,
-        fetchMovieReviews: ({
-          required String movieNumber,
-          required int page,
-          required int pageSize,
-          required MovieReviewSort sort,
-        }) {
-          return pendingReviews.future;
-        },
+        fetchMovieReviews:
+            ({
+              required String movieNumber,
+              required int page,
+              required int pageSize,
+              required MovieReviewSort sort,
+            }) {
+              return pendingReviews.future;
+            },
       );
       await tester.pump();
 
@@ -227,7 +232,7 @@ void main() {
   );
 
   testWidgets(
-    'movie detail inspector clears content and shows cupertino spinner while switching review sort',
+    'movie detail review sort updates immediately and retains old content while loading',
     (WidgetTester tester) async {
       final pendingRecently = Completer<List<MovieReviewDto>>();
       var requestCount = 0;
@@ -241,20 +246,21 @@ void main() {
         tester,
         panelHeight: 480,
         platform: TargetPlatform.macOS,
-        fetchMovieReviews: ({
-          required String movieNumber,
-          required int page,
-          required int pageSize,
-          required MovieReviewSort sort,
-        }) {
-          requestCount += 1;
-          if (requestCount == 1) {
-            return Future<List<MovieReviewDto>>.value(<MovieReviewDto>[
-              _buildReview(prefix: 'hot'),
-            ]);
-          }
-          return pendingRecently.future;
-        },
+        fetchMovieReviews:
+            ({
+              required String movieNumber,
+              required int page,
+              required int pageSize,
+              required MovieReviewSort sort,
+            }) {
+              requestCount += 1;
+              if (requestCount == 1) {
+                return Future<List<MovieReviewDto>>.value(<MovieReviewDto>[
+                  _buildReview(prefix: 'hot'),
+                ]);
+              }
+              return pendingRecently.future;
+            },
       );
       await tester.pumpAndSettle();
 
@@ -263,19 +269,14 @@ void main() {
       );
       await tester.pump();
 
-      expect(find.text('hot-review-1'), findsNothing);
+      expect(find.text('hot-review-1'), findsOneWidget);
+      expect(find.text('正在更新筛选结果'), findsOneWidget);
       expect(
-        find.byKey(
-          const Key('movie-detail-review-sort-switch-loading-indicator'),
-        ),
-        findsOneWidget,
-      );
-      final spinner = tester.widget<CupertinoActivityIndicator>(
         find.byKey(
           const Key('movie-detail-review-sort-switch-loading-spinner'),
         ),
+        findsNothing,
       );
-      expect(spinner, isNotNull);
 
       final hotButton = tester.widget<AppTextButton>(
         find.byKey(const Key('movie-detail-review-sort-hotly')),
@@ -283,8 +284,14 @@ void main() {
       final recentButton = tester.widget<AppTextButton>(
         find.byKey(const Key('movie-detail-review-sort-recently')),
       );
-      expect(hotButton.onPressed, isNull);
-      expect(recentButton.onPressed, isNull);
+      expect(hotButton.onPressed, isNotNull);
+      expect(recentButton.onPressed, isNotNull);
+      expect(recentButton.isSelected, isTrue);
+      expect(requestCount, 1);
+
+      await tester.pump(const Duration(milliseconds: 260));
+      expect(requestCount, 2);
+      expect(find.text('hot-review-1'), findsOneWidget);
 
       pendingRecently.complete(<MovieReviewDto>[
         _buildReview(prefix: 'recent'),
@@ -292,12 +299,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('recent-review-1'), findsOneWidget);
-      expect(
-        find.byKey(
-          const Key('movie-detail-review-sort-switch-loading-indicator'),
-        ),
-        findsNothing,
-      );
+      expect(find.text('正在更新筛选结果'), findsNothing);
       final hotButtonAfter = tester.widget<AppTextButton>(
         find.byKey(const Key('movie-detail-review-sort-hotly')),
       );
@@ -310,13 +312,14 @@ void main() {
   );
 
   testWidgets(
-    'movie detail inspector shows material spinner while switching review sort on android',
+    'movie detail review rapid sort changes request only the final value',
     (WidgetTester tester) async {
-      final pendingRecently = Completer<List<MovieReviewDto>>();
+      final pendingFinal = Completer<List<MovieReviewDto>>();
       var requestCount = 0;
+      MovieReviewSort? requestedSort;
       addTearDown(() {
-        if (!pendingRecently.isCompleted) {
-          pendingRecently.complete(const <MovieReviewDto>[]);
+        if (!pendingFinal.isCompleted) {
+          pendingFinal.complete(const <MovieReviewDto>[]);
         }
       });
 
@@ -324,20 +327,22 @@ void main() {
         tester,
         panelHeight: 480,
         platform: TargetPlatform.android,
-        fetchMovieReviews: ({
-          required String movieNumber,
-          required int page,
-          required int pageSize,
-          required MovieReviewSort sort,
-        }) {
-          requestCount += 1;
-          if (requestCount == 1) {
-            return Future<List<MovieReviewDto>>.value(<MovieReviewDto>[
-              _buildReview(prefix: 'hot'),
-            ]);
-          }
-          return pendingRecently.future;
-        },
+        fetchMovieReviews:
+            ({
+              required String movieNumber,
+              required int page,
+              required int pageSize,
+              required MovieReviewSort sort,
+            }) {
+              requestCount += 1;
+              if (requestCount == 1) {
+                return Future<List<MovieReviewDto>>.value(<MovieReviewDto>[
+                  _buildReview(prefix: 'hot'),
+                ]);
+              }
+              requestedSort = sort;
+              return pendingFinal.future;
+            },
       );
       await tester.pumpAndSettle();
 
@@ -345,20 +350,23 @@ void main() {
         find.byKey(const Key('movie-detail-review-sort-recently')),
       );
       await tester.pump();
+      await tester.tap(find.byKey(const Key('movie-detail-review-sort-hotly')));
+      await tester.pump();
 
-      expect(find.text('hot-review-1'), findsNothing);
-      expect(
-        find.byKey(
-          const Key('movie-detail-review-sort-switch-loading-indicator'),
-        ),
-        findsOneWidget,
+      expect(requestCount, 1);
+      expect(find.text('hot-review-1'), findsOneWidget);
+      final hotButton = tester.widget<AppTextButton>(
+        find.byKey(const Key('movie-detail-review-sort-hotly')),
       );
-      final spinner = tester.widget<CircularProgressIndicator>(
-        find.byKey(
-          const Key('movie-detail-review-sort-switch-loading-spinner'),
-        ),
-      );
-      expect(spinner, isNotNull);
+      expect(hotButton.isSelected, isTrue);
+
+      await tester.pump(const Duration(milliseconds: 260));
+      expect(requestCount, 2);
+      expect(requestedSort, MovieReviewSort.hotly);
+
+      pendingFinal.complete(<MovieReviewDto>[_buildReview(prefix: 'final')]);
+      await tester.pumpAndSettle();
+      expect(find.text('final-review-1'), findsOneWidget);
     },
   );
 
@@ -368,14 +376,15 @@ void main() {
       await _pumpInspectorPanel(
         tester,
         panelHeight: 480,
-        fetchMovieReviews: ({
-          required String movieNumber,
-          required int page,
-          required int pageSize,
-          required MovieReviewSort sort,
-        }) async {
-          return <MovieReviewDto>[_buildReview(prefix: 'hot')];
-        },
+        fetchMovieReviews:
+            ({
+              required String movieNumber,
+              required int page,
+              required int pageSize,
+              required MovieReviewSort sort,
+            }) async {
+              return <MovieReviewDto>[_buildReview(prefix: 'hot')];
+            },
       );
       await tester.pumpAndSettle();
 
@@ -394,35 +403,34 @@ void main() {
       await _pumpInspectorPanel(
         tester,
         panelHeight: 480,
-        fetchMovieReviews: ({
-          required String movieNumber,
-          required int page,
-          required int pageSize,
-          required MovieReviewSort sort,
-        }) async {
-          return const <MovieReviewDto>[];
-        },
-        searchCandidates: ({
-          required String movieNumber,
-          String? indexerKind,
-        }) async {
-          return const <DownloadCandidateDto>[
-            DownloadCandidateDto(
-              source: 'jackett',
-              indexerName: 'mteam',
-              indexerKind: 'bt',
-              resolvedClientId: 2,
-              resolvedClientName: 'qb-main',
-              movieNumber: 'ABC-001',
-              title: 'ABC-001 4K 中文字幕',
-              sizeBytes: 12884901888,
-              seeders: 35,
-              magnetUrl: 'magnet:?xt=urn:btih:abcdef',
-              torrentUrl: '',
-              tags: <String>['4K', '中字'],
-            ),
-          ];
-        },
+        fetchMovieReviews:
+            ({
+              required String movieNumber,
+              required int page,
+              required int pageSize,
+              required MovieReviewSort sort,
+            }) async {
+              return const <MovieReviewDto>[];
+            },
+        searchCandidates:
+            ({required String movieNumber, String? indexerKind}) async {
+              return const <DownloadCandidateDto>[
+                DownloadCandidateDto(
+                  source: 'torznab',
+                  indexerName: 'mteam',
+                  indexerKind: 'bt',
+                  resolvedClientId: 2,
+                  resolvedClientName: 'qb-main',
+                  movieNumber: 'ABC-001',
+                  title: 'ABC-001 4K 中文字幕',
+                  sizeBytes: 12884901888,
+                  seeders: 35,
+                  magnetUrl: 'magnet:?xt=urn:btih:abcdef',
+                  torrentUrl: '',
+                  tags: <String>['4K', '中字'],
+                ),
+              ];
+            },
       );
       await tester.pumpAndSettle();
 
@@ -463,7 +471,7 @@ void main() {
     WidgetTester tester,
   ) async {
     const candidate = DownloadCandidateDto(
-      source: 'jackett',
+      source: 'torznab',
       indexerName: 'dmhy',
       indexerKind: 'bt',
       resolvedClientId: 2,
@@ -503,17 +511,18 @@ void main() {
       searchCandidates:
           ({required String movieNumber, String? indexerKind}) async =>
               const <DownloadCandidateDto>[candidate],
-      createDownloadRequest: ({
-        required String movieNumber,
-        required int clientId,
-        required DownloadCandidateDto candidate,
-      }) async {
-        submittedClientId = clientId;
-        return DownloadRequestResponseDto(
-          task: _emptyDownloadTask(clientId: clientId),
-          created: true,
-        );
-      },
+      createDownloadRequest:
+          ({
+            required String movieNumber,
+            required int clientId,
+            required DownloadCandidateDto candidate,
+          }) async {
+            submittedClientId = clientId;
+            return DownloadRequestResponseDto(
+              task: _emptyDownloadTask(clientId: clientId),
+              created: true,
+            );
+          },
     );
     await tester.pumpAndSettle();
     await tester.tap(find.text('磁力搜索'));
@@ -571,7 +580,7 @@ void main() {
           ({required String movieNumber, String? indexerKind}) async =>
               const <DownloadCandidateDto>[
                 DownloadCandidateDto(
-                  source: 'jackett',
+                  source: 'torznab',
                   indexerName: 'dmhy',
                   indexerKind: 'bt',
                   resolvedClientId: 2,
@@ -613,14 +622,15 @@ void main() {
       await _pumpInspectorPanel(
         tester,
         panelHeight: 520,
-        fetchMovieReviews: ({
-          required String movieNumber,
-          required int page,
-          required int pageSize,
-          required MovieReviewSort sort,
-        }) async {
-          return const <MovieReviewDto>[];
-        },
+        fetchMovieReviews:
+            ({
+              required String movieNumber,
+              required int page,
+              required int pageSize,
+              required MovieReviewSort sort,
+            }) async {
+              return const <MovieReviewDto>[];
+            },
       );
       await tester.pumpAndSettle();
 
@@ -683,8 +693,8 @@ Future<ProviderContainer> _pumpInspectorPanel(
   final fakeMoviesApi = _FakeMoviesApi(
     apiClient: apiClient,
     reviewsHandler: fetchMovieReviews,
-    thumbnailsHandler:
-        ({required int mediaId}) async => const <MovieMediaThumbnailDto>[],
+    thumbnailsHandler: ({required int mediaId}) async =>
+        const <MovieMediaThumbnailDto>[],
   );
   final fakeDownloadsApi = _FakeDownloadsApi(
     apiClient: apiClient,
@@ -719,10 +729,9 @@ Future<ProviderContainer> _pumpInspectorPanel(
       container: container,
       child: OKToast(
         child: MaterialApp(
-          theme:
-              platform == null
-                  ? sakuraThemeData
-                  : sakuraThemeData.copyWith(platform: platform),
+          theme: platform == null
+              ? sakuraThemeData
+              : sakuraThemeData.copyWith(platform: platform),
           home: Scaffold(
             body: Center(
               child: SizedBox(

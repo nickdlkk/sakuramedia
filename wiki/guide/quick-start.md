@@ -4,7 +4,7 @@ outline: [2, 4]
 
 # 快速开始
 
-这是一份"先把服务跑起来"的快速指引，覆盖 SakuraMedia 完整能力，包括「搜索 → 订阅 → 下载 → 导入」功能，以及以图搜图和影片简介翻译功能。
+这是一份"先把服务跑起来"的快速指引，覆盖 SakuraMedia 完整能力，包括「搜索 → 订阅 → 下载 → 导入」功能，以及以图搜图功能。
 
 ## 准备工作
 
@@ -12,13 +12,8 @@ outline: [2, 4]
 
 - 一台24H 运行的主机/NAS，最好是 x86 架构， ARM 架构现已支持但尚未经过测试，可自行尝试。
 - 已安装 `Docker` 和 `Docker Compose`
-- 已在这台主机/NAS 上部署了`Jackett`和`qBittorrent`
+- 已在这台主机/NAS 上部署了 Torznab 索引器服务（如 Jackett / Prowlarr）和 `qBittorrent`
 - 在这台主机/NAS 上准备一个媒体目录：SakuraMedia 之后自动下载的影片资源或者是手动导入的影片资源都会保存在这个目录下。
-
-#### 可选
-
-- 一个日本的 HTTP 代理 IP，用于**DMM**简介抓取。
-- 一个 兼容`openai`的大模型 API，用于对抓取到的DMM 简介进行翻译。建议使用`ollama`云服务提供的`gemma4:31b`模型。]
 
 ### 硬件要求
 
@@ -46,7 +41,7 @@ outline: [2, 4]
 
 ```bash
 cd /mnt/ssd/sakuramedia
-mkdir -p sakuramedia-data/{cache,logs,config,joytag,media-clips,image-search-index,postgres} sakuramedia-data/cache/{assets,gfriends}
+mkdir -p sakuramedia-data/{cache,logs,config,joytag,media-clips,image-search-index,postgres,plugins} sakuramedia-data/cache/{assets,gfriends}
 ```
 
 
@@ -147,6 +142,10 @@ services:
       PUID: 0
       PGID: 0
       TZ: "Asia/Shanghai"
+      # 可选：JavDB / GFriends 等外部站点需要走代理时，取消注释并按需修改
+      # HTTP_PROXY: "http://192.168.1.1:7890"
+      # HTTPS_PROXY: "http://192.168.1.1:7890"
+      # NO_PROXY: "localhost,127.0.0.1"
     volumes:
       # SakuraMedia 的运行数据都在 /data 下，整体挂一个目录即可
       - ./sakuramedia-data:/data
@@ -192,7 +191,6 @@ services:
 
 `postgres` 服务没有对宿主机映射端口，只在 compose 内部网络可见，外部无法直接访问。只有当你想用自己已有的 PostgreSQL 时，才需要去 `config.toml` 里改 `[database].url`（见[配置说明](/guide/config#database)）。
 :::
-
 ### 4. 启动
 运行 `docker compose up -d` 启动服务。
 
@@ -247,19 +245,24 @@ http://你的IP:38000
 :::
 
 
-#### 3. 配置索引器 - Jackett
+#### 3. 配置索引器（Torznab）
 
-1. 填写Jackett API Key
-2. 新建索引器
+1. 新建索引器
   - 名称：随意
+  - Torznab 地址：索引器搜索接口地址（如 Jackett / Prowlarr 提供的 torznab 端点）
+  - API Key（可选）：每个索引器独立配置；留空则请求不携带 apikey，适合免鉴权服务
   - 类别：建议如实填写，方便手动搜索资源时，展示资源所属类别
   - 绑定下载器: 决定此站点的种子会交由哪个下载器来处理.
+
+::: tip
+从旧版本升级的用户注意：旧版全局 API Key 不会自动回填，需要在「索引器」页为每个站点重新填一次。
+:::
 
 这一步完成后，SakuraMedia 才能走完整的”搜索候选资源 -> 提交下载 -> 导入媒体库”链路。
 
 #### 4. 用组件诊断验证配置
 
-回到「概览」页，顶部有一条「组件诊断」横条（桌面端和 Web 端都有），点「开始检测」会一键检测媒体库、下载器、索引器、JavDB / DMM、LLM 与 JoyTag 的连通性。
+回到「概览」页，顶部有一条「组件诊断」横条（桌面端和 Web 端都有），点「开始检测」会一键检测媒体库、下载器、索引器、JavDB 与 JoyTag 的连通性。
 
 #### 5. 在线搜索影片或女优
 
@@ -276,4 +279,3 @@ http://你的IP:38000
 - 当本地库里没有这部影片或这个女优时，主动去在线源查询
 - 查询成功后，把对应的影片或女优元数据自动写入本地库
 - 下次再搜索同一部影片或同一个女优时，通常就不需要再手动开启 `联网`
-

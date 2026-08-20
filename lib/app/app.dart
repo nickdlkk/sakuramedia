@@ -114,13 +114,13 @@ class _MyAppState extends State<MyApp> {
         platform: _platform,
         child: OKToast(
           textStyle: kAppToastTextStyle,
+          backgroundColor: kAppToastBackgroundColor,
           child: MaterialApp.router(
             title: 'SakuraMedia',
             debugShowCheckedModeBanner: false,
-            theme:
-                _platform == AppPlatform.mobile
-                    ? sakuraMobileThemeData
-                    : sakuraDesktopThemeData,
+            theme: _platform == AppPlatform.mobile
+                ? sakuraMobileThemeData
+                : sakuraDesktopThemeData,
             routerConfig: _router,
             builder: (context, child) {
               return WebPlatformNoticeHost(

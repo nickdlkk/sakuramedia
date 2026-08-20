@@ -32,7 +32,7 @@ class RankingSummary extends _$RankingSummary
   KeepAliveLink? _cacheLink;
   RankingFilterState _activeFilters = RankingFilterState.initial;
   int _filterGeneration = 0;
-  int _listGeneration = 0;
+  late final DebouncedLatestRequest _filterRequests = DebouncedLatestRequest();
 
   KeepAliveLink? get cacheLink => _cacheLink;
 
@@ -62,6 +62,7 @@ class RankingSummary extends _$RankingSummary
   Future<RankingSummaryState> build(RankingSummaryScope scope) async {
     _cacheLink ??= ref.keepAlive();
     attachDisposeGuard();
+    ref.onDispose(_filterRequests.dispose);
     ref.listen(movieSubscriptionEventsProvider, (_, next) {
       final changes = next.value;
       if (changes != null) {
@@ -120,6 +121,7 @@ class RankingSummary extends _$RankingSummary
       return;
     }
     final generation = ++_filterGeneration;
+    _filterRequests.cancel();
     state = AsyncData(
       current.copyWith(
         filters: current.filters.copyWith(isLoading: true, errorMessage: null),
@@ -132,40 +134,75 @@ class RankingSummary extends _$RankingSummary
     _activeFilters = filters;
     if (filters.errorMessage != null || filters.sources.isEmpty) {
       state = AsyncData(
-        current.copyWith(
+        (state.value ?? current).copyWith(
           filters: filters,
-          paged: const PagedListState<RankedMovieListItemDto>(),
           isListLoading: false,
           initialErrorMessage: null,
+          paged: current.paged.copyWith(
+            filterUpdate: FilterUpdateState.failed(
+              filters.errorMessage ?? '排行榜筛选加载失败，请稍后重试',
+            ),
+          ),
         ),
       );
       return;
     }
-    state = AsyncData(current.copyWith(filters: filters));
-    await _reloadItems();
-  }
-
-  Future<void> selectSource(RankingSourceDto source) async {
-    final current = state.value;
-    if (current == null ||
-        current.filters.isLoading ||
-        source.sourceKey == current.filters.selectedSource?.sourceKey) {
-      return;
-    }
-    final generation = ++_filterGeneration;
+    _activeFilters = filters;
+    final now = state.value ?? current;
     state = AsyncData(
-      current.copyWith(
-        filters: current.filters.copyWith(isLoading: true, errorMessage: null),
+      now.copyWith(
+        filters: filters,
+        paged: now.paged.copyWith(
+          filterUpdate: const FilterUpdateState.loading(),
+        ),
       ),
     );
+    await _filterRequests.runNow(_reloadItems);
+  }
+
+  Future<void> selectSource(RankingSourceDto source) {
+    final current = state.value;
+    if (current == null ||
+        source.sourceKey == current.filters.selectedSource?.sourceKey) {
+      return Future<void>.value();
+    }
+    _filterGeneration++;
+    invalidateInFlightLoadMore();
+    final filters = current.filters.copyWith(
+      isLoading: true,
+      errorMessage: null,
+      selectedSource: source,
+      boards: const <RankingBoardDto>[],
+      selectedBoard: null,
+      selectedPeriod: null,
+    );
+    _activeFilters = filters;
+    state = AsyncData(
+      current.copyWith(
+        filters: filters,
+        paged: current.paged.copyWith(
+          isLoadingMore: false,
+          loadMoreErrorMessage: null,
+          filterUpdate: const FilterUpdateState.loading(),
+        ),
+      ),
+    );
+    return _filterRequests.schedule(
+      (requestId) => _loadSource(requestId, source),
+    );
+  }
+
+  Future<void> _loadSource(int requestId, RankingSourceDto source) async {
     try {
       final boards = await ref
           .read(rankingsApiProvider)
           .getRankingBoards(sourceKey: source.sourceKey);
-      if (isDisposed || generation != _filterGeneration) {
+      if (isDisposed || !_filterRequests.isCurrent(requestId)) {
         return;
       }
       final board = boards.isEmpty ? null : boards.first;
+      final current = state.value;
+      if (current == null) return;
       final filters = current.filters.copyWith(
         isLoading: false,
         errorMessage: null,
@@ -176,16 +213,22 @@ class RankingSummary extends _$RankingSummary
       );
       _activeFilters = filters;
       state = AsyncData(current.copyWith(filters: filters));
-      await _reloadItems();
+      await _reloadItems(requestId);
     } catch (error) {
-      if (isDisposed || generation != _filterGeneration) {
+      if (isDisposed || !_filterRequests.isCurrent(requestId)) {
         return;
       }
+      final current = state.value;
+      if (current == null) return;
+      final message = apiErrorMessage(error, fallback: '排行榜筛选加载失败，请稍后重试');
       state = AsyncData(
         current.copyWith(
           filters: current.filters.copyWith(
             isLoading: false,
-            errorMessage: apiErrorMessage(error, fallback: '排行榜筛选加载失败，请稍后重试'),
+            errorMessage: message,
+          ),
+          paged: current.paged.copyWith(
+            filterUpdate: FilterUpdateState.failed(message),
           ),
         ),
       );
@@ -246,34 +289,27 @@ class RankingSummary extends _$RankingSummary
     if (current.paged.isLoadingMore) {
       return null;
     }
-    final generation = ++_listGeneration;
     invalidateInFlightLoadMore();
-    try {
-      final response = await fetchPage(1, pageSize);
-      if (isDisposed || generation != _listGeneration) {
-        return null;
-      }
-      state = AsyncData(
-        current.copyWith(
-          paged: PagedListState<RankedMovieListItemDto>.fromFirstPage(response),
-          isListLoading: false,
-          initialErrorMessage: null,
+    state = AsyncData(
+      current.copyWith(
+        paged: current.paged.copyWith(
+          isLoadingMore: false,
+          loadMoreErrorMessage: null,
+          filterUpdate: const FilterUpdateState.loading(),
         ),
-      );
-      return null;
-    } catch (error) {
-      return apiErrorMessage(error, fallback: initialLoadErrorText);
-    }
+      ),
+    );
+    await _filterRequests.runNow(_reloadItems);
+    return state.value?.paged.filterUpdate.errorMessage;
   }
 
   Future<MovieSubscriptionToggleResult> toggleSubscription(
     String movieNumber,
   ) async {
     final current = state.value;
-    final movie =
-        current?.paged.items
-            .where((item) => item.movieNumber == movieNumber)
-            .firstOrNull;
+    final movie = current?.paged.items
+        .where((item) => item.movieNumber == movieNumber)
+        .firstOrNull;
     if (movie == null || isInFlight(movieNumber)) {
       return const MovieSubscriptionToggleResult.ignored();
     }
@@ -361,31 +397,26 @@ class RankingSummary extends _$RankingSummary
           },
           action: (numbers) async {
             final api = ref.read(moviesApiProvider);
-            response =
-                subscribe
-                    ? await api.batchSubscribeMovies(
-                      movieNumbers: numbers.toList(),
-                    )
-                    : await api.batchUnsubscribeMovies(
-                      movieNumbers: numbers.toList(),
-                    );
+            response = subscribe
+                ? await api.batchSubscribeMovies(movieNumbers: numbers.toList())
+                : await api.batchUnsubscribeMovies(
+                    movieNumbers: numbers.toList(),
+                  );
             return response!;
           },
-          skippedFromResult:
-              (value) => <String>{
-                ...value.movieNumbersSkippedBecause(
-                  MovieSubscriptionSkipReason.movieNotFound,
-                ),
-                ...value.movieNumbersSkippedBecause(
-                  MovieSubscriptionSkipReason.hasMedia,
-                ),
-              },
+          skippedFromResult: (value) => <String>{
+            ...value.movieNumbersSkippedBecause(
+              MovieSubscriptionSkipReason.movieNotFound,
+            ),
+            ...value.movieNumbersSkippedBecause(
+              MovieSubscriptionSkipReason.hasMedia,
+            ),
+          },
           rollback: _restoreSubscriptionStatuses,
-          errorMessageOf:
-              (error) => apiErrorMessage(
-                error,
-                fallback: subscribe ? '批量订阅影片失败' : '批量取消订阅影片失败',
-              ),
+          errorMessageOf: (error) => apiErrorMessage(
+            error,
+            fallback: subscribe ? '批量订阅影片失败' : '批量取消订阅影片失败',
+          ),
         );
     if (result.errorMessage != null || response == null) {
       return MovieSubscriptionBatchToggleResult.failed(
@@ -477,29 +508,30 @@ class RankingSummary extends _$RankingSummary
   Future<void> _applyFiltersAndReload(
     RankingSummaryState current,
     RankingFilterState filters,
-  ) async {
+  ) {
     _activeFilters = filters;
-    state = AsyncData(current.copyWith(filters: filters));
-    await _reloadItems();
+    invalidateInFlightLoadMore();
+    state = AsyncData(
+      current.copyWith(
+        filters: filters,
+        paged: current.paged.copyWith(
+          isLoadingMore: false,
+          loadMoreErrorMessage: null,
+          filterUpdate: const FilterUpdateState.loading(),
+        ),
+      ),
+    );
+    return _filterRequests.schedule(_reloadItems);
   }
 
-  Future<void> _reloadItems() async {
+  Future<void> _reloadItems(int requestId) async {
     final current = state.value;
     if (current == null) {
       return;
     }
-    final generation = ++_listGeneration;
-    invalidateInFlightLoadMore();
-    state = AsyncData(
-      current.copyWith(
-        paged: const PagedListState<RankedMovieListItemDto>(),
-        isListLoading: true,
-        initialErrorMessage: null,
-      ),
-    );
     try {
       final paged = await loadInitialPage();
-      if (isDisposed || generation != _listGeneration) {
+      if (isDisposed || !_filterRequests.isCurrent(requestId)) {
         return;
       }
       final currentAfter = state.value ?? current;
@@ -510,18 +542,72 @@ class RankingSummary extends _$RankingSummary
           initialErrorMessage: null,
         ),
       );
-    } catch (_) {
-      if (isDisposed || generation != _listGeneration) {
+    } catch (error) {
+      if (isDisposed || !_filterRequests.isCurrent(requestId)) {
         return;
       }
       final currentAfter = state.value ?? current;
       state = AsyncData(
         currentAfter.copyWith(
           isListLoading: false,
-          initialErrorMessage: initialLoadErrorText,
+          initialErrorMessage: null,
+          paged: currentAfter.paged.copyWith(
+            filterUpdate: FilterUpdateState.failed(
+              apiErrorMessage(error, fallback: '筛选结果更新失败，请重试'),
+            ),
+          ),
         ),
       );
     }
+  }
+
+  Future<void> retryFilter() {
+    final current = state.value;
+    if (current == null) {
+      return Future<void>.value();
+    }
+    final source = current.filters.selectedSource;
+    if (source != null &&
+        (current.filters.selectedBoard == null ||
+            current.filters.errorMessage != null)) {
+      final filters = current.filters.copyWith(
+        isLoading: true,
+        errorMessage: null,
+      );
+      _activeFilters = filters;
+      state = AsyncData(
+        current.copyWith(
+          filters: filters,
+          paged: current.paged.copyWith(
+            filterUpdate: const FilterUpdateState.loading(),
+          ),
+        ),
+      );
+      return _filterRequests.runNow(
+        (requestId) => _loadSource(requestId, source),
+      );
+    }
+    if (current.filters.isLoading) return Future<void>.value();
+    invalidateInFlightLoadMore();
+    state = AsyncData(
+      current.copyWith(
+        paged: current.paged.copyWith(
+          isLoadingMore: false,
+          loadMoreErrorMessage: null,
+          filterUpdate: const FilterUpdateState.loading(),
+        ),
+      ),
+    );
+    return _filterRequests.runNow(_reloadItems);
+  }
+
+  @override
+  Future<void> loadMore() {
+    final current = state.value;
+    if (current != null && !current.paged.filterUpdate.isIdle) {
+      return Future<void>.value();
+    }
+    return super.loadMore();
   }
 
   void _applySubscriptionChanges(List<MovieSubscriptionChange> changes) {
@@ -580,10 +666,9 @@ class RankingSummary extends _$RankingSummary
     };
     final restored = current.paged.items
         .map(
-          (item) =>
-              movieNumbers.contains(item.movieNumber)
-                  ? (originals[item.movieNumber] ?? item)
-                  : item,
+          (item) => movieNumbers.contains(item.movieNumber)
+              ? (originals[item.movieNumber] ?? item)
+              : item,
         )
         .toList(growable: false);
     return current.copyWith(

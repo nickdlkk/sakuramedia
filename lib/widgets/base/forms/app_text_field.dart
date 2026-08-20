@@ -25,6 +25,7 @@ class AppTextField extends StatelessWidget {
     this.minLines,
     this.isDense = true,
     this.fillColor,
+    this.style,
   });
 
   final Key? fieldKey;
@@ -52,6 +53,10 @@ class AppTextField extends StatelessWidget {
   /// 覆盖默认的填充色（默认 `context.appColors.surfaceMuted`）。
   /// 用于把输入框放到比 `surfaceMuted` 更暗的面板上（如侧边栏）需要提升对比度的场景。
   final Color? fillColor;
+
+  /// 覆盖默认正文样式（默认 `resolveAppTextStyle(context, size: AppTextSize.s14)`）。
+  /// 用于 JSON / 代码等需要等宽字体的编辑区。
+  final TextStyle? style;
 
   @override
   Widget build(BuildContext context) {
@@ -85,7 +90,8 @@ class AppTextField extends StatelessWidget {
           autovalidateMode: autovalidateMode,
           maxLines: obscureText ? 1 : maxLines,
           minLines: obscureText ? 1 : minLines,
-          style: resolveAppTextStyle(context, size: AppTextSize.s14),
+          style:
+              style ?? resolveAppTextStyle(context, size: AppTextSize.s14),
           decoration: _buildDecoration(context),
         ),
       ],

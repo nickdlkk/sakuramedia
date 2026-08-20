@@ -28,7 +28,7 @@
 
 | 分册 | 覆盖组件 | 什么时候来这里翻 |
 |---|---|---|
-| **[actions.md](./actions.md)** | `AppButton` / `AppTextButton` / `AppIconButton` / `AppInlineActionButton` | 要放一个"按钮" |
+| **[actions.md](./actions.md)** | `AppButton` / `AppTextButton` / `AppIconButton` / `AppInlineActionButton` / `AppSwitch` | 要放一个"按钮"或"启停开关" |
 | **[forms.md](./forms.md)** | `AppTextField` / `AppPasswordField` / `AppSelectField<T>` / `AppInfoPill` | 要收集用户输入 / 显示只读字段 |
 | **[feedback.md](./feedback.md)** | `AppEmptyState` / `AppSectionError` / `AppSectionSkeleton` / `AppMobileSectionError` / `AppSkeletonBlock` / `AppMobileSkeletonCard` / `AppMobileSkeletonList` / `showAppConfirmDialog` | 要展示"空 / 错 / 加载中"三态,或要弹确认框 |
 | **[sheets-dialogs.md](./sheets-dialogs.md)** | `AppDesktopDialog` / `showAppBottomDrawer` / `AppBottomDrawerSurface` / `AppBottomFormSheet` / `AppMobileConfirmActions` | 要弹一个对话框 / 底部抽屉 / 底部表单 |

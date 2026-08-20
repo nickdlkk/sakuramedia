@@ -43,12 +43,18 @@ class MediaImportSourcePicker extends ConsumerStatefulWidget {
     required this.transferMode,
     required this.onSourceChanged,
     required this.onTransferModeChanged,
+    this.localOnly = false,
   });
 
   final MediaLibraryDto? selectedLibrary;
   final TransferMode transferMode;
   final ValueChanged<MediaImportSource?> onSourceChanged;
   final ValueChanged<TransferMode> onTransferModeChanged;
+
+  /// 仅浏览服务器本地白名单目录，不依赖媒体库或展示导入方式。
+  ///
+  /// JAV 字幕导入复用这一模式：字幕按影片归档，不能选择 115 或目标媒体库。
+  final bool localOnly;
 
   /// 该媒体库对应的默认导入方式。caller 首次加载媒体库时用它初始化 `transferMode`，
   /// picker 自己在库切换时也走这里，避免规则在三处漂移。
@@ -58,10 +64,9 @@ class MediaImportSourcePicker extends ConsumerStatefulWidget {
   /// 该媒体库允许的导入方式集合，用于渲染 transferMode 下拉的选项。
   static List<TransferMode> availableTransferModesFor(
     MediaLibraryDto library,
-  ) =>
-      library.isCloud115
-          ? const <TransferMode>[TransferMode.copy, TransferMode.cleanupSource]
-          : const <TransferMode>[TransferMode.auto, TransferMode.cleanupSource];
+  ) => library.isCloud115
+      ? const <TransferMode>[TransferMode.copy, TransferMode.cleanupSource]
+      : const <TransferMode>[TransferMode.auto, TransferMode.cleanupSource];
 
   @override
   ConsumerState<MediaImportSourcePicker> createState() =>
@@ -88,7 +93,8 @@ class _MediaImportSourcePickerState
   String? _loadMoreError;
   int _browseGeneration = 0;
 
-  bool get _isCloud115 => widget.selectedLibrary?.isCloud115 ?? false;
+  bool get _isCloud115 =>
+      !widget.localOnly && (widget.selectedLibrary?.isCloud115 ?? false);
 
   List<TransferMode> get _availableTransferModes {
     final library = widget.selectedLibrary;
@@ -106,7 +112,9 @@ class _MediaImportSourcePickerState
     super.initState();
     _mediaImportApi = ref.read(mediaImportApiProvider);
     _librariesApi = ref.read(mediaLibrariesApiProvider);
-    if (widget.selectedLibrary != null) {
+    if (widget.localOnly) {
+      unawaited(_resetLocalOnlyBrowse());
+    } else if (widget.selectedLibrary != null) {
       unawaited(_resetAndBrowse(widget.selectedLibrary!));
     }
   }
@@ -116,7 +124,9 @@ class _MediaImportSourcePickerState
     super.didUpdateWidget(oldWidget);
     final previousId = oldWidget.selectedLibrary?.id;
     final currentId = widget.selectedLibrary?.id;
-    if (previousId != currentId && widget.selectedLibrary != null) {
+    if (!widget.localOnly &&
+        previousId != currentId &&
+        widget.selectedLibrary != null) {
       unawaited(_resetAndBrowse(widget.selectedLibrary!));
     }
   }
@@ -148,12 +158,11 @@ class _MediaImportSourcePickerState
       _localBrowsePath = null;
       _cloudPage = null;
       _cloudEntries = const <Cloud115DirectoryEntryDto>[];
-      _cloudPath =
-          library.isCloud115
-              ? const <_CloudPathSegment>[
-                _CloudPathSegment(cid: '0', name: '115 网盘'),
-              ]
-              : const <_CloudPathSegment>[];
+      _cloudPath = library.isCloud115
+          ? const <_CloudPathSegment>[
+              _CloudPathSegment(cid: '0', name: '115 网盘'),
+            ]
+          : const <_CloudPathSegment>[];
       _browseError = null;
       _loadMoreError = null;
       _isLoadingMore = false;
@@ -164,6 +173,23 @@ class _MediaImportSourcePickerState
     } else {
       await _fetchLocalDirectory(generation: generation, path: null);
     }
+  }
+
+  Future<void> _resetLocalOnlyBrowse() async {
+    final generation = ++_browseGeneration;
+    widget.onSourceChanged(null);
+    setState(() {
+      _localListing = null;
+      _localBrowsePath = null;
+      _cloudPage = null;
+      _cloudEntries = const <Cloud115DirectoryEntryDto>[];
+      _cloudPath = const <_CloudPathSegment>[];
+      _browseError = null;
+      _loadMoreError = null;
+      _isLoadingMore = false;
+      _isBrowsing = true;
+    });
+    await _fetchLocalDirectory(generation: generation, path: null);
   }
 
   Future<void> _browseLocal(String? path) async {
@@ -366,7 +392,7 @@ class _MediaImportSourcePickerState
   Widget build(BuildContext context) {
     final spacing = context.appSpacing;
     final library = widget.selectedLibrary;
-    if (library == null) {
+    if (library == null && !widget.localOnly) {
       return const SizedBox.shrink();
     }
     final deletingCloudSource =
@@ -378,8 +404,10 @@ class _MediaImportSourcePickerState
         _buildPathBar(context),
         SizedBox(height: spacing.sm),
         _buildBrowser(context),
-        SizedBox(height: spacing.lg),
-        _buildTransferModeSelector(context),
+        if (!widget.localOnly) ...[
+          SizedBox(height: spacing.lg),
+          _buildTransferModeSelector(context),
+        ],
         if (deletingCloudSource) ...[
           SizedBox(height: spacing.md),
           const AppNoticeCard(
@@ -399,17 +427,16 @@ class _MediaImportSourcePickerState
     final canGoUp =
         !_isBrowsing &&
         (_isCloud115 ? _cloudPath.length > 1 : listing?.parent != null);
-    final pathText =
-        _isCloud115
-            ? (_cloudPath.isEmpty
-                ? '115 网盘'
-                : _cloudPath.map((segment) => segment.name).join(' / '))
-            : switch (listing) {
-              null when _localBrowsePath != null => _localBrowsePath!,
-              null => '加载中…',
-              final value when value.isRootsOverview => '选择一个白名单根目录',
-              final value => value.path,
-            };
+    final pathText = _isCloud115
+        ? (_cloudPath.isEmpty
+              ? '115 网盘'
+              : _cloudPath.map((segment) => segment.name).join(' / '))
+        : switch (listing) {
+            null when _localBrowsePath != null => _localBrowsePath!,
+            null => '加载中…',
+            final value when value.isRootsOverview => '选择一个白名单根目录',
+            final value => value.path,
+          };
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -419,16 +446,15 @@ class _MediaImportSourcePickerState
               key: const Key('media-import-picker-up-button'),
               icon: const Icon(Icons.arrow_upward_rounded),
               tooltip: '上一级',
-              onPressed:
-                  canGoUp
-                      ? () {
-                        if (_isCloud115) {
-                          unawaited(_browseCloudParent());
-                        } else {
-                          unawaited(_browseLocal(listing!.parent));
-                        }
+              onPressed: canGoUp
+                  ? () {
+                      if (_isCloud115) {
+                        unawaited(_browseCloudParent());
+                      } else {
+                        unawaited(_browseLocal(listing!.parent));
                       }
-                      : null,
+                    }
+                  : null,
             ),
             SizedBox(width: context.appSpacing.sm),
             Expanded(
@@ -512,16 +538,15 @@ class _MediaImportSourcePickerState
     return ListView.separated(
       padding: EdgeInsets.symmetric(vertical: context.appSpacing.xs),
       itemCount: listing.entries.length,
-      separatorBuilder:
-          (_, __) => Divider(height: 1, color: context.appColors.divider),
+      separatorBuilder: (_, __) =>
+          Divider(height: 1, color: context.appColors.divider),
       itemBuilder: (context, index) {
         final entry = listing.entries[index];
         return _LocalEntryRow(
           entry: entry,
-          onTap:
-              entry.isDirectory
-                  ? () => unawaited(_browseLocal(entry.path))
-                  : null,
+          onTap: entry.isDirectory
+              ? () => unawaited(_browseLocal(entry.path))
+              : null,
         );
       },
     );
@@ -536,8 +561,8 @@ class _MediaImportSourcePickerState
     return ListView.separated(
       padding: EdgeInsets.symmetric(vertical: context.appSpacing.xs),
       itemCount: _cloudEntries.length + (showFooter ? 1 : 0),
-      separatorBuilder:
-          (_, __) => Divider(height: 1, color: context.appColors.divider),
+      separatorBuilder: (_, __) =>
+          Divider(height: 1, color: context.appColors.divider),
       itemBuilder: (context, index) {
         if (index == _cloudEntries.length) {
           return _buildCloudLoadMoreFooter(context);
@@ -548,10 +573,9 @@ class _MediaImportSourcePickerState
         return _CloudEntryRow(
           entry: entry,
           isManagementDirectory: isManagementDirectory,
-          onTap:
-              entry.isDirectory && !isManagementDirectory
-                  ? () => unawaited(_browseCloudFolder(entry))
-                  : null,
+          onTap: entry.isDirectory && !isManagementDirectory
+              ? () => unawaited(_browseCloudFolder(entry))
+              : null,
         );
       },
     );
@@ -708,12 +732,11 @@ class _DirectoryEntryRow extends StatelessWidget {
             Icon(
               isDirectory ? Icons.folder_rounded : Icons.movie_outlined,
               size: context.appComponentTokens.iconSizeSm,
-              color:
-                  muted
-                      ? context.appTextPalette.muted
-                      : isDirectory
-                      ? context.appTextPalette.accent
-                      : context.appTextPalette.muted,
+              color: muted
+                  ? context.appTextPalette.muted
+                  : isDirectory
+                  ? context.appTextPalette.accent
+                  : context.appTextPalette.muted,
             ),
             SizedBox(width: spacing.sm),
             Expanded(
@@ -724,12 +747,11 @@ class _DirectoryEntryRow extends StatelessWidget {
                 style: resolveAppTextStyle(
                   context,
                   size: AppTextSize.s12,
-                  tone:
-                      muted
-                          ? AppTextTone.muted
-                          : isDirectory
-                          ? AppTextTone.primary
-                          : AppTextTone.muted,
+                  tone: muted
+                      ? AppTextTone.muted
+                      : isDirectory
+                      ? AppTextTone.primary
+                      : AppTextTone.muted,
                 ),
               ),
             ),

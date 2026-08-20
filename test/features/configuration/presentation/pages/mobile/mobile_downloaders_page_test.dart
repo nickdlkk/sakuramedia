@@ -104,8 +104,6 @@ void main() {
       method: 'GET',
       path: '/indexer-settings',
       body: const <String, dynamic>{
-        'type': 'builtin',
-        'api_key': '',
         'indexers': <Map<String, dynamic>>[],
       },
     );
@@ -147,8 +145,6 @@ void main() {
     final indexerSettingsApi = _StaticIndexerSettingsApi(
       apiClient: _bundle.apiClient,
       settings: const IndexerSettingsDto(
-        type: 'builtin',
-        apiKey: '',
         indexers: <IndexerEntryDto>[],
       ),
     );

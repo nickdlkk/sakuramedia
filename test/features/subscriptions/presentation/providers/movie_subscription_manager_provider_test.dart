@@ -471,7 +471,6 @@ Map<String, dynamic> _item({
     'movie_id': _movieIdFor(number),
     'movie_number': number,
     'title': 'Title $number',
-    'title_zh': '',
     'status': status,
     'is_fresh': false,
     'attempt_count': attemptCount,

@@ -101,6 +101,8 @@ void main() {
           const MovieFilterState(
             status: MovieStatusFilter.subscribed,
             year: 2024,
+            heatMin: 1000,
+            heatMax: 20000,
           ),
         );
 
@@ -110,6 +112,9 @@ void main() {
     final secondRequest = adapter.requests.last;
     expect(secondRequest.uri.queryParameters['status'], 'subscribed');
     expect(secondRequest.uri.queryParameters['year'], '2024');
+    // 女优详情也走 /catalog/movies 接口，热度范围与 actor_id 可组合过滤。
+    expect(secondRequest.uri.queryParameters['heat_min'], '1000');
+    expect(secondRequest.uri.queryParameters['heat_max'], '20000');
   });
 
   test('普通影片列表 scope 走 /movies，合集变更就地移除单体条目', () async {
@@ -196,6 +201,60 @@ void main() {
     );
     await _settleEvents();
     final state = container.read(movieSummaryProvider(scope)).requireValue;
+    expect(state.paged.items.map((item) => item.movieNumber), <String>[
+      'ABC-001',
+    ]);
+    expect(state.paged.total, 1);
+  });
+
+  test('subscribed 视图取消订阅即移除，unsubscribed 视图订阅即移除', () async {
+    // subscribed 视图：取消订阅的影片不再满足筛选条件。
+    const subscribedScope = MovieSummaryScope.movies(
+      cacheKey: 'desktop:movies:list',
+    );
+    await prime(subscribedScope, <Map<String, dynamic>>[
+      _movie('ABC-001', isSubscribed: true),
+      _movie('ABC-002', isSubscribed: true),
+    ]);
+    await container
+        .read(movieSummaryProvider(subscribedScope).notifier)
+        .applyMovieFilter(
+          const MovieFilterState(status: MovieStatusFilter.subscribed),
+        );
+
+    subscriptionBroadcaster().reportChange(
+      movieNumber: 'ABC-001',
+      isSubscribed: false,
+    );
+    await _settleEvents();
+    var state = container.read(movieSummaryProvider(subscribedScope)).requireValue;
+    expect(state.paged.items.map((item) => item.movieNumber), <String>[
+      'ABC-002',
+    ]);
+    expect(state.paged.total, 1);
+
+    // unsubscribed 视图：订阅的影片不再满足筛选条件，同样就地移除。
+    const unsubscribedScope = MovieSummaryScope.movies(
+      cacheKey: 'desktop:movies:list',
+    );
+    await prime(unsubscribedScope, <Map<String, dynamic>>[
+      _movie('ABC-001', isSubscribed: false),
+      _movie('ABC-002', isSubscribed: false),
+    ]);
+    await container
+        .read(movieSummaryProvider(unsubscribedScope).notifier)
+        .applyMovieFilter(
+          const MovieFilterState(status: MovieStatusFilter.unsubscribed),
+        );
+
+    subscriptionBroadcaster().reportChange(
+      movieNumber: 'ABC-002',
+      isSubscribed: true,
+    );
+    await _settleEvents();
+    state = container
+        .read(movieSummaryProvider(unsubscribedScope))
+        .requireValue;
     expect(state.paged.items.map((item) => item.movieNumber), <String>[
       'ABC-001',
     ]);

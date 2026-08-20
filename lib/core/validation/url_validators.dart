@@ -6,17 +6,6 @@ bool isValidHttpUrl(String value) {
       (uri.scheme == 'http' || uri.scheme == 'https');
 }
 
-bool isValidProxyUrl(String value) {
-  final uri = Uri.tryParse(value.trim());
-  return uri != null &&
-      uri.hasScheme &&
-      uri.hasAuthority &&
-      (uri.scheme == 'http' ||
-          uri.scheme == 'https' ||
-          uri.scheme == 'socks5' ||
-          uri.scheme == 'socks5h');
-}
-
 bool isValidHostname(String value) {
   final trimmed = value.trim();
   if (trimmed.isEmpty ||

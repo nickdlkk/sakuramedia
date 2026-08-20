@@ -52,11 +52,6 @@ const List<_MobileSettingsRouteCase> _mobileSettingsRouteCases =
         pageKey: Key('mobile-settings-indexers'),
       ),
       _MobileSettingsRouteCase(
-        path: mobileSettingsLlmPath,
-        title: 'LLM 配置',
-        pageKey: Key('llm-settings-page'),
-      ),
-      _MobileSettingsRouteCase(
         path: mobileSettingsPlaylistsPath,
         title: '播放列表',
         pageKey: Key('mobile-settings-playlists'),
@@ -71,6 +66,11 @@ const List<_MobileSettingsRouteCase> _mobileSettingsRouteCases =
         title: '修改密码',
         pageKey: Key('mobile-settings-password'),
       ),
+      _MobileSettingsRouteCase(
+        path: mobileMediaManagementPath,
+        title: '媒体管理',
+        pageKey: Key('mobile-media-management-page'),
+      ),
     ];
 
 void main() {
@@ -80,7 +80,7 @@ void main() {
 
   test('desktop navigation tree contains moments entry', () {
     expect(desktopNavGroups.length, 17);
-    // 管理区顺序：媒体管理 / 媒体导入 / 任务中心 / 订阅管理 / 通知 / 系统设置。
+    // 管理区顺序：媒体管理 / 资源导入 / 任务中心 / 订阅管理 / 通知 / 系统设置。
     expect(desktopNavGroups.map((group) => group.label), [
       '概览',
       '发现',
@@ -94,7 +94,7 @@ void main() {
       '排行榜',
       '热评',
       '媒体管理',
-      '媒体导入',
+      '资源导入',
       '任务中心',
       '订阅管理',
       '通知',
@@ -1270,8 +1270,6 @@ void main() {
         _enqueueMobileDownloadersResponses(bundle);
       } else if (routeCase.path == mobileSettingsIndexersPath) {
         _enqueueMobileIndexersResponses(bundle);
-      } else if (routeCase.path == mobileSettingsLlmPath) {
-        _enqueueMobileLlmResponses(bundle);
       } else if (routeCase.path == mobileSettingsPlaylistsPath) {
         bundle.adapter.enqueueJson(
           method: 'GET',
@@ -1280,6 +1278,8 @@ void main() {
         );
       } else if (routeCase.path == mobileSettingsUsernamePath) {
         _enqueueAccountProfile(bundle);
+      } else if (routeCase.path == mobileMediaManagementPath) {
+        _enqueueMobileMediaManagementResponses(bundle);
       }
 
       router.go(routeCase.path);
@@ -1395,41 +1395,13 @@ void main() {
 
     expect(find.text('开发中'), findsNothing);
     expect(
-      find.byKey(const Key('mobile-indexers-api-key-card')),
+      find.byKey(const Key('mobile-indexers-connection-test-card')),
       findsOneWidget,
     );
     expect(
       find.byKey(const Key('mobile-indexers-create-button')),
       findsOneWidget,
     );
-  });
-
-  testWidgets('mobile llm route renders real page content', (
-    WidgetTester tester,
-  ) async {
-    final sessionStore = await _buildLoggedInSessionStore(
-      platform: AppPlatform.mobile,
-    );
-    final bundle = await createTestApiBundle(sessionStore);
-    addTearDown(bundle.dispose);
-    final router = buildMobileRouter(sessionStore: sessionStore);
-    _enqueueMobileLlmResponses(bundle);
-
-    await _pumpRouterApp(
-      tester,
-      router: router,
-      sessionStore: sessionStore,
-      bundle: bundle,
-    );
-    await tester.pumpAndSettle();
-
-    router.go(mobileSettingsLlmPath);
-    await tester.pumpAndSettle();
-
-    expect(find.text('开发中'), findsNothing);
-    expect(find.byKey(const Key('llm-overview-card')), findsOneWidget);
-    expect(find.byKey(const Key('llm-form-card')), findsOneWidget);
-    expect(find.byKey(const Key('llm-save-button')), findsOneWidget);
   });
 
   testWidgets('mobile playlist detail route uses subpage shell', (
@@ -1759,6 +1731,69 @@ void main() {
     expect(find.byKey(const Key('mobile-overview-drawer')), findsOneWidget);
   });
 
+  // 抽屉「管理」分区：点媒体管理 → 打开移动子页（非底栏页面，可返回概览）。
+  testWidgets('mobile drawer management section opens media management page', (
+    WidgetTester tester,
+  ) async {
+    final sessionStore = await _buildLoggedInSessionStore(
+      platform: AppPlatform.mobile,
+    );
+    final bundle = await createTestApiBundle(sessionStore);
+    addTearDown(bundle.dispose);
+    final router = buildMobileRouter(sessionStore: sessionStore);
+    bundle.adapter.enqueueJson(
+      method: 'GET',
+      path: '/movies/latest',
+      body: <String, dynamic>{
+        'items': const <Map<String, dynamic>>[],
+        'page': 1,
+        'page_size': 12,
+        'total': 0,
+      },
+    );
+    bundle.adapter.enqueueJson(
+      method: 'GET',
+      path: '/playlists',
+      body: const <Map<String, dynamic>>[],
+    );
+    _enqueueMobileMediaManagementResponses(bundle);
+
+    await _pumpRouterApp(
+      tester,
+      router: router,
+      sessionStore: sessionStore,
+      bundle: bundle,
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('mobile-overview-menu-button')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const Key('mobile-overview-drawer-management-section')),
+      findsOneWidget,
+    );
+
+    // 抽屉内容可滚动，「管理」分区可能落在首屏之外，先滚到可见再点。
+    final mediaManagementItem = find.byKey(
+      const Key('mobile-overview-drawer-media-management'),
+    );
+    await tester.ensureVisible(mediaManagementItem);
+    await tester.pumpAndSettle();
+    await tester.tap(mediaManagementItem);
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const Key('mobile-media-management-page')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const Key('mobile-bottom-navigation')), findsNothing);
+
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(router.routeInformationProvider.value.uri.path, mobileOverviewPath);
+  });
+
   // 侧滑打开抽屉只在「概览根路由 + 停在第一个 tab」时放开:边缘拖拽区盖住多宽,
   // 下面的 TabBarView 就有多宽收不到手势,只有第一个 tab 右滑本就无处可去。
   testWidgets('mobile overview enables drawer edge swipe only on the first '
@@ -1793,15 +1828,14 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    bool dragEnabled() =>
-        tester
-            .widget<Scaffold>(
-              find.ancestor(
-                of: find.byKey(const Key('mobile-shell-body-safe-area')),
-                matching: find.byType(Scaffold),
-              ),
-            )
-            .drawerEnableOpenDragGesture;
+    bool dragEnabled() => tester
+        .widget<Scaffold>(
+          find.ancestor(
+            of: find.byKey(const Key('mobile-shell-body-safe-area')),
+            matching: find.byType(Scaffold),
+          ),
+        )
+        .drawerEnableOpenDragGesture;
 
     expect(dragEnabled(), isTrue);
 
@@ -1856,12 +1890,11 @@ void main() {
     addTearDown(bundle.dispose);
     addTearDown(() => debugMobileImageSearchFilePicker = null);
     final router = buildMobileRouter(sessionStore: sessionStore);
-    debugMobileImageSearchFilePicker =
-        () async => ImageSearchPickedFile(
-          bytes: Uint8List.fromList(const <int>[1, 2, 3, 4]),
-          fileName: 'picked.png',
-          mimeType: 'image/png',
-        );
+    debugMobileImageSearchFilePicker = () async => ImageSearchPickedFile(
+      bytes: Uint8List.fromList(const <int>[1, 2, 3, 4]),
+      fileName: 'picked.png',
+      mimeType: 'image/png',
+    );
     bundle.adapter.enqueueJson(
       method: 'POST',
       path: '/image-search/sessions',
@@ -2115,6 +2148,8 @@ void main() {
         _enqueueMobileIndexersResponses(bundle);
       } else if (routeCase.path == mobileSettingsUsernamePath) {
         _enqueueAccountProfile(bundle);
+      } else if (routeCase.path == mobileMediaManagementPath) {
+        _enqueueMobileMediaManagementResponses(bundle);
       }
 
       router.go(routeCase.path);
@@ -3773,8 +3808,6 @@ void _enqueueMobileDownloadersResponses(TestApiBundle bundle) {
     method: 'GET',
     path: '/indexer-settings',
     body: const <String, dynamic>{
-      'type': 'builtin',
-      'api_key': '',
       'indexers': <Map<String, dynamic>>[],
     },
   );
@@ -3790,29 +3823,7 @@ void _enqueueMobileIndexersResponses(TestApiBundle bundle) {
     method: 'GET',
     path: '/indexer-settings',
     body: const <String, dynamic>{
-      'type': 'jackett',
-      'api_key': '',
       'indexers': <Map<String, dynamic>>[],
-    },
-  );
-}
-
-void _enqueueMobileLlmResponses(TestApiBundle bundle) {
-  bundle.adapter.enqueueJson(
-    method: 'GET',
-    path: '/config',
-    body: const <String, dynamic>{
-      'values': <String, dynamic>{
-        'movie_info_translation': <String, dynamic>{
-          'enabled': false,
-          'base_url': 'http://llm.internal:8000',
-          'api_key': '',
-          'model': 'gpt-4o-mini',
-          'timeout_seconds': 300.0,
-          'connect_timeout_seconds': 3.0,
-        },
-      },
-      'effects': <String, dynamic>{'movie_info_translation': 'hot'},
     },
   );
 }
@@ -4018,6 +4029,32 @@ void _enqueueAccountProfile(TestApiBundle bundle) {
       'created_at': '2026-03-08T09:00:00Z',
       'last_login_at': '2026-03-08T10:00:00Z',
     },
+  );
+}
+
+/// 「媒体管理」页挂载即发三个请求：媒体列表、秒传批次（轮询监听）、媒体库。
+/// 列表/批次用 fallback 常驻空响应（避免后续切 tab 再打穿），媒体库 enqueue 一次。
+void _enqueueMobileMediaManagementResponses(TestApiBundle bundle) {
+  const emptyPage = <String, dynamic>{
+    'items': <Map<String, dynamic>>[],
+    'page': 1,
+    'page_size': 20,
+    'total': 0,
+  };
+  bundle.adapter.setFallbackJson(
+    method: 'GET',
+    path: '/media',
+    body: emptyPage,
+  );
+  bundle.adapter.setFallbackJson(
+    method: 'GET',
+    path: '/media/rapid-uploads',
+    body: emptyPage,
+  );
+  bundle.adapter.enqueueJson(
+    method: 'GET',
+    path: '/media-libraries',
+    body: const <Map<String, dynamic>>[],
   );
 }
 

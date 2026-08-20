@@ -43,6 +43,11 @@ class MovieSubtitleItemDto {
   final DateTime? createdAt;
   final String url;
 
+  String get displayName {
+    final value = fileName.trim();
+    return value.isEmpty ? '字幕 $subtitleId' : value;
+  }
+
   factory MovieSubtitleItemDto.fromJson(Map<String, dynamic> json) {
     return MovieSubtitleItemDto(
       subtitleId: json['subtitle_id'] as int? ?? 0,

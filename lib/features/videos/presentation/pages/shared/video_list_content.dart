@@ -23,6 +23,7 @@ class VideoListContent extends StatelessWidget {
     required this.filterState,
     required this.onFilterChanged,
     required this.onLoadMore,
+    required this.onRetryFilter,
     required this.onVideoTap,
     this.selectionMode = false,
     this.selectedIds = const <int>{},
@@ -41,6 +42,7 @@ class VideoListContent extends StatelessWidget {
   final VideoFilterState filterState;
   final ValueChanged<VideoFilterState> onFilterChanged;
   final VoidCallback onLoadMore;
+  final VoidCallback onRetryFilter;
   final ValueChanged<VideoItemListItemDto> onVideoTap;
 
   /// 选择模式：网格切换为多选交互。
@@ -75,8 +77,9 @@ class VideoListContent extends StatelessWidget {
     final showFooter =
         paged.items.isNotEmpty &&
         (paged.isLoadingMore || paged.loadMoreErrorMessage != null);
-    final selectionHeader =
-        selectionMode ? selectionHeaderBuilder?.call(context) : null;
+    final selectionHeader = selectionMode
+        ? selectionHeaderBuilder?.call(context)
+        : null;
     final actions = headerActionsBuilder?.call(context);
     return SliverMainAxisGroup(
       key: contentKey,
@@ -93,15 +96,17 @@ class VideoListContent extends StatelessWidget {
                     filterLabel: filterState.sortField.label,
                     filterPanelKey: const Key('videos-filter-panel'),
                     filterPanelExtraWidth: 180,
-                    filterPanelBuilder:
-                        (_) => VideoFilterSectionGroup(
-                          filterState: filterState,
-                          onChanged: onFilterChanged,
-                        ),
+                    filterPanelBuilder: (_) => VideoFilterSectionGroup(
+                      filterState: filterState,
+                      onChanged: onFilterChanged,
+                    ),
                     filterPanelFooter: AppFilterPanelFooter(
                       isDefault: filterState.isDefault,
                       onReset: () => onFilterChanged(VideoFilterState.initial),
                     ),
+                    filterUpdate: paged.filterUpdate,
+                    hasPreviousFilterItems: paged.items.isNotEmpty,
+                    onRetryFilter: onRetryFilter,
                     informationSlots: [
                       AppListHeaderInfo(
                         key: totalKey ?? const Key('videos-page-total'),
@@ -114,16 +119,17 @@ class VideoListContent extends StatelessWidget {
             ],
           ),
         ),
-        VideoSummarySliver(
-          items: paged.items,
-          isLoading: isInitialLoading,
-          errorMessage: initialErrorMessage,
-          onVideoTap: onVideoTap,
-          selectionMode: selectionMode,
-          selectedIds: selectedIds,
-          onVideoToggleSelect: onVideoToggleSelect,
-          emptyMessage: emptyMessage,
-        ),
+        if (!paged.filterUpdate.hasFailed || paged.items.isNotEmpty)
+          VideoSummarySliver(
+            items: paged.items,
+            isLoading: isInitialLoading,
+            errorMessage: initialErrorMessage,
+            onVideoTap: onVideoTap,
+            selectionMode: selectionMode,
+            selectedIds: selectedIds,
+            onVideoToggleSelect: onVideoToggleSelect,
+            emptyMessage: emptyMessage,
+          ),
         if (showFooter)
           SliverToBoxAdapter(
             child: Padding(

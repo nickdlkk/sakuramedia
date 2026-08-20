@@ -7,9 +7,9 @@ import 'package:sakuramedia/widgets/base/feedback/app_empty_state.dart';
 import 'package:sakuramedia/widgets/base/interaction/selection/app_selectable_tile.dart';
 import 'package:sakuramedia/widgets/base/layout/cards/app_badge.dart';
 import 'package:sakuramedia/widgets/base/layout/cards/app_notice_card.dart';
-import 'package:sakuramedia/widgets/base/overlays/app_desktop_dialog.dart';
+import 'package:sakuramedia/widgets/base/overlays/app_adaptive_modal.dart';
 
-/// 秒传目标 115 网盘挑选弹窗。
+/// 秒传目标 115 网盘挑选弹窗（自适应：移动端底部抽屉、桌面端对话框）。
 ///
 /// - 无 115 库时给一个明确的空态引导用户先去「媒体库」tab 新建；
 /// - 只有一个 115 库时默认选中它；
@@ -19,12 +19,15 @@ Future<MediaLibraryDto?> showRapidUploadTargetLibraryDialog(
   required int selectedCount,
   required List<MediaLibraryDto> libraries,
 }) {
-  return showDialog<MediaLibraryDto>(
+  return showAppAdaptiveModal<MediaLibraryDto>(
     context: context,
+    modalKey: const Key('rapid-upload-target-library-dialog'),
+    desktopWidth: context.appLayoutTokens.dialogWidthSm,
+    mobileHeightFactor: 0.78,
     builder: (dialogContext) {
-      return AppDesktopDialog(
-        dialogKey: const Key('rapid-upload-target-library-dialog'),
-        width: dialogContext.appLayoutTokens.dialogWidthSm,
+      // 移动端抽屉（heightFactor 0.78）下库多/大字体可能超高：整块可滚动兜底，
+      // 桌面对话框高度不受限、内容不超时自然不滚。
+      return SingleChildScrollView(
         child: _RapidUploadTargetBody(
           selectedCount: selectedCount,
           libraries: libraries,
@@ -172,18 +175,24 @@ class _LibraryList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final spacing = context.appSpacing;
-    return Column(
-      children: [
-        for (final library in libraries)
-          Padding(
-            padding: EdgeInsets.only(bottom: spacing.sm),
-            child: _LibraryTile(
-              library: library,
-              selected: library.id == selectedId,
-              onTap: () => onSelected(library.id),
+    return RadioGroup<int>(
+      groupValue: selectedId,
+      onChanged: (id) {
+        if (id != null) onSelected(id);
+      },
+      child: Column(
+        children: [
+          for (final library in libraries)
+            Padding(
+              padding: EdgeInsets.only(bottom: spacing.sm),
+              child: _LibraryTile(
+                library: library,
+                selected: library.id == selectedId,
+                onTap: () => onSelected(library.id),
+              ),
             ),
-          ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -210,8 +219,6 @@ class _LibraryTile extends StatelessWidget {
           Radio<int>(
             key: Key('rapid-upload-target-radio-${library.id}'),
             value: library.id,
-            groupValue: selected ? library.id : null,
-            onChanged: (_) => onTap(),
           ),
           SizedBox(width: spacing.sm),
           Expanded(

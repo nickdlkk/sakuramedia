@@ -6,7 +6,11 @@ import 'package:sakuramedia/core/network/paginated_response_dto.dart';
 import 'package:sakuramedia/features/shared/presentation/providers/paged_async_notifier.dart';
 
 typedef _Fetcher =
-    Future<PaginatedResponseDto<int>> Function(int page, int pageSize, int filter);
+    Future<PaginatedResponseDto<int>> Function(
+      int page,
+      int pageSize,
+      int filter,
+    );
 
 final _fetcherProvider = Provider<_Fetcher>((ref) {
   throw UnimplementedError('override _fetcherProvider in test');
@@ -17,33 +21,32 @@ class _State {
     required this.paged,
     this.filter = 0,
     this.selected = const <int>{},
-    this.isReloading = false,
   });
 
   final PagedListState<int> paged;
   final int filter;
   final Set<int> selected;
-  final bool isReloading;
 
   _State copyWith({
     PagedListState<int>? paged,
     int? filter,
     Set<int>? selected,
-    bool? isReloading,
   }) => _State(
     paged: paged ?? this.paged,
     filter: filter ?? this.filter,
     selected: selected ?? this.selected,
-    isReloading: isReloading ?? this.isReloading,
   );
 }
 
-class _SpinnerNotifier extends AsyncNotifier<_State>
+class _Notifier extends AsyncNotifier<_State>
     with
         PagedAsyncNotifierMixin<_State, int>,
         FilterablePagedAsyncNotifierMixin<_State, int, int> {
   @override
   int get pageSize => 3;
+
+  @override
+  Duration get filterDebounceDuration => const Duration(milliseconds: 20);
 
   @override
   String get initialLoadErrorText => 'initial-err';
@@ -77,60 +80,8 @@ class _SpinnerNotifier extends AsyncNotifier<_State>
   }
 }
 
-final _spinnerProvider = AsyncNotifierProvider<_SpinnerNotifier, _State>(
-  _SpinnerNotifier.new,
-  retry: (_, __) => null,
-);
-
-class _PreserveNotifier extends AsyncNotifier<_State>
-    with
-        PagedAsyncNotifierMixin<_State, int>,
-        FilterablePagedAsyncNotifierMixin<_State, int, int> {
-  @override
-  int get pageSize => 3;
-
-  @override
-  String get initialLoadErrorText => 'initial-err';
-
-  @override
-  String get loadMoreErrorText => 'load-more-err';
-
-  @override
-  PagedListState<int> pagedOf(_State state) => state.paged;
-
-  @override
-  _State applyPaged(_State state, PagedListState<int> paged) =>
-      state.copyWith(paged: paged);
-
-  @override
-  int get initialFilter => 0;
-
-  @override
-  _State applyFilterToState(_State state, int filter) =>
-      state.copyWith(filter: filter);
-
-  @override
-  FilterReloadStrategy get filterReloadStrategy =>
-      FilterReloadStrategy.preserveList;
-
-  @override
-  _State copyWithReloading(_State state, bool reloading) =>
-      state.copyWith(isReloading: reloading);
-
-  @override
-  Future<PaginatedResponseDto<int>> fetchPage(int page, int pageSize) =>
-      ref.read(_fetcherProvider)(page, pageSize, activeFilter);
-
-  @override
-  Future<_State> build() async {
-    attachDisposeGuard();
-    final paged = await loadInitialPage();
-    return _State(paged: paged, filter: activeFilter);
-  }
-}
-
-final _preserveProvider = AsyncNotifierProvider<_PreserveNotifier, _State>(
-  _PreserveNotifier.new,
+final _provider = AsyncNotifierProvider<_Notifier, _State>(
+  _Notifier.new,
   retry: (_, __) => null,
 );
 
@@ -147,165 +98,163 @@ PaginatedResponseDto<int> _page({
 );
 
 void main() {
-  late List<int> filtersUsed;
+  late List<(int, int)> requests;
   late ProviderContainer container;
 
   setUp(() {
-    filtersUsed = <int>[];
+    requests = <(int, int)>[];
     container = ProviderContainer(
       overrides: [
-        _fetcherProvider.overrideWithValue(
-          (page, pageSize, filter) async {
-            filtersUsed.add(filter);
-            return _page(
-              page: page,
-              items: List<int>.generate(3, (i) => filter * 100 + i),
-              total: 3,
-            );
-          },
-        ),
+        _fetcherProvider.overrideWithValue((page, pageSize, filter) async {
+          requests.add((page, filter));
+          return _page(
+            page: page,
+            items: List<int>.generate(3, (i) => filter * 100 + i),
+            total: 3,
+          );
+        }),
       ],
     );
     addTearDown(container.dispose);
   });
 
-  test('spinner 策略：切筛选走 AsyncLoading、拉第一页、写回 filter', () async {
-    await container.read(_spinnerProvider.future);
-    expect(container.read(_spinnerProvider).value!.filter, 0);
-
-    final pending = Future<_State>(() => container.read(_spinnerProvider.future));
-    final fut = container.read(_spinnerProvider.notifier).applyFilterState(1);
-    // reload 同步切成 AsyncLoading。
-    expect(container.read(_spinnerProvider), isA<AsyncLoading<_State>>());
-    await fut;
-    await pending;
-
-    final state = container.read(_spinnerProvider);
-    expect(state.value!.filter, 1);
-    expect(state.value!.paged.items, [100, 101, 102]);
-    expect(filtersUsed, [0, 1]);
-  });
-
-  test('spinner 策略：reload 清空多选（applyFilterToState 副作用）', () async {
-    await container.read(_spinnerProvider.future);
-    final notifier = container.read(_spinnerProvider.notifier);
+  test('筛选条件同步更新并保留旧列表，防抖后原子替换结果', () async {
+    await container.read(_provider.future);
+    final notifier = container.read(_provider.notifier);
     notifier.state = AsyncData(
-      notifier.state.value!.copyWith(
-        selected: const <int>{1, 2},
-      ),
+      notifier.state.value!.copyWith(selected: const <int>{1, 2}),
     );
-    await notifier.applyFilterState(2);
-    expect(container.read(_spinnerProvider).value!.selected, isEmpty);
-    expect(container.read(_spinnerProvider).value!.filter, 2);
-  });
+    final before = notifier.state.value!.paged.items;
 
-  test('preserveList 策略：items 保留 + isReloading 先 true 后 false', () async {
-    await container.read(_preserveProvider.future);
-    final before = container.read(_preserveProvider).value!;
+    final future = notifier.applyFilterState(1);
+    final during = container.read(_provider).requireValue;
+    expect(during.filter, 1);
+    expect(during.selected, isEmpty);
+    expect(during.paged.items, before);
+    expect(during.paged.filterUpdate.isLoading, isTrue);
+    expect(requests, [(1, 0)]);
 
-    final fut = container.read(_preserveProvider.notifier).applyFilterState(1);
-    // 不切 AsyncLoading：立即进入 isReloading、旧 items 保留。
-    final during = container.read(_preserveProvider);
-    expect(during, isA<AsyncData<_State>>());
-    expect(during.value!.isReloading, isTrue);
-    expect(during.value!.filter, 1);
-    expect(during.value!.paged.items, before.paged.items);
-
-    await fut;
-    final after = container.read(_preserveProvider).value!;
-    expect(after.isReloading, isFalse);
-    expect(after.filter, 1);
+    await future;
+    final after = container.read(_provider).requireValue;
     expect(after.paged.items, [100, 101, 102]);
+    expect(after.paged.filterUpdate.isIdle, isTrue);
   });
 
-  test('preserveList 策略：失败保留 items、isReloading 复位、抛错', () async {
+  test('防抖窗口内连续筛选只请求最终条件', () async {
+    await container.read(_provider.future);
+    final notifier = container.read(_provider.notifier);
+
+    final first = notifier.applyFilterState(1);
+    final second = notifier.applyFilterState(2);
+    final third = notifier.applyFilterState(3);
+    await Future.wait([first, second, third]);
+
+    expect(requests, [(1, 0), (1, 3)]);
+    expect(container.read(_provider).requireValue.filter, 3);
+    expect(container.read(_provider).requireValue.paged.items, [300, 301, 302]);
+  });
+
+  test('旧请求晚返回不会覆盖较新的筛选结果', () async {
+    final firstGate = Completer<PaginatedResponseDto<int>>();
+    final raced = ProviderContainer(
+      overrides: [
+        _fetcherProvider.overrideWithValue((page, pageSize, filter) {
+          if (filter == 1) return firstGate.future;
+          return Future.value(
+            _page(page: page, items: [filter * 100], total: 1),
+          );
+        }),
+      ],
+    );
+    addTearDown(raced.dispose);
+    await raced.read(_provider.future);
+    final notifier = raced.read(_provider.notifier);
+
+    final first = notifier.applyFilterState(1);
+    await Future<void>.delayed(const Duration(milliseconds: 30));
+    final second = notifier.applyFilterState(2);
+    await second;
+    expect(raced.read(_provider).requireValue.paged.items, [200]);
+
+    firstGate.complete(_page(page: 1, items: const [100], total: 1));
+    await first;
+    expect(raced.read(_provider).requireValue.filter, 2);
+    expect(raced.read(_provider).requireValue.paged.items, [200]);
+  });
+
+  test('失败保留旧结果和新筛选，并通过状态提供重试', () async {
+    var fail = true;
     final failing = ProviderContainer(
       overrides: [
-        _fetcherProvider.overrideWithValue(
-          (page, pageSize, filter) async {
-            if (filter == 0) {
-              return _page(page: 1, items: const [1, 2, 3], total: 3);
-            }
-            throw Exception('boom');
-          },
-        ),
+        _fetcherProvider.overrideWithValue((page, pageSize, filter) async {
+          if (filter == 1 && fail) throw Exception('boom');
+          return _page(page: page, items: [filter * 100], total: 1);
+        }),
       ],
     );
     addTearDown(failing.dispose);
-    await failing.read(_preserveProvider.future);
+    await failing.read(_provider.future);
+    final notifier = failing.read(_provider.notifier);
 
-    await expectLater(
-      failing.read(_preserveProvider.notifier).applyFilterState(1),
-      throwsA(isA<Exception>()),
-    );
-    final after = failing.read(_preserveProvider).value!;
-    expect(after.isReloading, isFalse);
-    expect(after.filter, 1);
-    expect(after.paged.items, [1, 2, 3]);
+    await notifier.applyFilterState(1);
+    final failed = failing.read(_provider).requireValue;
+    expect(failed.filter, 1);
+    expect(failed.paged.items, [0]);
+    expect(failed.paged.filterUpdate.hasFailed, isTrue);
+
+    fail = false;
+    await notifier.retryFilter();
+    final retried = failing.read(_provider).requireValue;
+    expect(retried.paged.items, [100]);
+    expect(retried.paged.filterUpdate.isIdle, isTrue);
   });
 
-  test('值对象等价短路：不发请求', () async {
-    await container.read(_spinnerProvider.future);
-    await container.read(_spinnerProvider.notifier).applyFilterState(0);
-    expect(filtersUsed, [0]);
-  });
-
-  test('preserveList 未 build 完成时走 reload 兜底', () async {
-    final notifier = container.read(_preserveProvider.notifier);
-    await notifier.applyFilterState(3);
-    final state = container.read(_preserveProvider).value!;
-    expect(state.filter, 3);
-    expect(state.paged.items, [300, 301, 302]);
-  });
-
-  test('preserveList 切筛选前有 in-flight loadMore：失败后 isLoadingMore 被清、可再触发', () async {
-    final gate = Completer<PaginatedResponseDto<int>>();
-    var loadMoreCalls = 0;
+  test('筛选更新期间阻止 loadMore，并作废已在途的旧分页', () async {
+    final loadMoreGate = Completer<PaginatedResponseDto<int>>();
+    var pageTwoCalls = 0;
     final gated = ProviderContainer(
       overrides: [
         _fetcherProvider.overrideWithValue((page, pageSize, filter) async {
-          if (filter == 0 && page == 2) {
-            loadMoreCalls++;
-            return gate.future;
+          if (page == 2) {
+            pageTwoCalls++;
+            return loadMoreGate.future;
           }
-          if (filter == 1) {
-            throw Exception('boom');
-          }
-          return _page(page: 1, items: const [1, 2, 3], total: 100);
+          return _page(
+            page: 1,
+            items: [filter * 100, filter * 100 + 1, filter * 100 + 2],
+            total: filter == 0 ? 10 : 3,
+          );
         }),
       ],
     );
     addTearDown(gated.dispose);
-    await gated.read(_preserveProvider.future);
+    await gated.read(_provider.future);
+    final notifier = gated.read(_provider.notifier);
 
-    final notifier = gated.read(_preserveProvider.notifier);
-    // 制造 in-flight loadMore：isLoadingMore = true，fetch 被 gate 卡住。
-    final loadMoreFut = notifier.loadMore();
-    expect(gated.read(_preserveProvider).value!.paged.isLoadingMore, isTrue);
-
-    // 切筛选（失败路径）：不再死锁，isLoadingMore 被显式清掉。
-    await expectLater(
-      notifier.applyFilterState(1),
-      throwsA(isA<Exception>()),
-    );
-    final after = gated.read(_preserveProvider).value!;
-    expect(after.isReloading, isFalse);
-    expect(after.paged.isLoadingMore, isFalse);
-    expect(after.paged.loadMoreErrorMessage, isNull);
-    expect(after.paged.items, [1, 2, 3]);
-
-    // 被代次作废的旧 loadMore 回来后不回写：isLoadingMore 不复活、items 不变。
-    gate.complete(_page(page: 2, items: const [100], total: 100));
-    await loadMoreFut;
-    final afterDiscard = gated.read(_preserveProvider).value!;
-    expect(afterDiscard.paged.isLoadingMore, isFalse);
-    expect(afterDiscard.paged.items, [1, 2, 3]);
-    expect(loadMoreCalls, 1);
-
-    // 可再次触发 loadMore（不死锁）——filter=1 的 fetchPage 抛错 → loadMoreError
+    final oldLoadMore = notifier.loadMore();
+    expect(gated.read(_provider).requireValue.paged.isLoadingMore, isTrue);
+    final filterFuture = notifier.applyFilterState(1);
+    expect(gated.read(_provider).requireValue.paged.isLoadingMore, isFalse);
     await notifier.loadMore();
-    final afterRetry = gated.read(_preserveProvider).value!;
-    expect(afterRetry.paged.isLoadingMore, isFalse);
-    expect(afterRetry.paged.loadMoreErrorMessage, 'load-more-err');
+    expect(pageTwoCalls, 1);
+
+    await filterFuture;
+    loadMoreGate.complete(_page(page: 2, items: const [99], total: 10));
+    await oldLoadMore;
+    expect(gated.read(_provider).requireValue.paged.items, [100, 101, 102]);
+  });
+
+  test('等价筛选短路，不发送请求', () async {
+    await container.read(_provider.future);
+    await container.read(_provider.notifier).applyFilterState(0);
+    expect(requests, [(1, 0)]);
+  });
+
+  test('销毁时取消排队请求并正常结束调用 Future', () async {
+    await container.read(_provider.future);
+    final pending = container.read(_provider.notifier).applyFilterState(1);
+    container.dispose();
+    await pending;
+    expect(requests, [(1, 0)]);
   });
 }

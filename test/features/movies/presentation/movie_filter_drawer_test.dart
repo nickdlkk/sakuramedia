@@ -11,19 +11,18 @@ void main() {
       MaterialApp(
         theme: sakuraThemeData,
         home: Builder(
-          builder:
-              (context) => Scaffold(
-                body: TextButton(
-                  onPressed: () async {
-                    await showMobileMovieFilterDrawer(
-                      context,
-                      current: MovieFilterState.initial,
-                      onChanged: applied.add,
-                    );
-                  },
-                  child: const Text('打开筛选'),
-                ),
-              ),
+          builder: (context) => Scaffold(
+            body: TextButton(
+              onPressed: () async {
+                await showMobileMovieFilterDrawer(
+                  context,
+                  current: MovieFilterState.initial,
+                  onChanged: applied.add,
+                );
+              },
+              child: const Text('打开筛选'),
+            ),
+          ),
         ),
       ),
     );
@@ -35,6 +34,10 @@ void main() {
     // 没有快捷筛选、没有确定按钮。
     expect(find.text('状态筛选'), findsOneWidget);
     expect(find.text('合集类型'), findsOneWidget);
+    expect(find.byKey(const Key('movie-filter-heat-section-title')), findsOneWidget);
+    expect(find.text('0'), findsOneWidget);
+    expect(find.text('2w'), findsOneWidget);
+    expect(find.text('${DateTime.now().year}'), findsOneWidget);
     expect(find.text('筛选'), findsNothing);
     expect(find.text('确定'), findsNothing);
     expect(find.text('完成'), findsNothing);
@@ -47,11 +50,47 @@ void main() {
     expect(applied.single.status, MovieStatusFilter.subscribed);
     expect(find.text('状态筛选'), findsOneWidget);
 
-    // 重置在 footer 里，与桌面面板同一个 AppFilterPanelFooter。
-    await tester.tap(find.text('重置'));
+    // 未订阅与已订阅互补相邻，同样是即时生效。
+    await tester.tap(find.text('未订阅'));
     await tester.pumpAndSettle();
 
     expect(applied, hasLength(2));
+    expect(applied.last.status, MovieStatusFilter.unsubscribed);
+
+    // 热度双滑块：拖右 thumb 松手才应用，且滑到顶之前传具体上限。
+    final slider = find.byKey(const Key('movie-filter-heat-slider'));
+    final rect = tester.getRect(slider);
+    await tester.dragFrom(
+      Offset(rect.right - 12, rect.center.dy),
+      const Offset(-160, 0),
+    );
+    await tester.pumpAndSettle();
+
+    expect(applied, hasLength(3));
+    final heatApplied = applied.last;
+    expect(heatApplied.heatMin, isNull);
+    expect(heatApplied.heatMax, isNotNull);
+    expect(heatApplied.heatMax, lessThan(movieFilterHeatSliderMax));
+
+    // 左 thumb 同样松手才生效：下限非 0 时映射为具体的 heat_min。
+    await tester.dragFrom(
+      Offset(rect.left + 12, rect.center.dy),
+      const Offset(120, 0),
+    );
+    await tester.pumpAndSettle();
+
+    expect(applied, hasLength(4));
+    expect(applied.last.heatMin, isNotNull);
+    expect(applied.last.heatMin, greaterThan(0));
+
+    // 重置在 footer 里，与桌面面板同一个 AppFilterPanelFooter；
+    // 重置后热度条件一并清空，滑块回到 0 ~ 2w。
+    await tester.tap(find.text('重置'));
+    await tester.pumpAndSettle();
+
+    expect(applied, hasLength(5));
     expect(applied.last.isDefault, isTrue);
+    expect(applied.last.heatMin, isNull);
+    expect(applied.last.heatMax, isNull);
   });
 }

@@ -7,15 +7,12 @@ import 'package:sakuramedia/core/network/api_error_message.dart';
 import 'package:sakuramedia/features/configuration/data/api/download_clients_api.dart';
 import 'package:sakuramedia/features/configuration/data/api/indexer_settings_api.dart';
 import 'package:sakuramedia/features/configuration/data/api/media_libraries_api.dart';
-import 'package:sakuramedia/features/configuration/data/api/movie_desc_translation_settings_api.dart';
 import 'package:sakuramedia/features/configuration/data/dto/download_client_dto.dart';
 import 'package:sakuramedia/features/configuration/data/dto/indexer_settings_dto.dart';
 import 'package:sakuramedia/features/configuration/data/dto/media_library_dto.dart';
-import 'package:sakuramedia/features/configuration/data/dto/movie_desc_translation_settings_dto.dart';
 import 'package:sakuramedia/features/status/data/status_api.dart';
 import 'package:sakuramedia/features/status/data/status_dto.dart';
 import 'package:sakuramedia/features/configuration/presentation/providers/indexer_settings_api_provider.dart';
-import 'package:sakuramedia/features/configuration/presentation/providers/llm_settings_provider.dart';
 import 'package:sakuramedia/features/downloads/presentation/providers/downloads_api_provider.dart';
 import 'package:sakuramedia/features/media/presentation/providers/media_api_provider.dart';
 import 'package:sakuramedia/features/status/presentation/providers/status_api_provider.dart';
@@ -28,7 +25,6 @@ import 'package:sakuramedia/features/system_diagnostics/presentation/hints/diagn
 import 'package:sakuramedia/features/system_diagnostics/presentation/hints/downloader_hints.dart';
 import 'package:sakuramedia/features/system_diagnostics/presentation/hints/indexer_hints.dart';
 import 'package:sakuramedia/features/system_diagnostics/presentation/hints/joytag_hints.dart';
-import 'package:sakuramedia/features/system_diagnostics/presentation/hints/llm_hints.dart';
 import 'package:sakuramedia/features/system_diagnostics/presentation/hints/media_library_hints.dart';
 import 'package:sakuramedia/features/system_diagnostics/presentation/hints/metadata_provider_hints.dart';
 
@@ -84,7 +80,7 @@ class SystemDiagnosticsState {
 ///
 /// 调度算法（[runAll]）：
 ///   Stage A（基础资源）：媒体库。空 → 后置全部 blocked。
-///   Stage B（独立探针，与 A 并行）：JavDB / DMM / LLM / JoyTag。
+///   Stage B（独立探针，与 A 并行）：JavDB / JoyTag。
 ///   Stage C（依赖 A）：下载器（每个 client → 连通性 + 存储 两项，全部并发）。
 ///   Stage D（依赖 C）：索引器 —— 静态校验、下载器绑定核对和真实搜索测试。
 ///
@@ -95,7 +91,6 @@ class SystemDiagnostics extends _$SystemDiagnostics {
   late final DownloadClientsApi _downloadClientsApi;
   late final IndexerSettingsApi _indexerSettingsApi;
   late final StatusApi _statusApi;
-  late final MovieDescTranslationSettingsApi _llmApi;
   var _disposed = false;
 
   @override
@@ -104,7 +99,6 @@ class SystemDiagnostics extends _$SystemDiagnostics {
     _downloadClientsApi = ref.read(downloadClientsApiProvider);
     _indexerSettingsApi = ref.read(indexerSettingsApiProvider);
     _statusApi = ref.read(statusApiProvider);
-    _llmApi = ref.read(llmSettingsApiProvider);
     ref.onDispose(() => _disposed = true);
     _categories = _buildInitialCategories();
     return _snapshot();
@@ -113,8 +107,6 @@ class SystemDiagnostics extends _$SystemDiagnostics {
   static const String _mediaLibraryItemKey = 'media-library';
   static const String _indexerItemKey = 'indexer';
   static const String _javdbItemKey = 'javdb';
-  static const String _dmmItemKey = 'dmm';
-  static const String _llmItemKey = 'llm';
   static const String _joyTagItemKey = 'joytag';
 
   bool _isRunning = false;
@@ -156,8 +148,6 @@ class SystemDiagnostics extends _$SystemDiagnostics {
     // Stage A + Stage B 完全并发（独立项互不依赖）。
     final mediaLibraryFuture = _probeMediaLibrary();
     final javdbFuture = _probeMetadataProvider(_javdbItemKey);
-    final dmmFuture = _probeMetadataProvider(_dmmItemKey);
-    final llmFuture = _probeLlm();
     final joyTagFuture = _probeJoyTag();
 
     final mediaLibrary = await mediaLibraryFuture;
@@ -198,12 +188,10 @@ class SystemDiagnostics extends _$SystemDiagnostics {
 
     // 收 stage B。
     final javdb = await javdbFuture;
-    final dmm = await dmmFuture;
-    _replaceCategoryItems('外部数据源', <DiagnosticItemState>[javdb, dmm]);
+    _replaceCategoryItems('外部数据源', <DiagnosticItemState>[javdb]);
 
-    final llm = await llmFuture;
     final joyTag = await joyTagFuture;
-    _replaceCategoryItems('智能能力', <DiagnosticItemState>[llm, joyTag]);
+    _replaceCategoryItems('智能能力', <DiagnosticItemState>[joyTag]);
 
     _isRunning = false;
     _lastRunAt = DateTime.now();
@@ -418,7 +406,7 @@ class SystemDiagnostics extends _$SystemDiagnostics {
           itemKey: _indexerItemKey,
           displayName: '索引器',
           status: DiagnosticItemStatus.unhealthy,
-          hint: indexerHints[hintKey] ?? indexerHints['jackett-request-error']!,
+          hint: indexerHints[hintKey] ?? indexerHints['torznab-request-error']!,
           summary: _indexerSummary(hintKey, settings),
         );
       }
@@ -451,21 +439,17 @@ class SystemDiagnostics extends _$SystemDiagnostics {
         itemKey: _indexerItemKey,
         displayName: '索引器',
         status: DiagnosticItemStatus.unhealthy,
-        hint: indexerHints['jackett-request-error']!,
+        hint: indexerHints['torznab-request-error']!,
         summary: '索引器配置或连通性检测失败',
       );
     }
   }
 
-  /// JavDB / DMM 共用一个端点，但**不共用一套 hint**——两者的代理语义与职责完全不同，
-  /// 详见 `metadata_provider_hints.dart` 顶部说明。
+  /// 后端 `/status/metadata-providers/{provider}/test` 目前只支持 JavDB。
   Future<DiagnosticItemState> _probeMetadataProvider(String provider) async {
-    final displayName = provider == _javdbItemKey ? 'JavDB' : 'DMM';
-    final kind =
-        provider == _javdbItemKey
-            ? DiagnosticItemKind.javdb
-            : DiagnosticItemKind.dmm;
-    final hints = metadataProviderHints(provider);
+    const displayName = 'JavDB';
+    const kind = DiagnosticItemKind.javdb;
+    final hints = javdbHints;
     try {
       final result = await _statusApi.testMetadataProvider(provider);
       // 后端已经量过耗时（含内部重试），比前端在 await 两端掐表准。
@@ -489,7 +473,7 @@ class SystemDiagnostics extends _$SystemDiagnostics {
         summary: _metadataProviderErrorSummary(result),
       );
     } catch (error) {
-      // 后端探测端点本身挂了：既不是 JavDB 也不是 DMM 的问题，不能套站点文案。
+      // 后端探测端点本身挂了：这不是 JavDB 站点的问题，不能套站点文案。
       return _fromHint(
         kind: kind,
         itemKey: provider,
@@ -499,92 +483,6 @@ class SystemDiagnostics extends _$SystemDiagnostics {
         summary: _shortenError(
           apiErrorMessage(error, fallback: '$displayName 探测请求失败'),
         ),
-      );
-    }
-  }
-
-  Future<DiagnosticItemState> _probeLlm() async {
-    final MovieDescTranslationSettingsDto settings;
-    try {
-      settings = await _llmApi.getSettings();
-    } catch (error) {
-      return _fromHint(
-        kind: DiagnosticItemKind.llm,
-        itemKey: _llmItemKey,
-        displayName: 'LLM 翻译',
-        status: DiagnosticItemStatus.unhealthy,
-        hint: llmHints['unknown']!,
-        summary: _shortenError(apiErrorMessage(error, fallback: 'LLM 配置读取失败')),
-      );
-    }
-
-    if (!settings.enabled) {
-      return _fromHint(
-        kind: DiagnosticItemKind.llm,
-        itemKey: _llmItemKey,
-        displayName: 'LLM 翻译',
-        status: DiagnosticItemStatus.warning,
-        hint: llmHints['disabled']!,
-        summary: '总开关未启用',
-      );
-    }
-    if (settings.baseUrl.trim().isEmpty ||
-        settings.apiKey.trim().isEmpty ||
-        settings.model.trim().isEmpty) {
-      return _fromHint(
-        kind: DiagnosticItemKind.llm,
-        itemKey: _llmItemKey,
-        displayName: 'LLM 翻译',
-        status: DiagnosticItemStatus.unhealthy,
-        hint: llmHints['not-configured']!,
-        summary: '关键字段为空',
-      );
-    }
-
-    final payload = TestMovieDescTranslationSettingsPayload(
-      enabled: settings.enabled,
-      baseUrl: settings.baseUrl,
-      apiKey: settings.apiKey,
-      model: settings.model,
-      timeoutSeconds: settings.timeoutSeconds,
-      connectTimeoutSeconds: settings.connectTimeoutSeconds,
-    );
-    final started = DateTime.now();
-    try {
-      final ok = await _llmApi.testSettings(payload);
-      final elapsed = DateTime.now().difference(started).inMilliseconds;
-      if (ok) {
-        return DiagnosticItemState.healthy(
-          kind: DiagnosticItemKind.llm,
-          itemKey: _llmItemKey,
-          displayName: 'LLM 翻译',
-          elapsedMs: elapsed,
-          summary: '模型 ${settings.model} 可用',
-        );
-      }
-      // 后端只在成功时返回 ok:true，失败走 HTTP 错误（下面的 catch）。
-      // 走到这里说明响应结构不是预期的 {ok: true}。
-      return _fromHint(
-        kind: DiagnosticItemKind.llm,
-        itemKey: _llmItemKey,
-        displayName: 'LLM 翻译',
-        status: DiagnosticItemStatus.unhealthy,
-        hint: llmHints[LlmErrorCode.invalidResponse]!,
-        elapsedMs: elapsed,
-        summary: '测试接口未返回 ok',
-      );
-    } catch (error) {
-      // 后端把失败原因放在 ApiError.code 里（movie_desc_translation_*），
-      // 按它分派才能给出可执行的建议，别一律落 unknown。
-      final elapsed = DateTime.now().difference(started).inMilliseconds;
-      return _fromHint(
-        kind: DiagnosticItemKind.llm,
-        itemKey: _llmItemKey,
-        displayName: 'LLM 翻译',
-        status: DiagnosticItemStatus.unhealthy,
-        hint: llmHints[resolveLlmHintKey(error)]!,
-        elapsedMs: elapsed,
-        summary: _shortenError(apiErrorMessage(error, fallback: 'LLM 测试请求失败')),
       );
     }
   }
@@ -727,14 +625,12 @@ class SystemDiagnostics extends _$SystemDiagnostics {
         icon: Icons.public,
         items: <DiagnosticItemState>[
           make(DiagnosticItemKind.javdb, _javdbItemKey, 'JavDB'),
-          make(DiagnosticItemKind.dmm, _dmmItemKey, 'DMM'),
         ],
       ),
       DiagnosticCategoryState(
         label: '智能能力',
         icon: Icons.psychology_outlined,
         items: <DiagnosticItemState>[
-          make(DiagnosticItemKind.llm, _llmItemKey, 'LLM 翻译'),
           make(DiagnosticItemKind.joyTag, _joyTagItemKey, 'JoyTag 推理'),
         ],
       ),
@@ -757,10 +653,6 @@ class SystemDiagnostics extends _$SystemDiagnostics {
 
   String _indexerSummary(String hintKey, IndexerSettingsDto settings) {
     switch (hintKey) {
-      case 'type-missing':
-        return '未选择索引器类型';
-      case 'api-key-missing':
-        return 'API Key 未填';
       case 'entries-empty':
         return '尚未添加任何索引器条目';
       case 'entry-url-invalid':
@@ -788,7 +680,7 @@ class SystemDiagnostics extends _$SystemDiagnostics {
     }
     return result.error?.type == 'no_indexers_configured'
         ? '尚未保存任何索引器条目'
-        : 'Jackett 连通性测试失败';
+        : 'Torznab 连通性测试失败';
   }
 
   String _shortenError(String message) {

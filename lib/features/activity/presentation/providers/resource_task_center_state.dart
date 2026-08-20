@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:sakuramedia/features/activity/data/resource_task_definition_dto.dart';
 import 'package:sakuramedia/features/activity/data/resource_task_record_dto.dart';
 import 'package:sakuramedia/features/activity/presentation/resource_task_filter_state.dart';
+import 'package:sakuramedia/features/shared/presentation/providers/paged_async_notifier.dart';
 
 @immutable
 class ResourceTaskRecordsBucketState {
@@ -16,6 +17,7 @@ class ResourceTaskRecordsBucketState {
     this.loadMoreErrorMessage,
     this.loadRequestId = 0,
     this.filter = ResourceTaskRecordFilterState.initial,
+    this.filterUpdate = const FilterUpdateState.idle(),
   });
 
   final List<ResourceTaskRecordDto> records;
@@ -28,6 +30,7 @@ class ResourceTaskRecordsBucketState {
   final String? loadMoreErrorMessage;
   final int loadRequestId;
   final ResourceTaskRecordFilterState filter;
+  final FilterUpdateState filterUpdate;
 
   ResourceTaskRecordsBucketState copyWith({
     List<ResourceTaskRecordDto>? records,
@@ -40,27 +43,26 @@ class ResourceTaskRecordsBucketState {
     Object? loadMoreErrorMessage = _unset,
     int? loadRequestId,
     ResourceTaskRecordFilterState? filter,
+    FilterUpdateState? filterUpdate,
   }) {
     return ResourceTaskRecordsBucketState(
-      records:
-          records == null
-              ? this.records
-              : List<ResourceTaskRecordDto>.unmodifiable(records),
+      records: records == null
+          ? this.records
+          : List<ResourceTaskRecordDto>.unmodifiable(records),
       nextPage: nextPage ?? this.nextPage,
       hasMore: hasMore ?? this.hasMore,
       hasLoadedOnce: hasLoadedOnce ?? this.hasLoadedOnce,
       isLoading: isLoading ?? this.isLoading,
       isLoadingMore: isLoadingMore ?? this.isLoadingMore,
-      loadErrorMessage:
-          identical(loadErrorMessage, _unset)
-              ? this.loadErrorMessage
-              : loadErrorMessage as String?,
-      loadMoreErrorMessage:
-          identical(loadMoreErrorMessage, _unset)
-              ? this.loadMoreErrorMessage
-              : loadMoreErrorMessage as String?,
+      loadErrorMessage: identical(loadErrorMessage, _unset)
+          ? this.loadErrorMessage
+          : loadErrorMessage as String?,
+      loadMoreErrorMessage: identical(loadMoreErrorMessage, _unset)
+          ? this.loadMoreErrorMessage
+          : loadMoreErrorMessage as String?,
       loadRequestId: loadRequestId ?? this.loadRequestId,
       filter: filter ?? this.filter,
+      filterUpdate: filterUpdate ?? this.filterUpdate,
     );
   }
 }
@@ -148,24 +150,21 @@ class ResourceTaskCenterState {
       isInitialLoading: isInitialLoading ?? this.isInitialLoading,
       isRefreshingDefinitions:
           isRefreshingDefinitions ?? this.isRefreshingDefinitions,
-      initialErrorMessage:
-          identical(initialErrorMessage, _unset)
-              ? this.initialErrorMessage
-              : initialErrorMessage as String?,
+      initialErrorMessage: identical(initialErrorMessage, _unset)
+          ? this.initialErrorMessage
+          : initialErrorMessage as String?,
       definitionsRefreshErrorMessage:
           identical(definitionsRefreshErrorMessage, _unset)
-              ? this.definitionsRefreshErrorMessage
-              : definitionsRefreshErrorMessage as String?,
+          ? this.definitionsRefreshErrorMessage
+          : definitionsRefreshErrorMessage as String?,
       definitions: definitions ?? this.definitions,
-      activeTaskKey:
-          identical(activeTaskKey, _unset)
-              ? this.activeTaskKey
-              : activeTaskKey as String?,
+      activeTaskKey: identical(activeTaskKey, _unset)
+          ? this.activeTaskKey
+          : activeTaskKey as String?,
       buckets: buckets ?? this.buckets,
-      selectedRecord:
-          identical(selectedRecord, _unset)
-              ? this.selectedRecord
-              : selectedRecord as ResourceTaskRecordDto?,
+      selectedRecord: identical(selectedRecord, _unset)
+          ? this.selectedRecord
+          : selectedRecord as ResourceTaskRecordDto?,
       selectionMode: selectionMode ?? this.selectionMode,
       selectedResourceIds: selectedResourceIds ?? this.selectedResourceIds,
       isResetting: isResetting ?? this.isResetting,

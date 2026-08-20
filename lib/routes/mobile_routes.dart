@@ -19,10 +19,10 @@ import 'package:sakuramedia/features/discovery/presentation/pages/mobile/discove
 import 'package:sakuramedia/features/discovery/presentation/pages/mobile/discover_movies_page.dart';
 import 'package:sakuramedia/features/image_search/presentation/pages/mobile/image_search_page.dart';
 import 'package:sakuramedia/features/image_search/presentation/providers/image_search_draft_store_provider.dart';
+import 'package:sakuramedia/features/media/presentation/pages/mobile/media_management_page.dart';
 import 'package:sakuramedia/features/configuration/presentation/pages/mobile/mobile_downloaders_page.dart';
 import 'package:sakuramedia/features/configuration/presentation/pages/mobile/mobile_indexers_page.dart';
 import 'package:sakuramedia/features/configuration/presentation/pages/mobile/mobile_media_libraries_page.dart';
-import 'package:sakuramedia/features/configuration/presentation/pages/llm_settings_page.dart';
 import 'package:sakuramedia/features/clip_collections/presentation/pages/mobile/clip_collection_detail_page.dart';
 import 'package:sakuramedia/features/clip_collections/presentation/pages/mobile/clip_collection_play_page.dart';
 import 'package:sakuramedia/features/clip_collections/presentation/pages/mobile/clip_collections_page.dart';
@@ -286,6 +286,26 @@ class MobileNotificationsRouteData extends _MobileSubpageRouteData
   }
 }
 
+@TypedGoRoute<MobileMediaManagementRouteData>(path: mobileMediaManagementPath)
+class MobileMediaManagementRouteData extends _MobileSubpageRouteData
+    with $MobileMediaManagementRouteData {
+  const MobileMediaManagementRouteData();
+
+  @override
+  String get pageName => 'mobile-media-management';
+
+  @override
+  String get title => '媒体管理';
+
+  @override
+  String get defaultLocation => mobileOverviewPath;
+
+  @override
+  Widget buildSubpage(BuildContext context, GoRouterState state) {
+    return const MobileMediaManagementPage();
+  }
+}
+
 @TypedGoRoute<MobileSettingsDownloadersRouteData>(
   path: mobileSettingsDownloadersPath,
 )
@@ -325,26 +345,6 @@ class MobileSettingsIndexersRouteData extends _MobileSubpageRouteData
   @override
   Widget buildSubpage(BuildContext context, GoRouterState state) {
     return const MobileIndexersPage();
-  }
-}
-
-@TypedGoRoute<MobileSettingsLlmRouteData>(path: mobileSettingsLlmPath)
-class MobileSettingsLlmRouteData extends _MobileSubpageRouteData
-    with $MobileSettingsLlmRouteData {
-  const MobileSettingsLlmRouteData();
-
-  @override
-  String get pageName => 'mobile-settings-llm';
-
-  @override
-  String get title => 'LLM 配置';
-
-  @override
-  String get defaultLocation => mobileOverviewPath;
-
-  @override
-  Widget buildSubpage(BuildContext context, GoRouterState state) {
-    return const LlmSettingsPage();
   }
 }
 
@@ -884,11 +884,6 @@ class _MobileOverviewDrawer extends ConsumerWidget {
           icon: Icons.travel_explore_outlined,
           label: '索引器',
         ),
-        _MobileOverviewDrawerMenuItem(
-          key: 'llm',
-          icon: Icons.auto_awesome_outlined,
-          label: 'LLM 配置',
-        ),
       ];
 
   static const _MobileOverviewDrawerMenuItem _playlistsItem =
@@ -896,6 +891,13 @@ class _MobileOverviewDrawer extends ConsumerWidget {
         key: 'playlists',
         icon: Icons.playlist_play_outlined,
         label: '播放列表',
+      );
+
+  static const _MobileOverviewDrawerMenuItem _mediaManagementItem =
+      _MobileOverviewDrawerMenuItem(
+        key: 'media-management',
+        icon: Icons.video_settings_outlined,
+        label: '媒体管理',
       );
 
   static const _MobileOverviewDrawerMenuItem _externalPlayerItem =
@@ -1040,6 +1042,18 @@ class _MobileOverviewDrawer extends ConsumerWidget {
                       SizedBox(height: spacing.md),
                       _MobileOverviewDrawerSection(
                         key: const Key(
+                          'mobile-overview-drawer-management-section',
+                        ),
+                        items: <Widget>[
+                          _buildMenuEntry(
+                            context: context,
+                            item: _mediaManagementItem,
+                          ),
+                        ],
+                      ),
+                      SizedBox(height: spacing.md),
+                      _MobileOverviewDrawerSection(
+                        key: const Key(
                           'mobile-overview-drawer-playlists-section',
                         ),
                         items: <Widget>[
@@ -1135,8 +1149,8 @@ class _MobileOverviewDrawer extends ConsumerWidget {
       case 'indexers':
         const MobileSettingsIndexersRouteData().push(hostContext);
         return;
-      case 'llm':
-        const MobileSettingsLlmRouteData().push(hostContext);
+      case 'media-management':
+        const MobileMediaManagementRouteData().push(hostContext);
         return;
       case 'playlists':
         const MobileSettingsPlaylistsRouteData().push(hostContext);

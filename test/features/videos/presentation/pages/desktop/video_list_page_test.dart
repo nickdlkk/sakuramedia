@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart' show ProviderScope;
 import 'package:sakuramedia/core/session/providers/session_store_provider.dart';
@@ -14,6 +17,7 @@ import 'package:sakuramedia/widgets/base/interaction/selection/app_selection_too
 import 'package:sakuramedia/widgets/base/layout/scrolling/app_filter_total_header.dart';
 import 'package:sakuramedia/widgets/base/navigation/app_filter_entry_button.dart';
 import 'package:sakuramedia/widgets/base/navigation/app_list_header.dart';
+import 'package:sakuramedia/widgets/domain/collections/collection_card.dart';
 
 import '../../../../../support/fake_http_client_adapter.dart';
 
@@ -89,6 +93,42 @@ void main() {
     );
   });
 
+  testWidgets('桌面 PornBox 合集首屏加载显示卡片骨架', (WidgetTester tester) async {
+    final pendingCollections = Completer<ResponseBody>();
+    adapter.enqueueResponder(
+      method: 'GET',
+      path: '/video-collections',
+      responder: (_, __) => pendingCollections.future,
+    );
+    adapter.enqueueJson(method: 'GET', path: '/videos', body: _videosJson());
+
+    await _pumpVideoListPage(
+      tester,
+      sessionStore: sessionStore,
+      apiClient: apiClient,
+    );
+    await tester.pump();
+
+    expect(
+      find.byKey(const Key('videos-collections-skeleton-row')),
+      findsOneWidget,
+    );
+    expect(find.byType(CollectionCardSkeletonRow), findsOneWidget);
+    expect(find.byType(CollectionCardSkeleton), findsNWidgets(4));
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+
+    pendingCollections.complete(
+      ResponseBody.fromString(
+        '[]',
+        200,
+        headers: const <String, List<String>>{
+          Headers.contentTypeHeader: <String>[Headers.jsonContentType],
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('进入多选原地改写整条顶栏，不另起一行且高度不变', (WidgetTester tester) async {
     enqueueInitialLoad();
 
@@ -99,8 +139,9 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    final headerHeight =
-        tester.getSize(find.byType(AppListHeader).first).height;
+    final headerHeight = tester
+        .getSize(find.byType(AppListHeader).first)
+        .height;
 
     await tester.tap(find.byKey(const Key('videos-enter-selection-button')));
     await tester.pumpAndSettle();

@@ -24,11 +24,19 @@
 - **何时用**: 所有 `PagedLoadController` 驱动的列表尾巴。
 - **约束(重要)**: 分页失败**保留原列表并提供重试**,不整页红字。见 `lib/widgets/CLAUDE.md` "状态反馈一致"。
 
+## AppFilterUpdateBar
+- **路径**: `lib/widgets/base/feedback/app_filter_update_bar.dart`
+- **用途**: 服务端筛选的结果同步反馈；`idle` 不占空间，`loading` 显示 2px 线性进度与“正在更新筛选结果”，`failed` 保留旧结果并提供重试。
+- **required**: `state: FilterUpdateState` · `hasPreviousItems`
+- **可选**: `onRetry`
+- **接入**: 已使用 `AppListHeader` / `AppFilterTotalHeader` 的页面优先把 `filterUpdate`、`hasPreviousFilterItems`、`onRetryFilter` 直接传给顶栏；自定义标题行才单独放置本组件。
+- **空结果失败**: 没有旧结果可保留时，本组件改用 `AppEmptyState` 明确表达失败与重试；列表体必须隐藏普通“暂无匹配结果”空态，不能同时显示两种结论。
+
 ## AppFilterTotalHeader
 - **路径**: `lib/widgets/base/layout/scrolling/app_filter_total_header.dart`
 - **用途**: 列表顶部"筛选栏 + 总数条"通用行(左 leading + 右总数,可插 trailing)。
 - **required**: `leading` · `totalText`
-- **可选**: `totalKey` · `trailing`
+- **可选**: `totalKey` · `trailing` · `filterUpdate` · `hasPreviousFilterItems` · `onRetryFilter`
 - **何时用**: 「区块标题 + 总数」这类还没迁到 `AppListHeader` 的顶部 summary(发现页推荐区、订阅页、媒体管理各 section)。**筛选驱动的列表顶栏一律用 `AppListHeader`**,别再用它。
 
 ## AppText
@@ -74,7 +82,7 @@
 - **路径**: `lib/widgets/base/layout/grids/app_adaptive_card_grid.dart`
 - **用途**: **四态卡片网格的唯一入口**——按 `((width+spacing)/(target+spacing)).floor()` 算列 + 「骨架 → 错误 → 空 → 内容」四态壳一次封死。消除 movies / actors / rankings / videos 四份网格的 copy-paste,新网格**别再手写 `LayoutBuilder + GridView.builder`**。
 - **required**: `items: List<T>` · `isLoading` · `itemBuilder: (context, item, index) => Widget` · `skeletonBuilder: (context, index) => Widget`(骨架卡各域视觉不同,由 caller 提供,含 Key)
-- **可选**: `gridKey`(测试锚点,通常传 `Key('xxx-summary-grid')`) · `errorMessage` · `emptyMessage` · `placeholderCount`(默认 8) · `targetColumnWidth`(默认 `movieCardTargetWidth` token) · `minColumns` / `maxColumns`(默认 2 / 6) · `childAspectRatio`(fixedAspect 用,默认 `movieCardAspectRatio` token)
+- **可选**: `gridKey`(测试锚点,通常传 `Key('xxx-summary-grid')`) · `errorMessage` · `emptyMessage` · `placeholderCount`(默认 8) · `targetColumnWidth`(默认 `movieCardTargetWidth` token) · `minColumns` / `maxColumns`(默认 2 / 6) · `childAspectRatio`(fixedAspect 用,默认 `movieCardAspectRatio` token) · `maxRows`（首页等摘要区限制可见行数，窗口变宽时自动补足当前行）
 - **layout 分支**:
   - `AppAdaptiveCardGridLayout.fixedAspect`(默认):走 `GridView.builder` + 固定 `childAspectRatio`,所有 tile 等宽等高——movies / actors / rankings 的标准形态。
   - `AppAdaptiveCardGridLayout.masonry`:走 `MasonryGridView.count` + 逐 tile `tileAspect(index)`,横竖封面混排不留底色——videos 的形态,`tileAspect` **必填**。
@@ -92,6 +100,8 @@
 
 ## 相关约定
 
+- **服务端筛选**: 控件状态同步更新 → 保留当前结果 → 250ms 尾随防抖 → 原子替换第一页。连续变化只提交最终组合；旧响应通过 request generation 失效，不得覆盖新条件。筛选期间不加载下一页。
+- **失败语义**: 筛选失败不回滚条件；有旧结果时继续展示并给行内重试，没有旧结果时显示明确失败空态。手动刷新立即请求当前条件，不再等待防抖。
 - **网格四态**:骨架 → 错误 → 空态 → 内容,顺序固定,**已封装在 `AppAdaptiveCardGrid<T>` 内**。错误 / 空态自动走 `AppEmptyState`,骨架卡由 caller 传 `skeletonBuilder`。别再手写 `if (isLoading) ... if (errorMessage != null) ...` 四态判断。
 - **列宽自适应**:`AppAdaptiveCardGrid<T>` 内部已封,公式 `((w + spacing) / (target + spacing)).floor()` + 钳位到 `[minColumns, maxColumns]`;target 默认 `movieCardTargetWidth` token,可通过 `targetColumnWidth` 覆盖(如 moment 传 280),**不要传裸值**。
 - 想抽新的"选择系"胶水前,看看 `MultiSelectStateMixin` 能不能扩,别在业务侧写第二份多选状态机。

@@ -5,7 +5,5 @@ enum DiagnosticItemKind {
   downloaderStorage,
   indexer,
   javdb,
-  dmm,
-  llm,
   joyTag,
 }

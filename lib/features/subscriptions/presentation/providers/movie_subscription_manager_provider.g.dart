@@ -77,7 +77,7 @@ final class MovieSubscriptionManagerProvider
 }
 
 String _$movieSubscriptionManagerHash() =>
-    r'cfe9a0eede06d9cf3e0d01a2bb5c1014c028c781';
+    r'6ecae4df2cf226c39b40990f41e5667a9851bb5a';
 
 /// 「订阅管理」页的列表控制器。
 ///

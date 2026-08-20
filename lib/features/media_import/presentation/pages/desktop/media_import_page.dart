@@ -7,10 +7,13 @@ import 'package:sakuramedia/features/media_import/presentation/directory_picker_
 import 'package:sakuramedia/features/media_import/presentation/import_job_card.dart';
 import 'package:sakuramedia/features/media_import/presentation/import_jobs_view_controller.dart';
 import 'package:sakuramedia/features/media_import/presentation/providers/media_import_provider.dart';
+import 'package:sakuramedia/features/media_import/presentation/providers/subtitle_import_provider.dart';
+import 'package:sakuramedia/features/media_import/presentation/subtitle_import_dialog.dart';
 import 'package:sakuramedia/features/videos/presentation/providers/video_import_provider.dart';
 import 'package:sakuramedia/features/videos/presentation/widgets/imports/video_import_dialog.dart';
 import 'package:sakuramedia/theme.dart';
 import 'package:sakuramedia/widgets/base/actions/app_button.dart';
+import 'package:sakuramedia/widgets/base/feedback/app_confirm_dialog.dart';
 import 'package:sakuramedia/widgets/base/feedback/app_empty_state.dart';
 import 'package:sakuramedia/widgets/base/forms/app_text_field.dart';
 import 'package:sakuramedia/widgets/base/interaction/refresh/app_page_refresh_scope.dart';
@@ -27,23 +30,28 @@ class DesktopMediaImportPage extends ConsumerStatefulWidget {
       _DesktopMediaImportPageState();
 }
 
+enum _ImportTab { javMovie, pornBoxMovie, javSubtitle }
+
 class _DesktopMediaImportPageState extends ConsumerState<DesktopMediaImportPage>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
 
   final ScrollController _scrollController = ScrollController();
-  final Set<int> _expandedJav = <int>{};
-  final Set<int> _expandedPorn = <int>{};
-  // 「重新导入」是新建作业，而 115 来源后端不建 task_run mutex（只有本地来源有
-  // 同库同源 409 兜底），连点会造出重复作业——提交期间锁住按钮。
-  final Set<int> _reimportingJav = <int>{};
-  final Set<int> _reimportingPorn = <int>{};
+  final Map<_ImportTab, Set<int>> _expandedByTab = <_ImportTab, Set<int>>{
+    for (final tab in _ImportTab.values) tab: <int>{},
+  };
+  // 「重新导入」会新建作业；提交期间锁住对应按钮，避免重复创建任务。
+  final Map<_ImportTab, Set<int>> _reimportingByTab = <_ImportTab, Set<int>>{
+    for (final tab in _ImportTab.values) tab: <int>{},
+  };
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this)
-      ..addListener(_handleTabChanged);
+    _tabController = TabController(
+      length: _ImportTab.values.length,
+      vsync: this,
+    )..addListener(_handleTabChanged);
     _scrollController.addListener(_handleScroll);
   }
 
@@ -58,16 +66,19 @@ class _DesktopMediaImportPageState extends ConsumerState<DesktopMediaImportPage>
     super.dispose();
   }
 
-  bool get _isPornTab => _tabController.index == 1;
-  ImportJobsViewController get _activeController =>
-      _isPornTab
-          ? ref.read(videoImportProvider.notifier)
-          : ref.read(mediaImportProvider.notifier);
+  _ImportTab get _activeTab => _ImportTab.values[_tabController.index];
 
-  ImportJobsViewData? get _activeData =>
-      _isPornTab
-          ? ref.read(videoImportProvider).value
-          : ref.read(mediaImportProvider).value;
+  ImportJobsViewController get _activeController => switch (_activeTab) {
+    _ImportTab.javMovie => ref.read(mediaImportProvider.notifier),
+    _ImportTab.pornBoxMovie => ref.read(videoImportProvider.notifier),
+    _ImportTab.javSubtitle => ref.read(subtitleImportProvider.notifier),
+  };
+
+  ImportJobsViewData? get _activeData => switch (_activeTab) {
+    _ImportTab.javMovie => ref.read(mediaImportProvider).value,
+    _ImportTab.pornBoxMovie => ref.read(videoImportProvider).value,
+    _ImportTab.javSubtitle => ref.read(subtitleImportProvider).value,
+  };
 
   void _handleTabChanged() {
     if (_tabController.indexIsChanging) {
@@ -132,12 +143,61 @@ class _DesktopMediaImportPageState extends ConsumerState<DesktopMediaImportPage>
     showToast(error ?? '导入任务已提交，可在下方查看进度');
   }
 
-  void _toggleExpanded(
-    ImportJobsViewController controller,
-    int jobId, {
-    required bool isPorn,
-  }) {
-    final expanded = isPorn ? _expandedPorn : _expandedJav;
+  Future<void> _openSubtitleCreateDialog() async {
+    final sourcePath = await showSubtitleImportDialog(context);
+    if (sourcePath == null || !mounted) {
+      return;
+    }
+    final error = await ref
+        .read(subtitleImportProvider.notifier)
+        .triggerImport(sourcePath: sourcePath);
+    if (!mounted) {
+      return;
+    }
+    showToast(error ?? '字幕导入任务已提交，可在下方查看进度');
+  }
+
+  void _createImport(_ImportTab tab) {
+    switch (tab) {
+      case _ImportTab.javMovie:
+        unawaited(_openJavCreateDialog());
+        return;
+      case _ImportTab.pornBoxMovie:
+        unawaited(_openPornCreateDialog());
+        return;
+      case _ImportTab.javSubtitle:
+        unawaited(_openSubtitleCreateDialog());
+        return;
+    }
+  }
+
+  String _tabTitle(_ImportTab tab) => switch (tab) {
+    _ImportTab.javMovie => 'JAV 影片导入',
+    _ImportTab.pornBoxMovie => 'PornBox 影片导入',
+    _ImportTab.javSubtitle => 'JAV 字幕导入',
+  };
+
+  String _createLabel(_ImportTab tab) => switch (tab) {
+    _ImportTab.javSubtitle => '新建字幕导入',
+    _ => '新建导入',
+  };
+
+  String _tabDescription(_ImportTab tab) => switch (tab) {
+    _ImportTab.javMovie =>
+      '从后端本地目录或 115 网盘目录中选择 JAV 媒体导入到对应媒体库。导入在后台运行，可在此查看实时进度与失败文件处理。',
+    _ImportTab.pornBoxMovie =>
+      '从后端白名单目录中选择 PornBox 视频导入到媒体库，必须归入一个合集。导入在后台运行，可在此查看实时进度与失败文件处理。',
+    _ImportTab.javSubtitle =>
+      '从后端白名单目录选择字幕文件夹。系统仅扫描 .srt，并按文件名中的番号匹配已入库的 JAV 影片；源文件会保留。',
+  };
+
+  String _emptyMessage(_ImportTab tab) => switch (tab) {
+    _ImportTab.javSubtitle => '还没有字幕导入作业。点击「新建字幕导入」选择一个字幕目录。',
+    _ => '还没有导入作业。点击「新建导入」从后端目录选择媒体导入。',
+  };
+
+  void _toggleExpanded(ImportJobsViewController controller, int jobId) {
+    final expanded = _expandedByTab[_activeTab]!;
     setState(() {
       if (expanded.contains(jobId)) {
         expanded.remove(jobId);
@@ -150,22 +210,29 @@ class _DesktopMediaImportPageState extends ConsumerState<DesktopMediaImportPage>
 
   @override
   Widget build(BuildContext context) {
-    // 两个 provider 与页面同生命周期；只 watch 激活标签的完整状态，另一标签仅
-    // 保持订阅，因此实时流与分页快照仍保留，但不会引发当前页面重建。
+    // 三个 provider 与页面同生命周期；只 watch 激活标签的完整状态，其他标签仅
+    // 保持订阅，因此切换标签后实时流和分页快照仍保留，也不会引发当前页面重建。
     ref.watch(mediaImportProvider.select((_) => null));
     ref.watch(videoImportProvider.select((_) => null));
+    ref.watch(subtitleImportProvider.select((_) => null));
     final ImportJobsViewData activeData;
     final ImportJobsViewController activeController;
-    if (_isPornTab) {
-      activeData =
-          ref.watch(videoImportProvider).value ??
-          VideoImportState(isInitialLoading: true);
-      activeController = ref.read(videoImportProvider.notifier);
-    } else {
-      activeData =
-          ref.watch(mediaImportProvider).value ??
-          MediaImportState(isInitialLoading: true);
-      activeController = ref.read(mediaImportProvider.notifier);
+    switch (_activeTab) {
+      case _ImportTab.javMovie:
+        activeData =
+            ref.watch(mediaImportProvider).value ??
+            MediaImportState(isInitialLoading: true);
+        activeController = ref.read(mediaImportProvider.notifier);
+      case _ImportTab.pornBoxMovie:
+        activeData =
+            ref.watch(videoImportProvider).value ??
+            VideoImportState(isInitialLoading: true);
+        activeController = ref.read(videoImportProvider.notifier);
+      case _ImportTab.javSubtitle:
+        activeData =
+            ref.watch(subtitleImportProvider).value ??
+            SubtitleImportState(isInitialLoading: true);
+        activeController = ref.read(subtitleImportProvider.notifier);
     }
 
     // 顶栏刷新按钮 / Cmd+R 刷新当前 tab 的导入历史；跨 tab 时也只刷激活的那个，
@@ -182,6 +249,7 @@ class _DesktopMediaImportPageState extends ConsumerState<DesktopMediaImportPage>
               tabs: const [
                 Tab(key: Key('media-import-tab-jav'), text: 'JAV 影片'),
                 Tab(key: Key('media-import-tab-pornbox'), text: 'PornBox 影片'),
+                Tab(key: Key('media-import-tab-jav-subtitle'), text: 'JAV 字幕'),
               ],
             ),
           ),
@@ -190,16 +258,8 @@ class _DesktopMediaImportPageState extends ConsumerState<DesktopMediaImportPage>
             context,
             data: activeData,
             controller: activeController,
-            expanded: _isPornTab ? _expandedPorn : _expandedJav,
-            isPorn: _isPornTab,
-            description:
-                _isPornTab
-                    ? '从后端白名单目录中选择 PornBox 视频导入到媒体库，必须归入一个合集。导入在后台运行，可在此查看实时进度与失败文件处理。'
-                    : '从后端本地目录或 115 网盘目录中选择 JAV 媒体导入到对应媒体库。导入在后台运行，可在此查看实时进度与失败文件处理。',
-            onCreate:
-                _isPornTab
-                    ? () => unawaited(_openPornCreateDialog())
-                    : () => unawaited(_openJavCreateDialog()),
+            tab: _activeTab,
+            expanded: _expandedByTab[_activeTab]!,
           ),
         ],
       ),
@@ -210,10 +270,8 @@ class _DesktopMediaImportPageState extends ConsumerState<DesktopMediaImportPage>
     BuildContext context, {
     required ImportJobsViewData data,
     required ImportJobsViewController controller,
+    required _ImportTab tab,
     required Set<int> expanded,
-    required bool isPorn,
-    required String description,
-    required VoidCallback onCreate,
   }) {
     final hasHistory =
         !data.isInitialLoading &&
@@ -222,9 +280,11 @@ class _DesktopMediaImportPageState extends ConsumerState<DesktopMediaImportPage>
     return [
       SliverToBoxAdapter(
         child: _Header(
-          description: description,
+          title: _tabTitle(tab),
+          description: _tabDescription(tab),
+          createLabel: _createLabel(tab),
           isLoading: data.isInitialLoading,
-          onCreate: onCreate,
+          onCreate: () => _createImport(tab),
           onRefresh: () => unawaited(controller.refresh()),
         ),
       ),
@@ -233,7 +293,7 @@ class _DesktopMediaImportPageState extends ConsumerState<DesktopMediaImportPage>
         const SliverToBoxAdapter(child: _HistorySectionTitle()),
         SliverToBoxAdapter(child: SizedBox(height: context.appSpacing.md)),
       ],
-      _buildBodySliver(context, data, controller, expanded, isPorn: isPorn),
+      _buildBodySliver(context, data, controller, tab, expanded),
       if (data.jobs.isNotEmpty &&
           (data.isLoadingMore || data.loadMoreError != null))
         SliverToBoxAdapter(
@@ -253,9 +313,9 @@ class _DesktopMediaImportPageState extends ConsumerState<DesktopMediaImportPage>
     BuildContext context,
     ImportJobsViewData data,
     ImportJobsViewController controller,
-    Set<int> expanded, {
-    required bool isPorn,
-  }) {
+    _ImportTab tab,
+    Set<int> expanded,
+  ) {
     if (data.isInitialLoading) {
       return SliverToBoxAdapter(
         child: AppContentCard(
@@ -299,15 +359,12 @@ class _DesktopMediaImportPageState extends ConsumerState<DesktopMediaImportPage>
     }
 
     if (data.jobs.isEmpty) {
-      return const SliverToBoxAdapter(
-        child: AppEmptyState(message: '还没有导入作业。点击「新建导入」从后端目录选择媒体导入。'),
+      return SliverToBoxAdapter(
+        child: AppEmptyState(message: _emptyMessage(tab)),
       );
     }
 
-    // 失败源文件的删除/重命名是 JAV 专属能力；PornBox 作业只保留「重导」。
-    final javController =
-        isPorn ? null : ref.read(mediaImportProvider.notifier);
-    final reimporting = isPorn ? _reimportingPorn : _reimportingJav;
+    final reimporting = _reimportingByTab[tab]!;
     return SliverList(
       delegate: SliverChildBuilderDelegate((context, index) {
         final job = data.jobs[index];
@@ -320,26 +377,22 @@ class _DesktopMediaImportPageState extends ConsumerState<DesktopMediaImportPage>
             detail: data.detailFor(job.id),
             isDetailLoading: data.isDetailLoading(job.id),
             detailError: data.detailError(job.id),
-            onToggle: () => _toggleExpanded(controller, job.id, isPorn: isPorn),
+            onToggle: () => _toggleExpanded(controller, job.id),
             onRetryAll: () => _retryAll(controller, job.id),
-            onRetryFile:
-                (path) => _retryFiles(controller, job.id, <String>[path]),
-            onDeleteFile:
-                javController == null
-                    ? null
-                    : (path) => _deleteFile(javController, job.id, path),
-            onRenameFile:
-                javController == null
-                    ? null
-                    : (path, name) =>
-                        _renameFile(javController, job.id, path, name),
-            onReimport:
-                job.reimportSource == null
-                    ? null
-                    : () => _reimport(controller, job.id),
+            onRetryFile: (path) =>
+                _retryFiles(controller, job.id, <String>[path]),
+            onDeleteFile: job.canMutateFailedSource
+                ? (path) => _deleteFile(tab, job.id, path)
+                : null,
+            onRenameFile: job.canMutateFailedSource
+                ? (path, name) => _renameFile(tab, job.id, path, name)
+                : null,
+            onReimport: job.canReimport
+                ? () => _reimport(tab, controller, job.id)
+                : null,
             isReimporting: reimporting.contains(job.id),
-            onReloadDetail:
-                () => unawaited(controller.ensureDetail(job.id, force: true)),
+            onReloadDetail: () =>
+                unawaited(controller.ensureDetail(job.id, force: true)),
           ),
         );
       }, childCount: data.jobs.length),
@@ -367,9 +420,12 @@ class _DesktopMediaImportPageState extends ConsumerState<DesktopMediaImportPage>
   }
 
   /// 任务级失败作业的整体重跑：按原参数新建一个导入作业。
-  Future<void> _reimport(ImportJobsViewController controller, int jobId) async {
-    final reimporting =
-        controller is VideoImport ? _reimportingPorn : _reimportingJav;
+  Future<void> _reimport(
+    _ImportTab tab,
+    ImportJobsViewController controller,
+    int jobId,
+  ) async {
+    final reimporting = _reimportingByTab[tab]!;
     if (reimporting.contains(jobId)) {
       return;
     }
@@ -382,16 +438,22 @@ class _DesktopMediaImportPageState extends ConsumerState<DesktopMediaImportPage>
     showToast(error ?? '已按原参数提交重新导入');
   }
 
-  Future<void> _deleteFile(
-    MediaImport controller,
-    int jobId,
-    String path,
-  ) async {
+  Future<void> _deleteFile(_ImportTab tab, int jobId, String path) async {
     final confirmed = await _confirmDelete(path);
-    if (!mounted || confirmed != true) {
+    if (!mounted || !confirmed) {
       return;
     }
-    final error = await controller.deleteFailedFile(jobId, path: path);
+    final error = switch (tab) {
+      _ImportTab.javMovie =>
+        await ref
+            .read(mediaImportProvider.notifier)
+            .deleteFailedFile(jobId, path: path),
+      _ImportTab.javSubtitle =>
+        await ref
+            .read(subtitleImportProvider.notifier)
+            .deleteFailedFile(jobId, path: path),
+      _ImportTab.pornBoxMovie => '该导入类型不支持删除失败源文件。',
+    };
     if (!mounted) {
       return;
     }
@@ -399,135 +461,113 @@ class _DesktopMediaImportPageState extends ConsumerState<DesktopMediaImportPage>
   }
 
   Future<void> _renameFile(
-    MediaImport controller,
+    _ImportTab tab,
     int jobId,
     String path,
     String currentName,
   ) async {
-    final newName = await _promptRename(currentName);
+    final newName = await _promptRename(
+      currentName,
+      hintText: tab == _ImportTab.javSubtitle
+          ? '例如 ABP-123.cht.srt'
+          : '例如 ABP-123.mp4',
+    );
     if (!mounted || newName == null || newName.trim().isEmpty) {
       return;
     }
-    final error = await controller.renameFailedFile(
-      jobId,
-      path: path,
-      newName: newName.trim(),
-    );
+    final error = switch (tab) {
+      _ImportTab.javMovie =>
+        await ref
+            .read(mediaImportProvider.notifier)
+            .renameFailedFile(jobId, path: path, newName: newName.trim()),
+      _ImportTab.javSubtitle =>
+        await ref
+            .read(subtitleImportProvider.notifier)
+            .renameFailedFile(jobId, path: path, newName: newName.trim()),
+      _ImportTab.pornBoxMovie => '该导入类型不支持重命名失败源文件。',
+    };
     if (!mounted) {
       return;
     }
     showToast(error ?? '已重命名');
   }
 
-  Future<bool?> _confirmDelete(String path) {
-    return showDialog<bool>(
-      context: context,
-      builder:
-          (dialogContext) => AppDesktopDialog(
-            dialogKey: const Key('media-import-delete-confirm-dialog'),
-            width: dialogContext.appLayoutTokens.dialogWidthSm,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '删除源文件',
-                  style: resolveAppTextStyle(
-                    dialogContext,
-                    size: AppTextSize.s18,
-                  ),
-                ),
-                SizedBox(height: dialogContext.appSpacing.lg),
-                Text('确认删除该失败源文件？该操作不可恢复。\n\n$path'),
-                SizedBox(height: dialogContext.appSpacing.xl),
-                Row(
-                  children: [
-                    Expanded(
-                      child: AppButton(
-                        label: '取消',
-                        onPressed: () => Navigator.of(dialogContext).pop(false),
-                      ),
-                    ),
-                    SizedBox(width: dialogContext.appSpacing.md),
-                    Expanded(
-                      child: AppButton(
-                        label: '删除',
-                        variant: AppButtonVariant.danger,
-                        onPressed: () => Navigator.of(dialogContext).pop(true),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
+  Future<bool> _confirmDelete(String path) {
+    return showAppConfirmDialog(
+      context,
+      title: '删除源文件',
+      message: '确认删除该失败源文件？该操作不可恢复。\n\n$path',
+      confirmLabel: '删除',
+      danger: true,
+      dialogKey: const Key('media-import-delete-confirm-dialog'),
     );
   }
 
-  Future<String?> _promptRename(String currentName) {
+  Future<String?> _promptRename(
+    String currentName, {
+    required String hintText,
+  }) {
     final textController = TextEditingController(text: currentName);
     return showDialog<String>(
       context: context,
-      builder:
-          (dialogContext) => AppDesktopDialog(
-            dialogKey: const Key('media-import-rename-dialog'),
-            width: dialogContext.appLayoutTokens.dialogWidthSm,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
+      builder: (dialogContext) => AppDesktopDialog(
+        dialogKey: const Key('media-import-rename-dialog'),
+        width: dialogContext.appLayoutTokens.dialogWidthSm,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '重命名源文件',
+              style: resolveAppTextStyle(dialogContext, size: AppTextSize.s18),
+            ),
+            SizedBox(height: dialogContext.appSpacing.lg),
+            AppTextField(
+              fieldKey: const Key('media-import-rename-field'),
+              controller: textController,
+              label: '新文件名',
+              hintText: hintText,
+            ),
+            SizedBox(height: dialogContext.appSpacing.xl),
+            Row(
               children: [
-                Text(
-                  '重命名源文件',
-                  style: resolveAppTextStyle(
-                    dialogContext,
-                    size: AppTextSize.s18,
+                Expanded(
+                  child: AppButton(
+                    label: '取消',
+                    onPressed: () => Navigator.of(dialogContext).pop(),
                   ),
                 ),
-                SizedBox(height: dialogContext.appSpacing.lg),
-                AppTextField(
-                  fieldKey: const Key('media-import-rename-field'),
-                  controller: textController,
-                  label: '新文件名',
-                  hintText: '例如 ABP-123.mp4',
-                ),
-                SizedBox(height: dialogContext.appSpacing.xl),
-                Row(
-                  children: [
-                    Expanded(
-                      child: AppButton(
-                        label: '取消',
-                        onPressed: () => Navigator.of(dialogContext).pop(),
-                      ),
-                    ),
-                    SizedBox(width: dialogContext.appSpacing.md),
-                    Expanded(
-                      child: AppButton(
-                        label: '确认',
-                        variant: AppButtonVariant.primary,
-                        onPressed:
-                            () => Navigator.of(
-                              dialogContext,
-                            ).pop(textController.text),
-                      ),
-                    ),
-                  ],
+                SizedBox(width: dialogContext.appSpacing.md),
+                Expanded(
+                  child: AppButton(
+                    label: '确认',
+                    variant: AppButtonVariant.primary,
+                    onPressed: () =>
+                        Navigator.of(dialogContext).pop(textController.text),
+                  ),
                 ),
               ],
             ),
-          ),
+          ],
+        ),
+      ),
     ).whenComplete(textController.dispose);
   }
 }
 
 class _Header extends StatelessWidget {
   const _Header({
+    required this.title,
     required this.description,
+    required this.createLabel,
     required this.isLoading,
     required this.onCreate,
     required this.onRefresh,
   });
 
+  final String title;
   final String description;
+  final String createLabel;
   final bool isLoading;
   final VoidCallback onCreate;
   final VoidCallback onRefresh;
@@ -535,7 +575,7 @@ class _Header extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AppContentCard(
-      title: '媒体导入',
+      title: title,
       titleStyle: resolveAppTextStyle(
         context,
         size: AppTextSize.s14,
@@ -565,7 +605,7 @@ class _Header extends StatelessWidget {
           SizedBox(width: context.appSpacing.sm),
           AppButton(
             key: const Key('media-import-create-button'),
-            label: '新建导入',
+            label: createLabel,
             variant: AppButtonVariant.primary,
             icon: const Icon(Icons.drive_folder_upload_outlined),
             onPressed: isLoading ? null : onCreate,

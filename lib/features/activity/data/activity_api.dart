@@ -90,8 +90,12 @@ class ActivityApi {
 
   Future<ManualJobTriggerResponseDto> triggerJob({
     required String taskKey,
+    Map<String, dynamic>? params,
   }) async {
-    final response = await _apiClient.post('/system/jobs/$taskKey/run');
+    final response = await _apiClient.post(
+      '/system/jobs/$taskKey/run',
+      data: params,
+    );
     return ManualJobTriggerResponseDto.fromJson(response);
   }
 

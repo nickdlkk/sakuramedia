@@ -4,7 +4,7 @@ import 'package:sakuramedia/theme.dart';
 import 'package:sakuramedia/widgets/base/actions/app_button.dart';
 import 'package:sakuramedia/widgets/base/feedback/app_status_chip.dart';
 
-/// 展示已保存 Jackett 配置的真实搜索测试，并供桌面和移动设置页复用。
+/// 展示已保存 Torznab 索引器配置的真实搜索测试，并供桌面和移动设置页复用。
 class IndexerConnectionTestPanel extends StatelessWidget {
   const IndexerConnectionTestPanel({
     super.key,
@@ -47,7 +47,7 @@ class IndexerConnectionTestPanel extends StatelessWidget {
           children: [
             Expanded(
               child: Text(
-                'Jackett 连通性',
+                'Torznab 连通性',
                 style: resolveAppTextStyle(
                   context,
                   size: AppTextSize.s14,
@@ -66,7 +66,7 @@ class IndexerConnectionTestPanel extends StatelessWidget {
         ),
         SizedBox(height: spacing.xs),
         Text(
-          '使用已保存的配置执行一次真实 Torznab 搜索，不会修改 Jackett 数据。',
+          '使用已保存的配置执行一次真实 Torznab 搜索，不会修改索引器数据。',
           style: resolveAppTextStyle(
             context,
             size: AppTextSize.s12,
@@ -77,7 +77,7 @@ class IndexerConnectionTestPanel extends StatelessWidget {
         SizedBox(height: spacing.md),
         AppButton(
           key: testButtonKey,
-          label: _hasResult ? '重新测试' : '测试 Jackett 连通性',
+          label: _hasResult ? '重新测试' : '测试 Torznab 连通性',
           icon: isTesting ? null : const Icon(Icons.radar_rounded),
           size: AppButtonSize.small,
           isLoading: isTesting,
@@ -215,22 +215,22 @@ class _ResultSummary extends StatelessWidget {
 
   String get _headline {
     final result = this.result;
-    if (result == null) return requestError ?? '请求 Jackett 测试接口失败';
+    if (result == null) return requestError ?? '请求 Torznab 测试接口失败';
     if (result.healthy) {
       return result.resultCount == 0
-          ? 'Jackett 已连通，测试查询未返回候选。'
-          : 'Jackett 已连通，真实搜索已完成。';
+          ? 'Torznab 已连通，测试查询未返回候选。'
+          : 'Torznab 已连通，真实搜索已完成。';
     }
     return result.error?.message.isNotEmpty == true
         ? result.error!.message
-        : 'Jackett 未能完成本次连通性测试。';
+        : 'Torznab 未能完成本次连通性测试。';
   }
 
   String get _fixHint {
     if (result?.error?.type == 'no_indexers_configured') {
       return '请添加至少一个索引器并保存配置后再测试。';
     }
-    return '请检查 Jackett 服务、API Key 和索引器地址后重试。';
+    return '请检查 Torznab 服务、API Key 和索引器地址后重试。';
   }
 }
 

@@ -11,47 +11,47 @@ import 'package:sakuramedia/features/videos/presentation/providers/videos_api_pr
 import '../../../../support/fake_http_client_adapter.dart';
 
 Map<String, dynamic> _collectionBody() => <String, dynamic>{
-      'id': 3,
-      'name': '连播合集',
-      'description': '',
-      'item_count': 2,
-      'created_at': '2026-01-02T03:04:05',
-      'updated_at': '2026-01-02T03:04:05',
-    };
+  'id': 3,
+  'name': '连播合集',
+  'description': '',
+  'item_count': 2,
+  'created_at': '2026-01-02T03:04:05',
+  'updated_at': '2026-01-02T03:04:05',
+};
 
 // 成员端点已分页：返回 {items, page, page_size, total} 信封。两条成员、total=2，
 // getAllCollectionItems 一次请求即取满（不再翻页）。
 Map<String, dynamic> _itemsBody() => <String, dynamic>{
-      'page': 1,
-      'page_size': 100,
-      'total': 2,
-      'items': <dynamic>[
-        <String, dynamic>{
-          'item_id': 100,
-          'position': 0,
-          'video': <String, dynamic>{
-            'id': 1,
-            'title': '第一段',
-            'media_count': 1,
-            'can_play': true,
-            'created_at': '2026-01-02T03:04:05',
-            'updated_at': '2026-01-02T03:04:05',
-          },
-        },
-        <String, dynamic>{
-          'item_id': 101,
-          'position': 1,
-          'video': <String, dynamic>{
-            'id': 2,
-            'title': '第二段',
-            'media_count': 1,
-            'can_play': true,
-            'created_at': '2026-01-02T03:04:05',
-            'updated_at': '2026-01-02T03:04:05',
-          },
-        },
-      ],
-    };
+  'page': 1,
+  'page_size': 100,
+  'total': 2,
+  'items': <dynamic>[
+    <String, dynamic>{
+      'item_id': 100,
+      'position': 0,
+      'video': <String, dynamic>{
+        'id': 1,
+        'title': '第一段',
+        'media_count': 1,
+        'can_play': true,
+        'created_at': '2026-01-02T03:04:05',
+        'updated_at': '2026-01-02T03:04:05',
+      },
+    },
+    <String, dynamic>{
+      'item_id': 101,
+      'position': 1,
+      'video': <String, dynamic>{
+        'id': 2,
+        'title': '第二段',
+        'media_count': 1,
+        'can_play': true,
+        'created_at': '2026-01-02T03:04:05',
+        'updated_at': '2026-01-02T03:04:05',
+      },
+    },
+  ],
+};
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -121,8 +121,7 @@ void main() {
     );
 
     keepAlive();
-    final state =
-        await container.read(videoCollectionDetailProvider(3).future);
+    final state = await container.read(videoCollectionDetailProvider(3).future);
     expect(state.items.map((item) => item.video.id).toList(), <int>[1, 2]);
 
     // 把第二个成员拖到最前。
@@ -130,8 +129,7 @@ void main() {
         .read(videoCollectionDetailProvider(3).notifier)
         .reorder(1, 0);
 
-    final next =
-        container.read(videoCollectionDetailProvider(3)).requireValue;
+    final next = container.read(videoCollectionDetailProvider(3)).requireValue;
     expect(next.items.map((item) => item.video.id).toList(), <int>[2, 1]);
     final reorderRequest = adapter.requests.last;
     expect(reorderRequest.path, '/video-collections/3/items/reorder');
@@ -159,8 +157,7 @@ void main() {
         .reorder(1, 0);
 
     // 失败回滚到提交前顺序 [1, 2]，不再触发重载。
-    final state =
-        container.read(videoCollectionDetailProvider(3)).requireValue;
+    final state = container.read(videoCollectionDetailProvider(3)).requireValue;
     expect(state.items.map((item) => item.video.id).toList(), <int>[1, 2]);
   });
 
@@ -181,8 +178,7 @@ void main() {
         .removeItem(100);
 
     expect(error, isNull);
-    final state =
-        container.read(videoCollectionDetailProvider(3)).requireValue;
+    final state = container.read(videoCollectionDetailProvider(3)).requireValue;
     expect(state.items.map((item) => item.itemId).toList(), <int>[101]);
   });
 
@@ -205,8 +201,7 @@ void main() {
         .removeItem(100);
 
     expect(error, isNotNull);
-    final state =
-        container.read(videoCollectionDetailProvider(3)).requireValue;
+    final state = container.read(videoCollectionDetailProvider(3)).requireValue;
     // 失败回滚，成员仍在。
     expect(state.items.map((item) => item.itemId).toList(), <int>[100, 101]);
   });
@@ -229,8 +224,7 @@ void main() {
         .deleteVideo(100, 1);
 
     expect(error, isNull);
-    final state =
-        container.read(videoCollectionDetailProvider(3)).requireValue;
+    final state = container.read(videoCollectionDetailProvider(3)).requireValue;
     expect(state.items.map((item) => item.itemId).toList(), <int>[101]);
     expect(adapter.requests.last.path, '/videos/1');
   });
@@ -254,8 +248,7 @@ void main() {
         .deleteVideo(100, 1);
 
     expect(error, isNotNull);
-    final state =
-        container.read(videoCollectionDetailProvider(3)).requireValue;
+    final state = container.read(videoCollectionDetailProvider(3)).requireValue;
     // 失败回滚，成员仍在。
     expect(state.items.map((item) => item.itemId).toList(), <int>[100, 101]);
   });
@@ -264,8 +257,7 @@ void main() {
     enqueueLoad();
 
     keepAlive();
-    final state =
-        await container.read(videoCollectionDetailProvider(3).future);
+    final state = await container.read(videoCollectionDetailProvider(3).future);
 
     expect(state.sort.isManual, isTrue);
     expect(state.sort.field, isNull);
@@ -288,13 +280,25 @@ void main() {
     keepAlive();
     await container.read(videoCollectionDetailProvider(3).future);
 
-    await container.read(videoCollectionDetailProvider(3).notifier).applySort(
+    final update = container
+        .read(videoCollectionDetailProvider(3).notifier)
+        .applySort(
           field: VideoSortField.duration,
           direction: SortDirection.desc,
         );
 
-    final state =
-        container.read(videoCollectionDetailProvider(3)).requireValue;
+    final pending = container
+        .read(videoCollectionDetailProvider(3))
+        .requireValue;
+    expect(pending.sort.field, VideoSortField.duration);
+    expect(pending.sort.direction, SortDirection.desc);
+    expect(pending.filterUpdate.isLoading, isTrue);
+    expect(pending.items, isNotEmpty);
+    expect(adapter.hitCount('GET', '/video-collections/3/items'), 1);
+
+    await update;
+
+    final state = container.read(videoCollectionDetailProvider(3)).requireValue;
     expect(state.sort.isManual, isFalse);
     expect(state.sort.field, VideoSortField.duration);
     expect(state.sort.direction, SortDirection.desc);
@@ -322,7 +326,11 @@ void main() {
         .read(videoCollectionDetailProvider(3).notifier)
         .applySort(field: VideoSortField.title);
     expect(
-      container.read(videoCollectionDetailProvider(3)).requireValue.sort.isManual,
+      container
+          .read(videoCollectionDetailProvider(3))
+          .requireValue
+          .sort
+          .isManual,
       isFalse,
     );
 
@@ -330,8 +338,7 @@ void main() {
         .read(videoCollectionDetailProvider(3).notifier)
         .applySort(field: null);
 
-    final state =
-        container.read(videoCollectionDetailProvider(3)).requireValue;
+    final state = container.read(videoCollectionDetailProvider(3)).requireValue;
     expect(state.sort.isManual, isTrue);
     expect(state.sort.apiValue, isNull);
     // 最后一次拉取不带 sort（手动顺序）。

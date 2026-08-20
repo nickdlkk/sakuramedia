@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sakuramedia/core/network/api_client.dart';
 import 'package:sakuramedia/core/session/session_store.dart';
 import 'package:sakuramedia/features/subscriptions/data/api/movie_subscriptions_api.dart';
+import 'package:sakuramedia/features/subscriptions/data/dto/movie_subscription_list_item_dto.dart';
 import 'package:sakuramedia/features/subscriptions/data/dto/movie_subscription_status.dart';
 
 import '../../../../support/fake_http_client_adapter.dart';
@@ -97,7 +98,6 @@ void main() {
             'movie_id': 321,
             'movie_number': 'ABP-123',
             'title': 'Original Title',
-            'title_zh': '中文标题',
             'cover_image': <String, dynamic>{
               'id': 7,
               'origin': '/covers/7-origin.jpg',
@@ -126,7 +126,7 @@ void main() {
     final item = response.items.single;
     expect(item.movieId, 321);
     expect(item.movieNumber, 'ABP-123');
-    expect(item.displayTitle, '中文标题');
+    expect(item.displayTitle, 'Original Title');
     expect(item.coverImage?.bestAvailableUrl, '/covers/7-large.jpg');
     expect(item.releaseDate, '2019-05-01');
     expect(item.status, MovieSubscriptionStatus.missing);
@@ -159,7 +159,6 @@ void main() {
     // 老响应缺 movie_id 时容错为 0（调用方按 >0 判可用）。
     expect(item.movieId, 0);
     expect(item.title, '');
-    expect(item.titleZh, '');
     // 标题全空时回落番号，列表不会出现空白行。
     expect(item.displayTitle, 'STARS-001');
     expect(item.coverImage, isNull);
@@ -207,6 +206,98 @@ void main() {
     expect(MovieSubscriptionStatus.importFailed.label, '导入失败');
     expect(MovieSubscriptionStatus.failed.apiValue, 'failed');
     expect(MovieSubscriptionStatus.failed.label, '查询出错');
+  });
+
+  test('import_failed 解析导入作业失败原因摘要', () async {
+    adapter.enqueueJson(
+      method: 'GET',
+      path: '/movie-subscriptions',
+      body: _page(
+        items: <Map<String, dynamic>>[
+          <String, dynamic>{
+            'movie_number': 'IPX-451',
+            'status': 'import_failed',
+            'import_operation': <String, dynamic>{
+              'import_job_id': 525,
+              'download_task_id': 516,
+              'state': 'failed',
+              'imported_count': 0,
+              'skipped_count': 0,
+              'failed_count': 1,
+              'retryable_file_count': 0,
+              'available_actions': [
+                'open_import_job',
+                'rerun_import',
+                'delete_failed_download',
+              ],
+              'failure_reason': 'no_media_files_found',
+              'failure_detail': '下载目录中没有扫描到可导入的视频',
+            },
+          },
+        ],
+        total: 1,
+      ),
+    );
+
+    final item = (await api.getSubscriptions()).items.single;
+    final operation = item.importOperation!;
+
+    expect(operation.importJobId, 525);
+    expect(operation.downloadTaskId, 516);
+    expect(operation.canOpenImportJob, isTrue);
+    expect(operation.canRerun, isTrue);
+    expect(operation.canRetryFailedFiles, isFalse);
+    expect(operation.canDeleteFailedDownload, isTrue);
+    expect(operation.failureReason, 'no_media_files_found');
+    expect(operation.failureDetail, '下载目录中没有扫描到可导入的视频');
+    // 描述本身已含 detail，不重复拼接。
+    expect(operation.importFailureMessage, '未发现媒体文件：下载目录中没有扫描到可导入的视频');
+  });
+
+  test('失败详情与描述不重合时拼接展示', () {
+    const operation = MovieSubscriptionImportOperationDto(
+      importJobId: 1,
+      state: 'failed',
+      failureReason: 'media_import_failed',
+      failureDetail: '磁盘写入异常',
+    );
+
+    expect(operation.importFailureMessage, '文件导入失败：单个媒体文件搬运/落库异常：磁盘写入异常');
+  });
+
+  test('零产出导入解析为 no_media，并使用未产出媒体文案', () async {
+    adapter.enqueueJson(
+      method: 'GET',
+      path: '/movie-subscriptions',
+      body: _page(
+        items: <Map<String, dynamic>>[
+          <String, dynamic>{
+            'movie_number': 'CWPBD-99',
+            'status': 'import_failed',
+            'import_operation': <String, dynamic>{
+              'import_job_id': 783,
+              'download_task_id': 787,
+              'state': 'completed',
+              'outcome': 'no_media',
+              'imported_count': 0,
+              'skipped_count': 6,
+              'failed_count': 0,
+              'available_actions': ['open_import_job', 'rerun_import'],
+              'failure_reason': 'file_too_small',
+            },
+          },
+        ],
+      ),
+    );
+
+    final item = (await api.getSubscriptions()).items.single;
+
+    expect(item.isNoMediaImport, isTrue);
+    expect(item.displayStatusLabel, '未产出媒体');
+    expect(
+      item.importOperation!.importFailureMessage,
+      '未产出媒体：跳过 6 个文件；文件过小：低于最小体积阈值，按样本/残片跳过',
+    );
   });
 
   test('getStatusCounts 解析各状态计数并按状态取值', () async {

@@ -60,7 +60,7 @@ final class MovieSubscriptionStatusCountsProvider
 }
 
 String _$movieSubscriptionStatusCountsHash() =>
-    r'9db16e4285cd70bbb67ba2c9c90cd0d6aad1c1cd';
+    r'b702a54fbe024556a2547cdb90b6a008d4bacbd7';
 
 /// 状态分段签的角标计数。
 ///

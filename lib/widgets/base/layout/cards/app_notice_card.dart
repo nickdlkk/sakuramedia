@@ -5,7 +5,7 @@ import 'package:sakuramedia/widgets/base/layout/cards/app_stat_tile.dart';
 /// 页面顶部的「说明 / 概览」卡片，双端(桌面 + 移动)通用。
 ///
 /// 覆盖两种常见形态：
-/// - **overview 系**（configuration 三个 mobile 页、playlists、llm 概览、桌面 playlists 顶部）：
+/// - **overview 系**（configuration 三个 mobile 页、playlists、桌面 playlists 顶部）：
 ///   `title` + `description` +（可选）`leadingIcon` +（可选）1–4 个统计块；圆角 `lg`。
 /// - **提示条系**（account 改密页两处的 `_NoticeCard`）：只有 `leadingIcon` + `description`；
 ///   圆角自动缩小为 `md`。

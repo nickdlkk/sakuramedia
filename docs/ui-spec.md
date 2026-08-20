@@ -1,1298 +1,196 @@
-# SakuraMedia UI 实现基线
+# SakuraMedia UI 实现基线（概览）
+
+> 本文是 UI 全局概览：先讲清产品形态、视觉基调、壳层和页面地图，再给共用模式、
+> 共享组件与状态反馈规则。不再逐页记录字段级/交互级实现细节。
 
 ## 1. 文档目的
 
-本文档描述的是当前 `sakuramedia` 代码库里已经存在的 UI 实现基线，而不是未来产品全景规范。
+- 让新页面、新组件在开始写之前先对齐全局约定；
+- 让维护者不用翻完每个页面就能知道「桌面和移动分别长什么样、共用什么」；
+- 只描述**已实现**的现状，不写规划中的能力。
 
-如果文档与代码冲突，以以下实现为准：
+当本文与代码冲突时，以 `lib/theme.dart`、`lib/theme/*.dart`、
+`lib/widgets/app_shell/`、`lib/features/**/presentation/` 为准。
 
-- `lib/theme.dart`
-- `lib/theme/*.dart`
-- `lib/widgets/app_shell/*`
-- `lib/widgets/*`
-- `lib/features/**/presentation/*`
+## 2. 产品形态
 
-后续更新 UI 时，应优先修改代码与 token，再同步更新本文档。
+SakuraMedia 是**桌面优先**的媒体管理工作台：
 
-## 2. 当前产品形态
+- 桌面端是完整实现：登录、工作台壳层、浏览、详情、搜索、活动中心、系统设置等；
+- Web 端复用桌面端路由与页面实现，桌面窗口类系统能力降级；
+- 移动端只接入主链路：底部导航（概览 / 影片 / 女优 / 榜单 / PornBox）、
+  列表与详情、播放器、搜索、图搜、部分设置子页；其余设置子页仍可能是骨架或占位。
 
-当前仓库是一个桌面优先的 Flutter 管理台，核心体验围绕桌面端工作台展开。
-
-当前状态：
-
-- 桌面端：已实现登录、工作台壳层、概览、发现（含顶部“女优上新”预览区块）、女优上新（发现页“更多”进入的子页面）、影片、女优、标签、时刻、播放列表、排行榜、热评、活动中心、媒体导入、搜索、详情、系统设置（失效媒体维护已并入为其中一个 Tab）
-- 移动端：已接入底部四导航（概览/影片/女优/榜单）与首页顶部 Tab（我的/关注/发现/时刻/热评）；首页左上角已接入抽屉菜单入口（数据源 / 媒体库 / 下载器 / 索引器 / LLM 配置 / 播放列表 / 修改用户名 / 修改密码 / 退出登录）；“我的”已实现搜索栏、最近添加和播放列表，“发现”已接入每日推荐影片与推荐时刻，且已接入影片详情页、播放列表详情页与搜索子页；`/mobile/library/movies`、`/mobile/library/movies/:movieNumber`、`/mobile/library/actors`、`/mobile/library/actors/:actorId`、`/mobile/rankings`、`/mobile/settings/data-sources`、`/mobile/settings/media-libraries`、`/mobile/settings/downloaders`、`/mobile/settings/indexers`、`/mobile/settings/llm`、`/mobile/settings/playlists`、`/mobile/settings/username` 与 `/mobile/settings/password` 为真实页面，其余 `/mobile/settings/*` 仍以移动端专属占位子页为主
-- Web 端：复用桌面端路由与壳层（`/desktop/*`），页面能力与桌面端保持一致，活动中心同样复用桌面实现
-
-因此，本规范默认以桌面端为主进行描述。移动端当前已接入影片列表/详情、女优列表/详情、排行榜与播放器主链路；Web 端复用桌面实现，但桌面窗口拖拽、窗口初始化等系统级能力在浏览器端降级为无效果。
-
-活动中心首版当前边界：
-
-- 已实现独立桌面/Web 页面 `/desktop/system/activity`
-- 已实现通知中心与任务中心的 REST 首屏加载，以及在线事件流增量刷新
-- 通知列表与任务历史当前均为滚动触底自动加载更多；加载更多失败时保留当前内容并在底部提供重试入口
-- 通知仅按分类筛选与展示，当前分类包括信息、警告、错误、提醒；通知不再存在独立等级维度
-- 通知当前采用“进入视口后自动已读”的交互，不再提供单独的“标记已读”按钮，前端也不再展示未读数、读状态筛选或已读/未读视觉差异
-- 任务分页仅作用于“任务历史”区块；顶部“活动任务”区块继续使用一次性加载加实时更新
-- 下载任务 Tab 按需初始化，展示客户端总速率与健康状态；支持按番号、下载状态和客户端筛选，任务列表通过 SSE 实时更新并在不支持 SSE 时降级为轮询
-- 下载任务卡片优先展示本地影片标题与封面，缺失时回退任务名与图片占位；qBittorrent 任务提供暂停、恢复和删除操作，115 离线任务隐藏后端不支持的暂停/恢复动作，并把 `abandoned` 展示为“已放弃跟踪”；列表分页复用底部加载更多反馈
-- 尚未实现顶栏 badge、概览卡片、下载导入联动、任务详情弹层
-
-媒体维护首版当前边界：
-
-- 作为「系统设置」页（`/desktop/system/configuration`）的「媒体维护」Tab 提供，不再是独立一级导航或独立路由；切到该 Tab 后才懒加载失效媒体
-- 该 Tab 仅展示后端标记为失效的本地媒体，支持手动刷新、滚动触底加载更多、单条有效性复查和删除
-- 失效媒体卡片优先展示竖版封面 `thin_cover_image`，缺失时回退横版 `cover_image`，两者都缺失时展示电影占位图标
-- 有效性复查会同步后端媒体状态；文件恢复时从当前列表移除，仍失效时保留当前条目、用 toast 反馈并开放该条删除入口
-- 删除按钮默认禁用，必须先复查确认仍失效；删除操作复用桌面确认弹窗，确认文案明确会删除失效媒体记录和本地媒体文件，删除成功后从当前列表移除
-- 失效媒体使用单一 `CustomScrollView + SliverPagedAsyncSection` 按视口懒构建；条目高度可变，不使用 `Column.map` 或嵌套 `shrinkWrap` 列表
-- 当前页面不提供搜索筛选、批量操作、任务控制或移动端专属页面
+因此布局、导航、页面结构优先复用桌面壳层（`AppDesktopShell` / `AppSidebar` /
+`AppTopBar`），不要默认移动端和 Web 端已有完整页面。
 
 ## 3. 视觉总基调
 
-- 整体是浅色、克制、偏管理后台的工作台风格
-- 桌面端页面主背景为浅灰，内容区以白色卡面承载；移动端页面主背景统一为纯白
-- 品牌强调色为棕红色系，主要用于主操作、选中态和少量重点信息
-- 非 macOS 平台下，侧边栏使用独立的浅灰底色，和内容区形成明显分层
-- macOS 桌面端侧边栏使用原生 vibrancy 毛玻璃作为底层材质，并叠加轻半透明 tint
-- 图片卡片与详情头图允许使用更强的遮罩与深色渐变
+- 整体是浅色、克制、偏管理后台的工作台风格；
+- 桌面端主背景浅灰、内容以白色卡面承载；移动端主背景统一纯白；
+- 品牌强调色为棕红色系，用于主操作、选中态和少量重点信息；
+- macOS 桌面端侧边栏使用原生 vibrancy 毛玻璃并叠加轻透明 tint，其它平台使用浅灰底色；
+- 图片卡片和详情头图允许使用更强的遮罩与深色渐变。
 
-当前视觉上不是纯 Material 默认风格，但仍以 Material 基础能力为底座实现。
-
-## 4.6 影片详情页剧情图交互
-
-当前影片详情页剧情图实现包括：
-
-- 页面剧情图条带支持点击缩略图打开预览：桌面端使用 `Dialog`，移动端使用底部抽屉
-- 页面剧情图条带支持长按或右键打开图片动作菜单
-- 预览主图支持长按或右键打开图片动作菜单，仅图片本体区域可触发（不包含留白黑底）
-- 预览内容底部缩略图条带支持点击切换当前预览图
-- 预览内容底部缩略图条带同样支持长按或右键打开图片动作菜单
-- 移动端预览抽屉与详情检查面板统一复用共享底部抽屉组件（`showAppBottomDrawer` / `AppBottomDrawerSurface`）
-- 移动端剧情图预览与单图预览当前都支持轻点主图进入全屏图片 overlay；剧情图全屏态支持左右滑动切换图片，并支持长按当前图打开进入全屏前相同的图片动作菜单
-- 全屏态支持继续缩放与拖拽，支持轻点关闭或下滑退出全屏
-
-当前剧情图图片动作菜单只包含：
-
-- `相似图片`
-- `保存到本地`
+颜色、间距、圆角、阴影、组件尺寸统一来自 `lib/theme.dart` 导出的 token，
+业务页面不散落裸值。
 
 ## 4. 主题与 token
 
-### 4.1 主主题入口
-
-统一主题入口位于 `lib/theme.dart`。
-
-当前主题导出包括：
-
-- `sakuraThemeData`：兼容旧调用，固定指向桌面 / Web 主题
-- `sakuraDesktopThemeData`：显式桌面 / Web 主题
-- `sakuraMobileThemeData`：显式移动主题
-
-应用启动时会按 `AppPlatform` 自动选 theme：
-
-- `desktop` / `web` 使用 `sakuraDesktopThemeData`
-- `mobile` 使用 `sakuraMobileThemeData`
-
-公共 token 通过 `ThemeExtension` 暴露，当前包括：
-
-- `AppColors`
-- `AppSpacing`
-- `AppRadius`
-- `AppShadows`
-- `AppComponentTokens`
-- `AppFormTokens`
-- `AppNavigationTokens`
-- `AppOverlayTokens`
-- `AppLayoutTokens`
-- `AppSidebarTokens`
-- `AppTextScale`
-- `AppTextWeights`
-- `AppTextPalette`
-- `AppPageInsets`
-
-业务页面和共享组件应通过 `context.appColors`、`context.appSpacing` 等扩展读取，不直接散落裸值。
-
-当前仓库已经增加源码守卫测试，非 `lib/theme/**` 文件禁止新增以下视觉字面量：
-
-- `Color(...)`
-- `fontSize: <number>`
-- 带数字字面量的 `EdgeInsets.*(...)`
-- `BorderRadius.circular(<number>)` / `Radius.circular(<number>)`
-
-### 4.2 颜色基线
-
-当前代码中的关键颜色如下：
-
-- `primary`: `#6B2D2A`
-- `surfacePage`: `#F5F5F5`
-- `surfaceCard`: `#FFFFFF`
-- `surfaceElevated`: `#FFFFFF`
-- `surfaceMuted`: `#F1F1F1`
-- `noticeSurface`: `#F3F3F3`
-- `desktopSidebarGlassTint`: `#4CEFEFEF`
-- `desktopSidebarGlassHover`: `#80FFFFFF`
-- `desktopSidebarGlassActive`: `#99FFFFFF`
-- `sidebarBackground`: `#D7D9D9`
-- `sidebarHoverBackground`: `#C3C5C5`
-- `sidebarActiveBackground`: `#C3C5C5`
-- `borderSubtle`: `#E5E5E5`
-- `borderStrong`: `#D6D6D6`
-- `divider`: `#E8E8E8`
-- `selectionSurface`: `#EAF3FF`
-- `infoSurface`: `#EFF6FF`
-- `warningSurface`: `#FFF4E5`
-- `errorSurface`: `#FFF1EF`
-- `errorAccentForeground`: `#F04438`
-- `successSurface`: `#ECFDF3`
-- `subscriptionHeartIcon`: `#D44B5C`
-- `movieCardSubscribedBadgeBackground`: `#F97316`
-- `movieCardPlayableBadgeBackground`: `#1677FF`
-- `movieDetailPlayableBadgeBackground`: `#1677FF`
-- `mediaOverlaySoft`: `#14000000`
-- `mediaOverlayStrong`: `#85000000`
-- `mediaMaskOverlay`: `#E6000000`
-
-电影详情页还有一组专用语义色，例如：
-
-- `movieDetailSelectedPlotBorder`
-- `movieDetailInvalidMediaBackground`
-- `movieDetailReleaseDateIcon`
-- `movieDetailScoreIcon`
-- `movieDetailHeatIcon`
-
-新增详情页视觉语义时，优先扩展 `AppColors`，不要直接在页面里硬编码。
-
-### 4.3 Typography 体系
-
-当前仓库的文本规则已收敛为“固定六档字号 + 固定字重 token + 统一文本色 tone”：
-
-- `AppTextScale` 是字号真源
-- `AppTextWeights` 是字重真源
-- `AppTextPalette` 是文本前景色真源
-- `AppText` / `resolveAppTextStyle` 是业务文本入口，负责组合字号、字重和 tone
-- `TextTheme` 仍保留，但仅作为由 `AppTextScale` + `AppTextWeights` 派生出的兼容层
-- `sakuraThemeData` 仍可直接用于桌面 / Web 测试与非平台上下文
-
-当前固定字号档位只有：
-
-- `s20`
-- `s18`
-- `s16`
-- `s14`
-- `s12`
-- `s10`
-
-字号固定规则如下：
-
-- `s20`: 20 / 600
-- `s18`: 18 / 600
-- `s16`: 16 / 默认字重
-- `s14`: 14 / 默认字重
-- `s12`: 12 / 默认字重
-- `s10`: 10 / 默认字重
-
-字重 token 固定为：
-
-- `regular`: `w400`
-- `medium`: `w500`
-- `semibold`: `w600`
-
-当前颜色 tone 固定为：
-
-- `primary`
-- `secondary`
-- `tertiary`
-- `muted`
-- `accent`
-- `onMedia`
-- `info`
-- `warning`
-- `error`
-- `success`
-
-它们直接映射到 `AppTextPalette`：
-
-- `primary`: `#1F1A18`
-- `secondary`: `#342D2A`
-- `tertiary`: `#4D4440`
-- `muted`: `#6B625E`
-- `accent`: `#6B2D2A`
-- `onMedia`: `#FFFFFF`
-- `info`: `#175CD3`
-- `warning`: `#B54708`
-- `error`: `#B42318`
-- `success`: `#027A48`
-
-对应底层 `TextTheme` 当前统一由 `AppTextScale` + `AppTextWeights` 派生，兼容映射如下：
-
-- `displaySmall` / `headlineSmall` / `titleLarge` -> `s20` + `semibold`
-- `titleMedium` -> `s18` + `semibold`
-- `titleSmall` -> `s16` + `regular`
-- `bodyLarge` / `bodyMedium` -> `s14` + `regular`
-- `bodySmall` -> `s12` + `regular`
-- `labelLarge` -> `s14` + `regular`
-- `labelMedium` -> `s12` + `regular`
-- `labelSmall` -> `s10` + `regular`
-
-共享组件接入原则：
-
-- 普通文本优先走 `AppText`
-- 表单、按钮、Tab、详情页主内容等需要 `TextStyle` 的场景统一走 `resolveAppTextStyle`
-- `resolveAppTextStyle` 在 Web 端会携带主题字体族，避免自绘组件或 `DefaultTextStyle` 重置继承链后丢失内嵌 `NotoSansSC`
-- 业务页面不再使用语义兼容层或 `context.appTypography.*`
-- 静态文本色优先用 `tone`，只有动态 alpha 或运行时状态色才允许在 resolver 结果上再做 `copyWith`
-- 只有 Flutter / Material 或第三方组件兼容场景才通过 `TextTheme` 间接消费这些字体 token
-
-### 4.4 间距、圆角、阴影
-
-间距：
-
-- `xs`: 4
-- `sm`: 8
-- `md`: 12
-- `lg`: 16
-- `xl`: 24
-- `xxl`: 32
-- `xxxl`: 40
-
-圆角：
-
-- `xs`: 4
-- `sm`: 8
-- `md`: 12
-- `lg`: 16
-- `pill`: 999
-
-阴影：
-
-- `card`: 轻卡片阴影
-- `panel`: 侧栏与面板阴影
-
-页面内的留白优先使用：
-
-- `AppPageInsets.desktopStandard = 24`
-- `AppPageInsets.compactStandard = 8`
-
-表单与导航补充 token：
-
-- `AppFormTokens.labelGap = 8`
-- `AppFormTokens.compactFieldHeight = 36`（移动端为 `40`）
-- `AppFormTokens.menuItemHeight = 40`（移动端为 `44`）
-- `AppNavigationTokens.desktopTabHeight = 40`
-- `AppNavigationTokens.compactTabHeight = 32`
-- `AppNavigationTokens.mobileTopTabHeight = 48`（移动端主题为 `52`；移动端顶部 Tab 复用 `compact` 的指示器/分隔线/文本色规则，但保留更高的触达高度与居中对齐）
-
-### 4.5 结构尺寸 token
-
-当前几个关键尺寸：
-
-- 桌面顶栏高度：`56`
-- 侧边栏展开宽度：`220`
-- 侧边栏折叠宽度：`72`
-- 侧边栏项高度：`44`
-- 统计卡最小宽度：`150`
-- 统计卡最大宽度：`190`
-- 列表卡目标宽度：`160`
-- 列表卡宽高比：`0.7`
-- 详情页 hero 高度：当前可视高度的 `30%`
-- 详情页窄封面宽度：`180`
-- 剧照缩略图：`132 x 88`
-- 演员头像尺寸：`58`
-- 播放列表横幅高度：`100`
-- 播放列表相关弹窗宽度：`520`
-- 切片轻量播放弹窗宽度：`880`（`AppComponentTokens.clipPlayerDialogWidth`）
-- 更多信息弹窗宽度：`960`
-- 更多信息弹窗最小高度：`560`
-- 详情页底部信息栏最小高度：`42`
-- 移动端通用底部抽屉默认高度比例：`0.9`
-- 移动端底部导航高度：桌面兼容值 `52`，移动主题值 `56`
-- 移动端顶部 Tab 外层容器高度：桌面兼容值 `48`，移动主题值 `52`
-- 移动端子页返回按钮区域宽度：桌面兼容值 `40`，移动主题值 `44`
-- 移动端首页最近添加卡片宽度：桌面兼容值 `142`，移动主题值 `148`
-- 移动端关注影片卡高度：桌面兼容值 `150`，移动主题值 `158`
-- 移动端关注影片窄封面宽度：桌面兼容值 `96`，移动主题值 `100`
-- 移动端关注影片剧照缩略图宽度：桌面兼容值 `86`，移动主题值 `90`
-- 通用小弹窗宽度：`420`
-- 通用中弹窗宽度：`520`
-- 索引器/活动页筛选宽度档位：`160 / 180 / 200 / 220`
-- 通用浮层菜单宽度档位：`144 / 188`
-
-与字体感知强相关的尺寸也已平台化联动：
-
-- `AppComponentTokens.buttonHeightMd / Sm / Xs`
-- `AppComponentTokens.buttonHorizontalPaddingMd / Sm / Xs`
-- `AppComponentTokens.buttonGapMd / Sm / Xs`
-- `AppComponentTokens.movieDetailBottomBarMinHeight`
-- `AppComponentTokens.playlistBannerHeight`
-- `AppComponentTokens.mobileBottomNavHeight`
-- `AppComponentTokens.mobileTopTabHeight`
-- `AppFormTokens.compactFieldHeight / miniFieldHeight / menuItemHeight`
-- `AppNavigationTokens.compactTabHeight / mobileTopTabHeight / desktopTabLabelTrailingPadding`
-
-规则是：
-
-- 桌面 / Web 保持更高信息密度
-- 移动端在上调正文、Tab、按钮、输入框字号时，同步上调高度和 padding，避免“字变大但壳不变”
-
-新增会影响复用和视觉稳定性的尺寸时，应优先进入 `AppComponentTokens`、`AppFormTokens`、`AppNavigationTokens`、`AppOverlayTokens` 或 `AppLayoutTokens`，不要以页面名新增私有常量。
-
-### 4.6 Icon Size 基线
-
-当前 icon size 统一使用 `AppComponentTokens` 的全局尺寸层级：
-
-- `iconSizeXs = 16`
-- `iconSizeSm = 18`
-- `iconSizeMd = 20`
-- `iconSizeLg = 22`
-- `iconSizeXl = 24`
-- `iconSize2xl = 32`
-- `iconSize3xl = 36`
-- `iconSize4xl = 44`
-
-规则：
-
-- 图标尺寸优先复用这套全局 scale，不再新增 feature-specific 的 icon size token
-- 结构尺寸和 icon size 分开管理，例如 `movieCardStatusBadgeSize` 仍然保留为结构 token
-- 页面、共享组件和主题扩展里都不应再散落 `size: 18`、`size: 20` 这类裸值
-
-### 4.7 Icon Button 基线
-
-当前共享 icon button 统一使用 `AppIconButton`。
-
-视觉基线来自桌面搜索框右侧原有的小尺寸 icon button：
-
-- 圆角矩形容器
-- 默认透明背景、透明边框
-- 选中态使用白色卡面背景和实线边框
-- 默认图标色为弱化文本色，选中态提升到主文本色
-- 通过 `compact` / `regular` 两档结构尺寸控制点击区域，不引入第二套视觉皮肤
-
-当前以下场景都已经收敛到这套共享组件：
-
-- 侧边栏和顶栏的 icon action
-- 搜索框内的搜索 / 图片搜索 / 在线切换按钮
-- 以图搜图页顶部 toolbar
-- 输入框 suffix 中的可见性切换按钮
-- 各类弹窗和预览中的关闭 / 辅助操作按钮
-
-桌面端弹窗当前统一复用 `AppDesktopDialog` 基座，右上角关闭按钮由基座提供，业务弹窗不再重复内嵌桌面关闭入口。
-
-弹窗与抽屉基座留白规则：
-
-- 桌面端 `AppDesktopDialog` 统一提供内容内边距 `24`（`spacing.xl`）
-- 移动端 `showAppBottomDrawer` / `AppBottomDrawerSurface` 统一提供内容内边距 `16`（`spacing.lg`）
-- 移动端底部抽屉统一使用自绘 slim handle（`28x3`，上/下间距各 `6`），不再使用 Flutter 默认 `showDragHandle`
-- 共享底部抽屉默认保持顶部安全区；预览/详情型移动端抽屉可显式关闭顶部安全区，仅保留底部安全区，避免抽屉顶部出现额外大片留白
+- 主主题入口：`lib/theme.dart`；
+- 颜色基线：背景、卡片、边框、文字、强调色、状态色都在主题 token 中；
+- Typography：统一字号、字重、行高与颜色 tone，通过 `resolveAppTextStyle` 使用；
+- 间距 / 圆角 / 阴影：统一 `AppSpacing`、`AppRadius`、`AppShadow`；
+- 结构尺寸：表单宽度、卡片宽度、图标尺寸、顶栏高度等有独立 token；
+- 组件尺寸与交互基线：按钮、输入框、下拉、图标按钮等共享组件自带 token。
+- 小图标命中区：订阅心形等图标视觉与布局保持 24（follow 卡 30），命中区经 `expand_tap_area` 外扩到 `subscriptionHeartHitSize`（44），不改变布局与对齐。
+
+新增设计 token 后必须同步维护本文对应的「视觉总基调」描述，并检查主题测试。
 
 ## 5. 桌面端工作台结构
 
-### 5.1 窗口基线
-
-桌面端启动逻辑在 `lib/app/bootstrap.dart`：
-
-- 默认窗口尺寸：`1280 x 800`
-- 最小窗口尺寸：`1280 x 800`
-- macOS 使用隐藏式 title bar
-- macOS 窗口背景为透明，左侧侧边栏区域通过原生 `NSVisualEffectView.sidebar` 提供 vibrancy 材质
-
-因此当前桌面布局默认建立在较宽工作台上，不需要先为窄桌面做压缩式设计。
-Web 端复用同一套壳层和页面结构，但浏览器环境下不启用窗口初始化与拖拽行为。
-
-### 5.2 壳层结构
+### 5.1 壳层
 
 桌面端统一使用：
 
-- 左侧 `AppSidebar`
-- 顶部 `AppTopBar`
-- 右侧内容区
-
-标准页面内容区默认应用 `24` 的页边距。只有特殊页面才应使用全屏布局。
-
-### 5.3 侧边栏规则
-
-当前侧边栏具备以下能力：
-
-- 展开 / 折叠切换
-- 顶部保留 toggle 按钮
-- 内置搜索入口
-- 中部展示一级导航，并按分区组织（见下）
-- 一级导航区可滚动；当内容溢出、底部仍可下滑时，在滚动区底部叠一层透明→底色的渐隐遮罩提示「还有更多」，滚到底自动消失。遮罩为纯装饰，不拦截底部菜单项的点击
-- 底部展示“系统版本”轻量信息块，作为壳层可信状态信息；展开态显示客户端 / 服务端版本，折叠态仅保留信息图标与 tooltip
-- 底部固定退出登录按钮
-
-视觉上：
-
-- macOS 桌面端：侧边栏面板本体使用半透明 tint，hover / active 项使用更亮的半透明覆盖色
-- 非 macOS 桌面端：继续使用当前浅灰实底和实色 hover / active 背景
-
-桌面端当前一级导航分为三区呈现，「浏览」与「管理」带不可点击的分组标题：
-
-- 概览（置顶，无分组标题）
-- 浏览：发现、影片、女优、标签、时刻、切片、播放列表、非 JAV 视频、人物、视频合集、排行榜、热评
-- 管理：系统设置、媒体导入、活动中心（失效媒体维护已并入「系统设置」页的「媒体维护」Tab）
-
-折叠态下分组标题文字隐藏，改以一条分隔线作为分区视觉分隔。分组标题仅是组织性标记，不可点击、不参与导航。
-
-不要假设当前桌面端已经支持多级折叠导航；现实现阶段是稳定的一层入口（分组标题只做视觉分区，不是可展开的多级菜单）。
-
-### 5.4 顶栏规则
-
-顶栏只负责：
-
-- 展示当前页面标题
-- 承载返回按钮
-- 作为桌面窗口拖拽区域
-
-当前没有全局操作区、用户菜单区和复杂工具栏。
-
-### 5.5 路由分层与返回规则
-
-当前路由交互按“主导航 / 子流程”分层：
-
-- 主导航页面（`/desktop/overview`、`/desktop/library/discover`、`/desktop/library/movies`、`/desktop/library/actors`、`/desktop/library/moments`、`/desktop/library/playlists`、`/desktop/library/rankings`、`/desktop/library/hot-reviews`、`/desktop/system/activity`、`/desktop/system/configuration`）统一使用 `go`
-- 子流程页面（女优上新页 `/desktop/library/follow`、详情页、系列影片页、播放器页、桌面搜索页、以图搜图页）统一使用 `push`
-- 路由身份以 URL 为准；页面来源不再通过 `extra.fallbackPath` 传递，`extra` 只保留给非 URL 的临时载荷场景
-- 移动端主导航由 `StatefulShellRoute.indexedStack` 承载四个分支（概览 / 影片 / 女优 / 榜单），分支内列表状态与滚动位置按分支保留
-- 移动端子流程页（搜索、以图搜图、播放列表详情、影片详情、系列影片、女优详情、播放器）统一挂在根导航器之上，显示为全屏子页面并隐藏底部导航
-
-当前返回规则统一为：
-
-- 优先 `pop` 返回上一级子流程历史
-- 无可 `pop` 历史时，回退到该路由的 canonical 入口
-- 影片详情与系列影片默认回影片列表；女优详情默认回女优列表；播放列表详情默认回概览；搜索和以图搜图默认回概览；播放器默认回对应影片详情
-- 因此，从列表/搜索/以图搜图结果页继续进入详情时，返回只依赖真实历史栈，不再依赖手工来源字符串
-
-弹层不参与页面路由分层：`Dialog` / `BottomSheet` 继续走 `showDialog`、`showAppBottomDrawer` 与 `Navigator.pop`，不做 URL 路由化。
-
-## 6. 页面模式
-
-### 6.1 登录页
-
-登录页是独立页面，不使用桌面壳层。
-
-当前模式：
-
-- 页面背景使用浅灰到主色容器的柔和渐变
-- 中间是最大宽度 `460` 的半透明白色卡片
-- 表单项使用 `AppTextField`
-- 服务器地址项的协议（`http` / `https`）以内嵌前缀下拉的形式放在地址框左侧（`https:// ▾ | host:port`），用户只需填写主机与端口，点击前缀即可在 http/https 间切换；下拉菜单复用 `AppSelectField` 的浮层交互与设计 token。默认协议为 `http`，地址框 hint 为 `127.0.0.1:38000`。粘贴含协议的完整 URL 时会自动剥离协议前缀并同步切换下拉。已保存的 baseUrl 会拆分为协议前缀 + 主机部分回显；提交时重新拼接成完整 baseUrl 存储
-- 登录按钮使用主题主色
-- 卡片头部只保留品牌名（图标 + `SakuraMedia`），不再重复展示独立「登录」标题行，下方副标题为「请输入服务器地址与账号信息」
-- 横屏矮屏（可用高度 `< 400`，如 VR 2D 面板）下自动收紧纵向留白：顶部/底部 padding、卡片内边距、输入框间距与块级间距降档，尽量让整卡（含登录按钮）落在一屏内；更高视口仍维持居中卡片
-
-登录页是当前唯一明显带背景渐变和居中认证卡片的页面。
-
-### 6.2 概览页
-
-概览页结构固定为：
-
-- 系统信息统计条
-- 最近添加影片区块
-
-统计信息使用 `OverviewStatsStrip`，当前包含系统汇总指标与 JoyTag 状态指标（健康、推理设备、待索引数量）；影片使用 `MovieSummaryGrid`。JoyTag 指标在 image-search 接口请求中显示平台自适应 loading 图标，请求失败后降级到“不可用 / 未知 / 不可用”。这是当前首页主模式，不要额外拼出第二套首页布局语言。
-
-桌面端/Web 端“所有订阅女优最新影片”能力（“女优上新”）当前在“发现”页顶部以预览区块呈现（位于“今日推荐”之上，卡片支持订阅/取消订阅与上下文菜单，并与全局订阅状态同步）；点击区块右上角“更多”以 `push` 进入完整女优上新页面（`/desktop/library/follow`，顶栏返回“发现”）。该能力不再作为侧边栏一级入口，也不在桌面概览页复刻移动端顶部 Tab 的“关注”结构。
-
-移动端概览当前规则：
-
-- 移动端壳层 `AppMobileShell` 统一为页面内容应用 `AppPageInsets.compactStandard`
-- 移动端壳层 `AppMobileShell` 统一处理页面安全区（`top + bottom`），页面本身不再重复包裹 `SafeArea`
-- 移动端壳层 `AppMobileShell` 统一显式设置状态栏/底部系统栏样式，保证与子路由 `AppBar` 的沉浸观感一致
-- 移动端首页额外在左上角提供菜单按钮，打开左侧抽屉；当前抽屉只在 `/mobile/overview` 提供，不扩展到影片 / 女优 / 榜单一级页
-- 移动端子页壳层 `AppMobileSubpageShell` 同样统一处理 `top + bottom` 安全区
-- 移动端壳层与子页壳层默认背景统一使用 `surfaceCard`（纯白）
-- 顶部使用 `AppTabBarVariant.mobileTop`，Tab 维持 `我的 / 关注 / 发现 / 时刻 / 热评`，视觉规格复用 `compact`，仅 `tabAlignment` 为居中
-- 首页抽屉当前菜单结构：
-  - 顶部概览菜单：`概览`
-  - 常规菜单：`概览`、`消息`（带未读角标）、`标签`、`外部播放器`（仅 Android）、`媒体库`、`下载器`、`索引器`、`LLM 配置`、`播放列表`、`修改用户名`、`修改密码`
-  - 版本与服务卡片：展示客户端 / 服务端版本，服务端未返回时显示 `--`，不作为可点击菜单入口
-  - 底部固定操作：`退出登录`
-- 抽屉菜单视觉使用接近 iOS 设置页的分组列表结构：顶部为菜单分组卡片，底部为独立操作分组；每行包含前置图标和标题，同组项之间使用轻分割线，不展示右侧 chevron
-- 抽屉内除底部固定的「退出登录」外全部可滚动：概览 / 消息 / 标签 / 外部播放器（仅 Android）/ 媒体库 / 下载器 / 索引器 / LLM 配置 / 播放列表 / 修改用户名 / 修改密码 / 版本与服务卡片均位于滚动区内——横屏矮屏下滚动区被底部固定项挤压，故仅保留「退出登录」固定，账户项与版本卡片一并并入滚动区
-- 点击首页抽屉中的任一菜单项后，会以入栈方式进入对应移动端子页：`/mobile/system/overview`、`/mobile/settings/data-sources`、`/mobile/settings/media-libraries`、`/mobile/settings/downloaders`、`/mobile/settings/indexers`、`/mobile/settings/llm`、`/mobile/settings/playlists`、`/mobile/settings/password`
-- `/mobile/system/overview` 已实现为真实移动端系统概览页：顶部为“系统概览”说明卡，中部按“媒体资产 / 服务健康”分组展示 PC 概览同源系统信息；媒体资产包含影片总数、可播放影片、女优总数、媒体文件、资源库、媒体总量；服务健康包含 JoyTag 健康、推理设备、待索引、数据源授权、授权中心、外部数据源；授权中心与外部数据源保留显性“检测”按钮；该页不包含“最近添加”，移动端最近添加仍只属于首页“我的”Tab
-- `/mobile/settings/data-sources` 已实现为真实数据源配置页：顶部为授权概览卡，展示授权状态、授权有效期与授权中心连接状态；中部为激活授权表单卡，激活码默认隐藏且支持显示/隐藏；刷新状态、测试连接、同步授权作为显性次级按钮展示，底部固定主 CTA 为“激活授权”；诊断信息默认收起，展开后展示实例 ID、错误码、后端说明与授权中心测试详情；激活码仅用于本次请求，前端不做持久化
-- `/mobile/settings/media-libraries` 已实现为真实媒体库配置页：白底子页内先展示说明卡，再展示媒体库卡片列表；页面底部固定全宽“新增媒体库”按钮；支持下拉刷新；卡片点击默认进入编辑抽屉，更多菜单提供“编辑媒体库 / 删除媒体库”；新增与编辑统一使用底部抽屉表单，删除使用确认抽屉
-- `/mobile/settings/downloaders` 已实现为真实下载器页：顶部使用概览卡和双 Tab（下载器 / 接入说明），列表卡片点击后打开详情抽屉，新增 / 编辑 / 删除统一使用底部抽屉；新增时可选择 qBittorrent 或 115 离线，前者绑定本地媒体库并配置连接与路径，后者只绑定已登录的 115 媒体库
-- `/mobile/settings/indexers` 已实现为真实索引器页：页面顺序为 Jackett 概览卡、API Key 配置卡、索引器卡片列表；API Key 单独保存；新增 / 编辑通过底部抽屉即时提交；删除使用确认抽屉；单个索引器可绑定多个下载入口，PT 仅允许 qBittorrent，BT 可同时绑定 qBittorrent 与 115；如果任一绑定下载器已失效，会在卡片和详情抽屉中明确提示“绑定下载器已失效，请重新选择”
-- `/mobile/settings/indexers` 的 API Key 卡提供“测试 Jackett 连通性”：仅使用已保存配置调用 `GET /indexer-settings/test` 做真实搜索，未保存改动时禁用；健康、零候选和失败都会在卡内保留查询、检查索引器数、候选数、耗时及修复提示
-- `/mobile/settings/indexers` 不提供整页草稿保存；索引器新增 / 编辑 / 删除都会直接调用 `/indexer-settings` 保存当前完整配置，并以服务端回包覆盖本地状态
-- `/mobile/settings/indexers` 在没有下载器配置时，会禁用底部“新增索引器”按钮，并在页面内显式提示先去下载器页创建下载器
-- `/mobile/settings/llm` 已实现为真实 LLM 配置页：顶部为概览卡，说明当前入口名称保持通用 LLM 配置，但当前接入的是影片信息翻译共享配置，接口路径仍为旧命名 `/movie-desc-translation-settings`；中部使用单卡片表单维护启用状态、Base URL、API Key、模型、请求超时与连接超时；当前 Base URL 示例统一写为 `https://ollama.com`，模型占位统一写为 `gemma4:31b-cloud`，并在模型字段下方推荐使用 Ollama 的 `gemma4:31b-cloud` 模型；底部固定双按钮分别执行“测试配置”和“保存配置”
-- `/mobile/settings/llm` 允许直接用当前草稿调用 `/movie-desc-translation-settings/test` 做连通性与返回结构测试，不要求先保存；测试成功或失败后会在页内概览卡更新最近一次测试状态，并同时使用 toast 给出反馈
-- `/mobile/settings/password` 已实现为真实修改密码页；`/mobile/settings/playlists` 已实现为真实播放列表管理页：顶部为说明 + 统计卡，中部为自定义播放列表管理卡片列表，底部固定“新建播放列表”按钮；新建、编辑、删除均走底部抽屉即时提交，不复用桌面配置页
-- 移动端媒体库 / 下载器 / 索引器 / LLM / 修改密码页顶部说明卡统一使用 `AppColors.noticeSurface` 浅灰底色和 `borderSubtle` 边框，不再复用 `primaryContainer` 的粉色容器底
-- 移动端修改密码页使用白底子页布局：顶部为安全提示块，中部为当前密码 / 新密码 / 确认新密码三项表单，底部为吸底全宽主按钮“确认修改”
-- 移动端修改密码页提交逻辑与桌面端账号安全保持一致：调用 `/account/password` 修改成功后，会立即用新密码走一次登录校验；校验成功则清空当前登录态并返回 `/login`，校验失败则提示“密码已修改，但新密码登录校验失败，请重新登录确认”
-- 移动端修改密码页的轻量反馈统一使用 toast，不额外引入页内错误面板
-- 点击首页抽屉中的“退出登录”后，会清空当前登录态并返回 `/login`
-- “我的”Tab 当前内容：
-  - 顶部搜索栏（复用 `CatalogSearchField`）
-  - 最近添加（横向 `MovieSummaryCard` 列表）
-  - 播放列表（纵向 `PlaylistBannerCard` 列表）
-  - 播放列表支持长按拖拽排序，顺序保存在本地并按 `baseUrl`（站点）隔离；后端新增列表会在本地排序末尾追加
-  - 长按进入可拖拽状态时会触发一次触感反馈（best effort，不支持震动时静默降级）
-- “关注”Tab 当前内容：
-  - 数据源：`GET /movies/subscribed-actors/latest`（分页）
-  - 列表样式：专属关注卡片（非通用 `MovieSummaryCard`）
-    - 上半区为“左侧细封面 + 4px 间距 + 右侧横向剧照条”
-    - 左上角保留订阅切换 icon，支持直接订阅/取消订阅
-    - 下半区展示摘要与元信息（番号 / 发行日期 / 可播放）
-  - 剧照与摘要按可见卡片懒加载影片详情并做本地缓存；失败时降级为无剧照基础态
-  - 点击卡片会入栈到 `/mobile/library/movies/:movieNumber`，返回优先依赖真实历史栈
-- 点击“我的”Tab 内播放列表卡片后，会以入栈方式进入移动端播放列表详情页 `/mobile/overview/playlists/:playlistId`
-- 移动端子路由（当前包括 `/mobile/search`、`/mobile/search/:query`、`/mobile/search/image`、`/mobile/settings/media-libraries`、`/mobile/settings/downloaders`、`/mobile/settings/indexers`、`/mobile/settings/llm`、`/mobile/settings/playlists`、`/mobile/settings/password`、`/mobile/overview/discover/movies`、`/mobile/overview/discover/moments`、`/mobile/overview/playlists/:playlistId`、`/mobile/library/movies/:movieNumber`、`/mobile/library/actors/:actorId`）统一使用标准顶栏（`AppBar`）并隐藏底部导航
-- 移动端子路由返回规则统一为：优先 `pop` 返回上一级；无历史栈时按路由类型回到默认入口，系统返回手势与顶部返回按钮保持一致
-- 移动端播放列表详情页当前结构：
-  - 标准顶栏（返回 + 标题“播放列表详情”）
-  - 播放列表横幅
-  - 影片数量
-  - 影片网格与分页加载反馈（复用桌面端详情页的数据加载与卡片网格模式）
-- “发现”Tab 当前内容：主体分为“今日推荐”和“推荐时刻”两段；今日推荐读取 `/daily-recommendations` 并复用影片封面网格，只展示首屏摘要；推荐时刻读取 `/moment-recommendations` 并复用时刻缩略图网格，只展示首屏摘要；首页不展示推荐理由
-- “发现”Tab 下拉刷新会重新读取当前推荐快照 / 推荐池，不触发后端生成任务；“更多”文字入口分别跳转 `/mobile/overview/discover/movies` 与 `/mobile/overview/discover/moments`，完整列表页滚动到底部自动加载更多，加载失败保留现有内容并在底部提供重试入口
-- “时刻”Tab 已接入全局时刻列表：**顶栏与桌面共用同一条 `AppListHeader`**，筛选入口显示当前内容类型（`JAV / 视频`），移动端点开底部抽屉、桌面端就地展开浮层，两侧面板都是同一个 `MomentFilterSectionGroup`（内容类型 + 排序 `最新 / 最早` 两个分节）；信息槽为总数（`N 个时刻`），下方是缩略图网格 + 底部分页反馈
-- 移动端“时刻”卡片点击后打开底部抽屉预览，复用共享预览组件；动作包含：相似图片、保存到本地、删除标记、播放、影片详情
-- 移动端“时刻”预览中的“相似图片”会跳转 `/mobile/search/image`；选中的源图通过临时 draft store 关联到路由 query 中的 `draftId`
-- “热评”Tab 复用热评列表页能力（周期切换、分页、空态/错误态）；**顶栏与桌面共用同一条 `AppListHeader`**，筛选入口显示当前周期（图标 `date_range`），移动端点开底部抽屉、桌面端就地展开浮层，两侧面板都是同一个 `HotReviewFilterSectionGroup`；信息槽为总数（`N 条`）+ 带时钟图标的抓取时间胶囊；点击热评卡片会入栈跳转到移动端影片详情
-- “热评”Tab 网格为响应式列数：窄屏单列、宽屏双列（不复用桌面端最小双列规则）
-- “我的”Tab 内搜索提交会以入栈方式进入移动端搜索路由 `/mobile/search(/:query)`，连续不同关键词提交会形成可逐条返回的搜索历史
-- “我的”Tab 的图片搜索入口会先拉起系统相册；选择成功后以入栈方式进入 `/mobile/search/image` 并写入 `draftId`，取消选择则留在当前页
-- `/mobile/search/image` 页内“选择图片 / 更换图片”同样走系统相册选择
-- “我的”Tab 最近添加、移动端搜索结果、移动端播放列表详情中的影片卡片均已改为入栈跳转移动端影片详情，并按真实历史栈回退
-- 移动端影片详情页已接入详情主体与检查面板（评论 + 磁力搜索 + 缩略图）；演员点击会入栈进入移动端女优详情页
-- 移动端影片详情底部状态条为贴底全宽样式（无左右留白）；剧情图预览走底部抽屉
-- 移动端影片详情已接入独立播放器页（`/mobile/library/movies/:movieNumber/player`），播放器是根级全屏子流程页，并复用现有播放器主体与缩略图面板
-- 进入移动端播放器后会锁定横屏；退出播放器时按进入前方向类别恢复（进入前竖屏恢复竖屏，进入前横屏恢复横屏）
-- 移动端播放器进入后启用沉浸模式并隐藏系统状态栏（电量/时间等）；退出播放器时恢复常规系统栏显示
-- 移动端播放器沿用 `media_kit` 控件体系与默认手势行为；顶部保留集成式返回入口，底部右侧提供“倍速 / 字幕 / 全屏”入口。点击“倍速”或“字幕”后，会在播放器区域内部从右侧滑出对应抽屉菜单（不锚定整页，不使用 hover 浮层，不额外叠加自定义整屏手势层）
-- 移动端以图搜图结果预览已接入：相似图片、保存到本地（系统相册）、影片详情；当结果含 `media_id` 时展示“播放”并跳转播放器，缺失 `media_id` 时不展示“播放”
-
-### 6.3 影片页 / 女优页
-
-这两个页面共享同一种“筛选 + 统计 + 卡片网格 + 分页加载”模式，**桌面与移动共用
-同一条 `AppListHeader`**（差别只在筛选面板的容器：桌面就地浮层，移动底部抽屉）：
-
-- 最左侧固定为筛选图标，所有筛选维度和快捷预设都进入底部抽屉
-- 中间只读信息胶囊展示当前筛选摘要与总数
-- 最右侧操作槽承载「选择」等动作
-- 下方网格卡片
-- 滚动触底加载更多
-- 失败时保留内容并显示底部重试条
-
-移动端影片筛选抽屉的「快捷筛选」区包含以下预设，女优详情页仍会在自己的筛选面板内追加发行年份区块：
-
-- `全部`：回到默认筛选
-- `最新订阅`：状态筛选固定为 `已订阅`，合集类型固定为 `单体`，排序方式固定为 `订阅时间`
-- `最新入库`：状态筛选固定为 `可播放`，合集类型固定为 `单体`，排序方式固定为 `最近入库`
-- 快捷预设与完整筛选项共用同一套 `status`、`collection_type`、`sort` 参数，在抽屉中预览、点击确定后统一生效
-- 筛选浮层在「合集类型」下方提供「番号来源」单选维度（`全部` / `常规` / `FC2`），对应请求参数 `number_source=all|regular|fc2`：`fc2` 仅返回番号以 FC2 开头的影片，`regular` 排除 FC2，`all` 不限制；非 `全部` 时左侧触发按钮文案追加该维度标签
-- 女优详情页年份选项来自 `GET /actors/{actor_id}/years`，chip 显示为 `年份(数量)`，例如 `2026(18)`；选择年份后影片列表请求追加 `year`
-- 女优列表筛选抽屉顶部提供「我的订阅 / 全部」快捷预设，性别与排序等完整条件仍在同一抽屉内
-- 进入选择态时，移动端顶栏原地改写为「退出 / 已选数量 / 全选 / 订阅 / 取消订阅」；订阅为主操作，取消订阅使用危险操作样式
-
-当前网格列数依据容器宽度自动计算，范围是 `2` 到 `6` 列，目标卡宽为 `160`。
-
-累计分页页面的卡片网格统一使用 `AppAdaptiveCardSliver`，并与头部、筛选和分页尾部放在同一个 `CustomScrollView` / `AppAdaptiveRefreshScrollView` 中；`AppAdaptiveCardGrid` 的 `shrinkWrap` 版本只用于首屏摘要、相似影片等数量明确受限的嵌入式预览。影片、女优、榜单、时刻、热评、以图搜图、播放列表详情和女优详情等可持续累加的结果不得回退到 `SingleChildScrollView + shrinkWrap GridView`。
-
-通用 `MovieSummaryCard` 当前已接入影片上下文菜单：
-
-- 桌面端支持右键，移动端支持长按
-- 当前覆盖：桌面/移动影片列表、桌面发现页（“女优上新”预览区块 + “今日推荐”）、桌面女优上新页、桌面女优详情影片列表、桌面标签影片列表、桌面/移动概览页“最新入库”影片网格、桌面/移动榜单页（走 `RankedMovieSummaryGrid`）、桌面/移动统一目录搜索结果、系列影片页、合集/歌单详情、影片详情页“相似影片”条带、推荐子页
-- 当前菜单项自上而下依次为：
-  1. `订阅影片` / `取消订阅`（顶部；已订阅态图标为 `favorite_border_rounded`、tone 为 `error`；未订阅态图标为 `favorite_rounded`、tone 为 `primary`）
-  2. `标记为合集/单体`
-- `订阅影片` / `取消订阅` 直接调用 `PUT/DELETE /movies/{movie_number}/subscription`（取消订阅默认 `delete_media=false`）；成功后经 `movieSubscriptionEventsProvider.reportChange` 广播，所有监听列表就地补丁刷新心形与订阅计数；后端返回 `movie_subscription_has_media` 时展示“该影片存在媒体，默认不能取消订阅”toast，与详情页动作菜单一致
-- 打开菜单时会先请求 `GET /movies/{movie_number}/collection-status`，根据返回状态动态展示 `标记为合集` 或 `标记为单体`
-- `标记为合集/单体` 会调用 `PATCH /movies/collection-type` 更新当前影片
-- 合集番号特征不再从影片菜单内快捷追加；当前统一在桌面端系统设置的「高级设置」分类中通过 `media.others_number_features` 维护
-- 移动端首页“关注”Tab 仍使用专属 `MobileFollowMovieCard`，当前未接入该菜单
-
-移动端影片/女优路由当前实现：
-
-- `/mobile/library/movies`：`AppListHeader`（筛选图标 + 当前条件 + `X 部` + 选择）+ `MovieSummaryGrid` + 底部分页反馈（加载中 / 失败重试）
-- 抽屉确认后筛选立即生效并重载列表，筛选参数沿用 `status`、`collection_type`、`sort`
-- 移动端影片筛选统一使用底部抽屉，抽屉内确认后生效
-- 点击影片卡片会入栈到 `/mobile/library/movies/:movieNumber`
-- `/mobile/library/actors`：`AppListHeader`（筛选图标 + 当前条件 + `X 位`）+ `ActorSummaryGrid` + 底部分页反馈（加载中 / 失败重试）
-- 抽屉确认后筛选立即生效并重载列表，筛选参数沿用 `subscription_status`、`gender`、`sort`；默认展示已订阅女优并按 `subscribed_at:desc` 排序，只读信息胶囊同步展示当前订阅状态与排序条件
-- 点击女优卡片会入栈到 `/mobile/library/actors/:actorId`
-- `/mobile/library/actors/:actorId`：头部摘要（头像/名称/订阅/影片总数）+ 影片区 `AppListHeader` + `MovieSummaryGrid` + 底部分页反馈（加载中 / 失败重试）。影片区顶栏与桌面女优详情共用同一条：筛选入口在移动端弹底部抽屉、桌面端就地展开浮层，面板都是同一个 `MovieFilterSectionGroup`（含按年份过滤）；总数不进信息槽（头部摘要里已有）。多选也与影片列表一致：移动端入口在卡片长按菜单、批量动作在贴底操作条，桌面端「选择」在顶栏操作槽
-- 详情页影片筛选沿用 `status`、`collection_type`、`sort`，并支持按单个 `year` 过滤；请求固定携带 `actor_id`
-- 详情页点击影片卡片会入栈到 `/mobile/library/movies/:movieNumber`
-- 移动端影片 / 女优 / 榜单 / 时刻等可滚动列表页，以及移动端影片 / 女优 / 播放列表详情和首页 Tab，当前统一接入下拉刷新；刷新走控制器静默 `refresh()`，不会先清空内容或回退到骨架屏
-
-#### 6.3.1 标签页
-
-标签页（桌面 `/desktop/library/tags`、移动 `/mobile/library/tags`）是“多选标签 + 影片列表”的单页集成形态，复用影片页的筛选与网格组件（Web 端复用桌面路由）。两端共用状态层与选择面板，差异只有热门标签数量（桌面 15 / 移动 5）、外层滚动容器与下拉刷新：
-
-- 顶部为标签选择卡 `TagSelectorPanel`（`tag_selector_panel.dart`，双端共用；视频域也借用它，靠 `showMatchModeToggle` 隐藏匹配开关）：
-  - 顶部标题 `选择标签` + 右侧已选数量
-  - 搜索框（`AppTextField`，前缀放大镜、有内容时右侧清除按钮），输入即时按标签名子串过滤，走客户端过滤不重新请求
-  - 已选区：所选标签以可删除 chip（`AppTextButton` + 尾部关闭图标）横向 `Wrap` 展示，并附 `清空` 按钮；无选择时隐藏
-  - 标签云：默认展示热门标签（按 `movie_count` 降序，取前 60），收起态仅展示前 24 个（约三行），仅当超出该数量时才显示 `展开全部 / 收起` 切换完整展示；搜索态直接展示全部匹配项。每个标签 chip 显示为 `标签名 · 数量`，命中已选时高亮
-  - 标签 chip 统一复用共享文字按钮 `AppTextButton`，不新增独立 chip 组件
-  - 标签数据来自 `GET /tags?sort=movie_count:desc`，一次性加载后在内存中搜索/筛选；加载中显示行内进度，失败用 `AppEmptyState` + 重试
-- 下方为影片区：
-  - 未选择任何标签时展示引导空态 `请选择标签查看影片`，不渲染筛选条
-  - 选择 ≥1 个标签后展示影片顶栏 `AppListHeader`（状态 / 合集类型 / 排序，与影片页一致：桌面就地浮层、移动底部抽屉）+ 总数（`X 部`）+ `MovieSummaryGrid` + 底部分页反馈，结构与影片页完全一致
-  - 多选也与影片页一致：桌面「选择」在顶栏操作槽、多选态原地改写整条顶栏；移动端入口挂在卡片长按菜单，顶栏只留退出 / 计数 / 全选，批量动作在贴底的 `AppSelectionBottomBar`（桌面式一行 toolbar 在移动可用宽度 374 下会溢出，故移动端必须走这套）
-  - **标签选择区不进顶栏筛选入口**：它是本页的主维度导航，保持为列表上方的常驻面板；顶栏那个筛选入口只管影片的状态 / 合集 / 排序
-  - 影片请求走 `GET /movies?tag_ids=1,2,3`，多标签为 **OR** 语义（命中任一标签即选中）；筛选项沿用 `status`、`collection_type`、`sort`，标签页不接入发行年份与 `special_tag`
-  - 选择变化（增删标签）或筛选变化都会回到顶部并即时重新拉取；标签为空时不发请求
-- 页面状态走 `obtainCachedPageState`（缓存键 `desktop:tags:list`），侧边栏来回切换后已选标签、搜索词与滚动位置保留
-- 影片详情页标签区可点击：点击某标签 `push` 到标签子路由 `/desktop/library/tags/:tagId`（与"点系列→系列影片页""点演员→演员详情"同一套路），顶栏显示返回按钮、`pop` 回到该影片。该子路由复用同一标签页组件但**只预选被点的标签**、用独立非缓存状态（每实例自持 `PagedMovieSummaryController`，避免与一级导航缓存实例共用 `scrollController`）；进入后仍可继续增删标签/筛选/加载更多。一级入口 `/desktop/library/tags`（侧边栏）保持无返回按钮、缓存状态独立
-
-### 6.4 搜索页
-
-搜索页当前是桌面端内嵌内容页，不是弹层。
-
-结构：
-
-- 顶部搜索输入
-- 侧边栏搜索框在桌面端额外提供图片搜索入口
-- 搜索页顶部搜索框右侧展示外部数据源切换图标；当前该开关只影响影片搜索，选中后影片走在线搜索
-- 在线搜索过程中，在搜索框和 `AppTabBar` 之间显示内联状态卡，承载 SSE 阶段信息与最终统计
-- 下方 `AppTabBar`
-- 内容区在“影片结果”和“女优结果”之间切换
-
-搜索为空、失败、无结果时都使用统一空态承载。
-影片搜索当前同时支持本地搜索与在线搜索两种路径；当查询被识别为女优搜索时，统一走在线搜索。
-在线搜索最终结果仍在原有影片/女优结果区呈现，不单独弹出浮层。
-
-### 6.5 桌面端以图搜图页
-
-以图搜图页当前是桌面端独立内容页，路由为 `/desktop/search/image`。
-
-结构：
-
-- 顶部查询图卡片
-- 查询图左侧缩略图 + 右侧 icon toolbar
-- 可展开的大图预览区
-- 可展开的高级筛选区
-- 下方命中结果网格
-
-顶部卡片当前固定提供三个操作：
-
-- 更换图片：icon button，再次打开文件选择，选图后立即重新搜索
-- 展示大图：icon button，在当前页内展开 / 收起大图预览
-- 高级筛选：icon button，在当前页内展开 / 收起筛选面板
-
-所有顶部 icon button 都保留 tooltip，不展示文字标签。
-
-高级筛选当前支持：
-
-- 当查询来源于影片详情页剧情图时，额外展示“当前影片范围”分组：
-  - 全部
-  - 仅当前影片
-  - 排除当前影片
-- 已订阅女优范围不过滤 / 仅包含所选 / 排除所选
-- 通过标准 `Dialog` 选择已订阅女优
-- 点击面板底部“搜索”后应用筛选，不做即时搜索
-
-结果区当前仅实现命中缩略图网格，不包含旧项目里的完整预览画廊。
-每个结果卡只展示结果图片和相似度角标，不再展示影片番号和命中时间。
-点击结果卡后会打开结果预览层，而不是直接跳转影片详情页：
-
-- 桌面端：居中 `Dialog`
-- 移动端：底部抽屉（Bottom Drawer）
-
-桌面端结果卡额外支持右键菜单；长按触发约束也已预埋，供后续移动端页面复用。
-
-结果预览弹窗当前结构：
-
-- 顶部结果大图
-- 中部摘要栏：相似度、番号、命中时间
-- 影片信息区：封面 + 演员横向列表
-  - 演员按影片详情返回顺序展示
-  - 当演员数量超出可用宽度时，演员区支持横向滚动
-  - 无演员信息时退回展示影片标题
-- 底部动作条（复用统一动作按钮组件）：
-  - 相似图片：读取当前结果图并重新进入现有以图搜图页
-  - 保存到本地：桌面端通过系统保存面板写入本地；移动端直接写入系统相册
-  - 添加标记 / 删除标记：对当前 `media_id + thumbnail_id` 操作媒体书签
-  - 播放：当 `media_id` 可用时进入独立播放器页，并从命中时间点开始播放
-  - 影片详情：进入现有影片详情页
-
-移动端“保存到本地”依赖相册权限，拒绝授权时会提示失败原因。
-
-翻页当前通过滚动触底自动加载更多。
-当首屏未填满视口时会自动补齐分页；自动补齐最多请求 5 页，且连续 2 次未产生可见新增结果后会静默停止自动补齐。
-加载更多失败时保留当前结果，并在底部显示失败提示与重试入口。
-结果网格使用 `ImageSearchResultSliver` 按视口懒构建，不会因累计搜索结果增加而一次布局全部卡片。
-
-### 6.6 时刻页
-
-时刻页当前有桌面端独立路由 `/desktop/library/moments`，并复用同一内容组件承载移动端概览 Tab；两端保持同一套紧凑筛选、骨架、网格、分页与下拉刷新体验。
-
-结构：
-
-- 顶部左侧类型与排序切换：`JAV` / `视频`、`最新` / `最早`
-- 顶部右侧总数
-- 下方时刻缩略图网格
-- 点击卡片后打开与以图搜图共用的结果预览弹窗
-- 时刻卡片图片直接来自 `/media-points.items[].image`，不再额外请求 `/media/{media_id}/thumbnails`
-
-当前不再区分旧项目里的 `JAV / 非JAV` 分段。
-
-时刻卡片当前规则：
-
-- 主体是缩略图大卡
-- 底部固定半透明信息条
-- 左下显示影片番号
-- 右下显示命中时间点
-
-时刻预览弹窗与以图搜图结果预览共享同一套结构，只是不展示相似度摘要；动作仍保留：
-
-- 相似图片
-- 保存到本地
-- 删除标记
-- 播放
-- 影片详情
-
-预览类弹层统一复用共享预览组件：桌面端承载为 `Dialog`，移动端承载为底部抽屉；时刻预览弹窗与以图搜图结果预览继续共享同一业务预览实现。相似图片、播放和影片详情都在当前预览关闭后才由来源页面执行，避免旧弹层关闭影响新路由或桌面 Quick Play 弹窗。
-顶部主图默认按原图比例完整显示，不强制铺满；当图片比例与预览区不一致时允许留白，留白区域使用黑色背景承载图片。
-
-删除标记后会关闭弹窗，并刷新当前时刻列表。
-
-### 6.7 影片详情页
-
-当前影片详情页已经形成比较明确的模块顺序：
-
-- Hero 头图
-- 剧照缩略图
-- 番号与播放列表/合集入口
-- 互动数（想看人数、看过人数、评分、评论数、热度、评分人数）
-- 系列 · xxx（当详情返回 `series_id` 时可点击进入同系列影片页）
-- 厂商 · xxx
-- 导演 · xxx
-- 描述文案（按 `desc_zh` → `summary` → `desc` 优先级展示，无值时隐藏）
-- 标签
-- 标签与媒体源统一使用紧凑 pill 样式，文字、圆角、内边距与换行间距保持一致
-- 演员
-- 媒体源
-- 标签为静态 pill 展示；媒体源为可切换 pill，但尺寸规则一致
-- 当前选中媒体源会在 pill 区块下方补充一行技术摘要，按 `视频编码 · 码率 · 帧率` 顺序展示；仅显示有值字段，不展示路径、进度、存储方式和容器信息
-- 当前选中媒体源在技术摘要后紧跟一个危险态删除图标；桌面端点击后使用确认弹窗，移动端点击后使用底部确认抽屉
-- 删除媒体会调用 `DELETE /media/{media_id}`，并在成功后刷新当前影片详情；前端按后端真实行为处理为“媒体条目直接消失”，不展示 `valid=false` 失效态
-- 当前选中媒体源的技术摘要下方会先展示“时刻”小标题和横向时刻缩略图；无标记点时保留现有空态面板
-- “相似影片”为独立区块，位于“媒体源”之后；当影片没有媒体源时，该区块仍然展示，并读取 `GET /movies/{movie_number}/similar?limit=15`，最多展示 15 个影片卡片，使用横向滚动
-- 底部固定信息条
-
-详情页允许比列表页使用更强的图片表现和更明显的内容分区，但仍保持浅色页面基底。
-系列、厂商、导演当前采用单行内联文本展示（`字段名 · 值`），三者作为同一个信息组顺序堆叠，组内使用小于区块间距的统一行间距；当 `series_name`、`maker_name`、`director_name` 为空时，对应行直接隐藏，不显示占位文案。系列行仅在 `series_id` 与 `series_name` 同时可用时展示为可点击状态，并以轻量 chevron 强化可进入感；只有系列名没有系列 ID 时保持纯文本。
-演员区块当前按 `gender` 分组展示：`gender == 1`（女优）优先，其余性别值随后展示；各分组内保持后端返回顺序不变。
-详情信息区在保持现有模块顺序的前提下使用统一的纵向节奏：番号组、系列/厂商/导演信息组、标签、演员、媒体源、相似影片采用同一套区块间距 token；区块标题与内容之间使用独立的较小标题间距 token。
-详情正文中的互动数行当前承载想看人数、看过人数、评分、评论数、热度、评分人数；其中热度使用火焰图标加数字的紧凑表达。
-详情页 Hero 高度统一按当前可视区高度的 `30%` 计算；加载态与加载完成态使用同一规则，避免首屏跳变。
-底部固定信息条当前承载发行日期、时长、评分、评分人数、评论数、想看人数，并保持固定在详情页底部，不跟随正文滚动。桌面端保持卡片样式，移动端为贴底全宽样式（无左右留白）。
-详情面板有两个并存的入口：点击底部固定信息条，或从封面右上角「更多操作」菜单里选择 `更多信息`（菜单首项，`info_outline` 图标）。该菜单项是纯本地动作，不发请求；移动端会先关闭动作抽屉再弹出检查器抽屉，避免两层 bottom sheet 叠加。两个入口打开的是同一套面板：桌面端为标准 `Dialog`，移动端为约 `90%` 高度的底部抽屉，内容均为 `评论`、`磁力搜索`、`缩略图` 三个 Tab，默认打开 `评论`。评论 Tab 支持 `最热 / 最新` 排序切换，列表滚动到底部会自动触发下一页加载，分页失败时保留已有内容并提供重试入口；`磁力搜索` 需要手动触发搜索，按当前影片番号请求候选资源；每条候选默认选中后端返回的偏好下载器，并可在当前索引器绑定的可用下载器间切换后提交；`缩略图` 复用播放器的缩略图网格并支持大图预览，同时新增紧凑型时间间隔筛选（`10 / 20 / 30 / 60`，图标 + 数字按钮，无额外文字标签）；该 Tab 工具栏同样提供「圈选切片」开关（`content_cut` icon，复用播放器圈选交互与共享状态条 `ClipSelectionStatusBar`）：进入圈选后点击缩略图按「起点 → 终点 → 重置」循环、起止齐备后由顶部状态条「创建」弹出标题对话框并调用 `POST /media/{media_id}/clips` 同步切片，成功后 toast 并退出圈选，切换时间间隔会清空已选点。移动端该详情抽屉关闭顶部安全区，仅保留底部安全区，内容从 handle 下方直接开始布局。
-剧情图预览同样为双端差异化展示：桌面端 `Dialog`，移动端底部抽屉；两种展示形态复用同一套预览内容组件。移动端剧情图预览抽屉同样关闭顶部安全区，仅保留底部安全区。移动端剧情图、缩略图和单图抽屉主图都支持轻点进入全屏图片 overlay；剧情图全屏态支持左右滑动切图，并支持长按当前图打开进入全屏前相同的图片动作菜单；单图全屏态仅展示当前图片，不提供图片动作菜单。
-详情面板内的缩略图默认列数会依据当前面板宽度自动计算，范围为 `2` 到 `5`；顶部不再重复显示“缩略图”标题文字，只保留紧凑工具条。缩略图工具条包含时间间隔筛选和 `2 / 3 / 4 / 5` 列切换。时间间隔筛选默认选中 `10`，并按“首帧 + 步长”规则抽样当前网格。
-详情面板内的缩略图网格保留左键大图预览，同时支持右键/长按菜单；菜单动作包含相似图片、保存到本地、添加/删除标记、播放。移动端“相似图片”会跳转到 `/mobile/search/image`，并回退到当前影片详情页。
-番号右侧当前提供“标记合集/单体”与“加入播放列表”两个入口。合集入口会先读取 `GET /movies/{movie_number}/collection-status` 再决定按钮语义，点击后调用 `PATCH /movies/collection-type` 切换当前影片状态；播放列表入口保持原行为，桌面端打开播放列表选择弹窗，移动端打开底部抽屉。两端都只展示可手动维护的自定义播放列表，勾选与取消勾选都会实时请求后端，不额外提供统一保存按钮。
-播放列表选择面板头部提供 `+` 入口，可在当前层内直接新建播放列表；创建成功后会立即把当前影片加入新列表。移动端的新建流程同样使用底部抽屉，不再弹出 `Dialog`。
-
-当前详情页的播放入口应复用 Hero 头图中心的播放图标，不额外在“媒体源”区块下方新增独立主按钮。
-媒体源区块当前只负责展示和切换媒体源，不承担单独主播放入口职责。
-
-### 6.7.1 系列影片页
-
-当前系列影片页由影片详情页的系列行进入，桌面端路由为 `/desktop/library/movies/series/:seriesId`，移动端路由为 `/mobile/library/movies/series/:seriesId`。
-
-页面结构：
-
-- 顶部紧凑标题卡：展示“系列影片”、系列名和影片总数
-- 下方影片卡片网格，复用影片列表卡片、订阅按钮和卡片动作菜单
-- 分页加载更多失败时保留已有列表，并在底部显示重试入口
-
-首版不提供筛选或排序控件，即使后端 `POST /movies/by-series` 支持 `sort`；页面只按 `series_id` 请求同系列影片，路由中的 `seriesName` query 仅用于标题展示。标题优先使用路由传入的系列名，其次使用第一页影片返回的 `series_name`，最后兜底为 `系列 #id`。移动端支持下拉刷新，刷新失败使用 toast 提示。
-
-### 6.8 播放列表页
-
-当前桌面端播放列表页路由为 `/desktop/library/playlists`，模式为：
-
-- 顶部标题 + `新建播放列表` 按钮
-- 下方纵向播放列表横幅
-
-播放列表横幅当前规则：
-
-- 使用全宽横向卡片
-- 背景优先使用该播放列表首部影片封面单图拉伸
-- 背景图上叠加高斯模糊和深色遮罩
-- 名称使用居中的大号白字
-- 空列表或无封面时退回渐变占位底图
-- 拖拽手柄使用 `unfold_more` 风格 icon，并在鼠标悬停到对应播放列表项时显示
-
-本页当前支持浏览、创建和拖拽排序；排序结果本地持久化并按 `baseUrl`（站点）隔离。
-播放列表的重命名和删除当前集中在系统设置页的“播放列表”Tab 完成。
-
-### 6.9 播放列表详情页
-
-当前播放列表详情页路由为 `/desktop/library/playlists/:playlistId`，模式为：
-
-- 顶部播放列表横幅
-- 横幅下方展示影片数量与描述
-- 下方复用现有影片卡片网格
-
-详情页中的影片网格继续沿用影片库和女优详情页的卡片样式、订阅按钮和分页加载反馈，不单独发明新的影片摘要样式。
-
-### 6.9.1 切片页
-
-桌面端「切片」页路由为 `/desktop/library/clips`，入口在侧边栏「浏览」分组（侧栏仅此一个入口，合集为其下钻页面）。切片是用户在播放器圈选生成的独立短视频（见 6.10）。本页为多区展示，整体是单个 `CustomScrollView`，触底自动加载切片下一页：
-
-- **「我的合集」区**（顶部）：标题右侧有「新建」与「查看全部」文本按钮；下方为横向滚动的合集封面卡（`ClipCollectionCard`），点击进入合集详情页；`GET /clip-collections`。空态用提示框引导新建。
-- **「全部切片」区**：标题 + 切片网格（`ClipGridCard`，`SliverGrid`，`maxCrossAxisExtent: 260`）。`GET /media-clips` 分页，加载更多失败保留原列表并提供「点击重试」。
-- 切片网格卡为竖向卡片：`16:9` 封面（带播放蒙层）+ 标题 + 番号；右上「···」菜单含「加入合集 / 重命名 / 删除」；右下时长角标。
-- **悬停预览**：鼠标移入切片卡时按需拉取该切片详情（`GET /media-clips/{clip_id}` 的 `preview_frames`，仅详情接口返回）并轮播成动态预览（均匀抽样至 ≤24 帧，节奏 ~400ms，`MaskedImage` 走 `CachedNetworkImage` 缓存）；移出回到静态封面；加载失败静默降级。
-- 点击切片卡打开轻量播放弹层（`ClipPlayerDialog`，单条播放，逻辑同前）。
-- 重命名 `PATCH /media-clips/{clip_id}`、删除（二次确认）`DELETE /media-clips/{clip_id}`、加入合集弹窗均以 toast 反馈。
-
-### 6.9.2 切片合集列表页
-
-路由 `/desktop/library/clip-collections`（非侧栏项，由切片页「查看全部」进入）。全部合集网格（`ClipCollectionCard`，`GET /clip-collections`），顶部「新建合集」。卡片右上「···」菜单含「编辑 / 删除」：
-
-- 新建 / 编辑共用 `ClipCollectionEditDialog`（名称必填 + 描述可选）：`POST /clip-collections`、`PATCH /clip-collections/{id}`。
-- 删除二次确认（`showClipCollectionDeleteDialog`，文案明确「仅删合集，不删切片」）：`DELETE /clip-collections/{id}`。
-- 点击卡片进入合集详情页。
-
-### 6.9.3 切片合集详情页
-
-路由 `/desktop/library/clip-collections/:collectionId`。结构为「标题块（合集名 + 编辑铅笔 + `播放`）→ 成员列表顶栏 `AppListHeader` → 切片内容」，**顶栏与移动端切片合集详情共用同一条**：切片合集是手动顺序（拖序走 `setCollectionClips` 全量覆盖）、**没有排序参数**，所以用不带筛选入口的形态；信息槽放切片数，操作槽放「选择 / 视图切换 / 添加切片」。多选态原地改写整条顶栏。
-
-移动端在此基础上：合集名报给返回栏（`AppMobileSubpageTitle`），页内不再重复标题；顶栏**不放「选择」**——长按卡片即可进多选；多选态顶栏只留退出 / 计数 / 全选，批量动作在贴底的 `AppSelectionBottomBar`。
-
-下方为切片内容，支持「列表 / 网格」两种排布（桌面默认列表、移动默认网格；仅在合集非空时显示视图切换与「播放」）：
-
-- 列表 `GET /clip-collections/{id}/clips`（按 `position` 升序，详情控制器一次性拉全所有分页）。
-- 视图切换：头部图标按钮在「列表 / 网格」间切换（`grid_view` ↔ `view_agenda` 图标，tooltip 指向目标视图；页面内状态，不跨页面记忆）。
-  - 列表视图：横向卡片行，缩略图贴满卡片左侧（无内边距），右侧标题 + `番号 · 时长 · 大小`，悬停显出右侧拖拽手柄与「移出合集」按钮。
-  - 网格视图：复用「全部切片」同款参数（`SliverGridDelegateWithMaxCrossAxisExtent`，`maxCrossAxisExtent: 260`，`childAspectRatio: 1.15`），卡片为 `16:9` 封面（`ClipPlayOverlay` 播放遮罩 + `ClipDurationBadge` 时长徽标 + 右上角 `✕`「移出合集」）+ 标题 + `番号 · 大小`；点按从该位置连播。封面遮罩与时长徽标抽为共享件 `widgets/clips/clip_cover_overlays.dart`，与切片页网格卡共用。
-- 拖拽重排：本地重排后用 `PUT /clip-collections/{id}/clips` 提交完整有序 `clip_ids`（后端按列表重排 `position`），失败回滚并 toast；**仅列表视图提供**，网格视图侧重浏览不支持拖序。
-- 「移出合集」：乐观移除 + `DELETE /clip-collections/{id}/clips/{clip_id}`，失败回滚（列表行内按钮 / 网格卡封面右上角 `✕`）。
-- 编辑铅笔：复用 `ClipCollectionEditDialog` 改名 / 描述（`PATCH /clip-collections/{id}`），就地更新头部。
-- 「添加切片」：打开 `AddClipsToCollectionDialog`（分页列出我的切片，勾选=已在本合集，切换即 `PUT`/`DELETE .../clips/{clip_id}`），关闭后刷新列表。
-- 点击切片行 / 网格卡或「播放」按钮进入连播页（从该位置开始 / 从头开始）。
-
-### 6.9.4 加入合集选择器
-
-`AddToClipCollectionDialog`（桌面弹窗），从切片卡「···」菜单的「加入合集」触发：
-
-- 打开时 `GET /clip-collections` 拉全部合集，并 `GET /media-clips/{clip_id}` 读取该切片已属合集（后端 `collections` 字段，对称影片详情的 `playlists`）做勾选回显。
-- 勾选切换即时生效：`PUT` / `DELETE /clip-collections/{id}/clips/{clip_id}`，乐观更新、失败回滚 toast。
-- 顶部「+」可新建合集并自动勾选；关闭后切片页统一刷新合集区。
-
-### 6.9.5 切片合集连播页
-
-独立全屏页面（shell 外，路由 `/desktop/library/clip-collections/:collectionId/play?startIndex=`），形态参照影片播放器，非弹窗：
-
-- 左侧 `media_kit` 播放器用原生 `Playlist(medias, index: startIndex)` 自动连播；每段 `stream_url` 经 `resolveMediaUrl` 拼 `baseUrl`。
-- 右侧切片队列：当前项高亮（订阅 `player.stream.playlist.index`），点击 `player.jump(index)` 跳转。
-- 顶栏显示当前切片标题 + 返回。
-
-### 6.10 桌面端播放器页
-
-当前播放器页是桌面端独立沉浸页，不走 `AppDesktopShell` 的侧边栏和顶栏。
-
-结构：
-
-- 页面背景为深色沉浸式基底
-- 中间内容使用左右双栏分割布局
-- 左侧为视频播放区，使用深色媒体面板承载
-- 左上角悬浮返回按钮
-- 右上角信息按钮（`info` icon），入口跟随播放器顶部控件栏显示/隐藏
-- 播放器底部右侧提供字幕按钮与全屏按钮
-- 右侧为缩略图导航面板
-- 缩略图导航面板顶部提供 `2 / 3 / 4 / 5` 列切换和锁定按钮
-- 缩略图区域使用固定 `16:9` 比例卡片和纵向滚动网格
-- 点击缩略图会跳转到对应的播放时间点
-
-当前约束：
-
-- 返回操作只通过左上角悬浮返回按钮承载，不在播放区域中心叠加大面积返回热区
-- 信息按钮点击后在播放器区域内打开右侧信息抽屉（桌面端与移动端统一形态）；点击遮罩可关闭，抽屉内部点击不关闭
-- 播放信息面板以约 `1s` 的频率实时刷新，展示核心技术字段：解码模式（硬解/软解）、视频/音频码率、视频帧率、音频采样率、编解码器、动态范围摘要（基于 `videoParams` 的 `primaries/gamma/light/sig-peak`）
-- 右侧缩略图只展示当前选中媒体的缩略图，不在播放器页内切换媒体源
-- 右侧缩略图默认列数依据当前面板宽度自动计算，范围为 `2` 到 `5`；本次播放器会话里一旦用户手动切换列数，后续优先保持手动值
-- 缩略图锁定跟随默认开启；锁定时当前播放位置对应缩略图会自动滚动到视窗中部附近，并禁止用户手动滚动缩略图网格
-- 解锁后保留当前滚动位置，用户可以手动浏览缩略图；播放器仍会更新高亮，但不会主动重置网格滚动位置
-- 播放器缩略图网格按可视区懒构建；锁定态遇到远距离定位时优先直接跳到目标附近，避免沿途加载中间大量缩略图
-- 用户拖动播放器缩略图滚动条或快速滚动时，缩略图卡片先展示占位；滚动停下后只恢复最终可视区域附近的图片加载
-- 缩略图加载中展示骨架网格；失败时提供重试；空数据时展示空态
-- 当前支持缩略图联动，并为缩略图提供桌面端右键菜单与移动端长按菜单；菜单动作包含相似图片、保存到本地、添加/删除标记、播放
-- 缩略图面板顶部提供「圈选切片」开关（`content_cut` icon），当前仅桌面端可用：
-  - 进入圈选模式会自动解开缩略图锁定跟随，便于自由浏览找点
-  - 点击缩略图按「第一次=起点、第二次=终点、第三次=重置为新起点」循环；后端只接受缩略图 ID，因此不支持进度条任意圈选
-  - 起止缩略图带描边与「起 / 终」角标，区间内的缩略图叠半透明色带
-  - 面板顶部状态条显示起点/终点/时长，并提供「清除」与「创建」；起止齐备才可创建
-  - 「创建」弹出标题对话框（标题可选），调用 `POST /media/{media_id}/clips` 同步切片；该请求放宽接收超时到 130s 覆盖后端 ffmpeg 120s 墙钟超时
-  - 创建成功后 toast 提示并退出圈选；对 `media_clip_too_long` / `media_clip_invalid_range` / `media_clip_generation_failed` 与切片超时分别给出针对性文案
-- 字幕切换通过播放器底部右侧按钮完成，数据源来自 `GET /movies/{movie_number}/subtitles`；默认关闭字幕，仅支持外挂字幕，不在播放器页内切换媒体源；当前对后端 `.srt` 字幕先下载 UTF-8 文本，再注入 `media_kit`，字幕菜单勾选态以播放器应用成功为准
-- 115 网盘原片与完整视频入口在首帧输出、缓冲结束且播放位置实际前进后才开放 seek；初始化窗口内仍展示进度条，但关闭拖动、双击与 seek 手势，避免播放器预读尚未稳定时过早跳转。已经落地的本地切片不启用该保护
-- 单视频、单切片、JAV 影片、合集列表连播与合并播放统一显示加载反馈和播放进度：取流/首帧阶段使用同一深色加载提示，播放中缓冲复用同一提示；普通播放显示当前媒体进度，合并播放显示跨集累计总进度
-- 普通进入完整播放器时一律先从 `00:00` 播放；存在有效历史记录（超过开头 10 秒且距离片尾超过 30 秒）时，待播放器可安全 seek 后在控制栏上方显示非阻塞续播卡，用户选择“继续播放”才跳到历史位置，选择“从头播放”或 8 秒无操作则维持当前播放。提示处理前冻结进度写回，避免开头几秒覆盖旧记录；从时刻/缩略图明确指定位置进入时不显示续播卡
-- 播放过程中会按固定间隔上报播放进度，并在退出播放器页时补报最后位置
-- 播放控制条颜色仍需服从现有主题主色与 token
-
-### 6.11 女优详情页
-
-当前女优详情页是“头部摘要 + 关联影片列表”的模式：
-
-- 头像
-- 名称
-- 订阅 icon（位于影片总数左侧，支持订阅/取消订阅）
-- 影片总数
-- 影片筛选条
-- 影片卡片网格
-
-不要单独发明与影片页完全不同的关联影片呈现方式。
-
-### 6.12 系统设置页
-
-系统设置页（原“配置管理”）是当前最完整的表单管理页面，模式为：
-
-- 左侧 `AppSettingsRail` 分类栏固定
-- 右侧 `IndexedStack` 承载分类内容，各分类内容区各自滚动
-- 列表卡片 + 右下角主操作按钮
-- 新建 / 编辑使用对话框
-- 删除前使用确认弹窗
-
-表单项统一复用 `AppTextField` 与 `AppSelectField`。
-
-当前已实现的配置内容包括：
-
-- 账号安全 Tab：账号资料与密码修改
-- 媒体库 Tab：媒体库管理
-- 下载器 Tab：下载器列表与表单配置；qBittorrent 表单包含连接信息、客户端保存路径与本地访问路径，115 离线表单只需名称和目标 115 媒体库
-- 索引器 Tab：Jackett API Key 配置、索引器条目管理、每个索引器与多个下载器的绑定关系（PT 禁止绑定 115），以及基于已保存配置的真实连通性测试
-- 下载偏好 Tab：维护 qBittorrent 与 115 离线的全局首选顺序；手动搜索/提交立即生效，自动下载任务需重启 APS 调度进程
-- LLM 配置 Tab：影片信息翻译共享配置；模型字段下方推荐使用 Ollama 的 `gemma4:31b-cloud` 模型
-- 播放列表 Tab：自定义播放列表管理（新建、编辑名称/描述、删除）
-- 高级设置 Tab：通过统一 `/config` 维护 media / metadata / scheduler / downloads / logging 五个配置节中的关键字段
-- 媒体维护 Tab：失效媒体复查与清理；切到该 Tab 后才懒加载，复用 `DesktopMediaMaintenancePage`；使用可变高度 `SliverPagedAsyncSection` 滚动触底加载更多
-- 媒体管理 Tab：媒体列表与秒传批次；两者均使用 `CustomScrollView + SliverPagedAsyncSection` 惰性构建可见卡片。媒体列表以固定行高的 `SliverFixedExtentList` 支持滚动条大跨度跳转；秒传批次保留可变高度卡片，批次明细在有界 `AppDesktopDialog` 中使用 `ListView.separated` 懒构建，不在批次卡内一次展开全部条目
-
-当前入口包括：
-
-- 桌面端一级导航中的“系统设置”（`/desktop/system/configuration`）
-- 移动端概览页抽屉中的“数据源 / 媒体库 / 下载器 / 索引器 / LLM 配置 / 播放列表 / 修改用户名 / 修改密码”子页（`/mobile/settings/data-sources`、`/mobile/settings/media-libraries`、`/mobile/settings/downloaders`、`/mobile/settings/indexers`、`/mobile/settings/llm`、`/mobile/settings/playlists`、`/mobile/settings/username`、`/mobile/settings/password`）
-
-桌面端系统设置页左侧菜单依次为账号安全、媒体库、下载器、索引器、下载偏好、LLM 配置、播放列表、高级设置、媒体维护、媒体管理，默认进入媒体库 Tab。账号安全页包含账号资料卡与密码修改卡：账号资料卡读取 `/account` 展示当前用户名、创建时间和上次登录时间，并通过 `PATCH /account` 修改用户名，保存成功后保持当前登录态；密码修改为内联表单，提交成功后会立即退出当前登录态并返回登录页。移动端修改用户名页使用说明卡、当前账号摘要、用户名表单和底部固定保存按钮，保存成功后同样保持当前登录态；移动端修改密码页保持独立子页。媒体库当前以列表卡片方式展示，新增 / 编辑通过对话框完成，删除前使用确认弹窗。桌面端 `LLM 配置` Tab 字段包括启用状态、Base URL、API Key、模型、请求超时与连接超时；该 Tab 允许直接测试当前草稿，并在页内展示最近一次测试状态，但不会把测试状态持久化。当前接入的是影片信息翻译共享配置，读写走统一 `/config` 的 `movie_info_translation` 节，测试仍走 `/movie-desc-translation-settings/test`，Base URL 示例当前统一写为 `https://ollama.com`，模型占位当前统一写为 `gemma4:31b-cloud`。高级设置 Tab 切到该分类后才发起一次 `GET /config`，只抽取 media / metadata / scheduler / downloads / logging 五节；页面按“媒体识别、元数据抓取、定时任务频率、下载清理与日志”四张卡片组织，卡级独立保存 partial `PATCH /config`，dirty 卡展示“未保存”徽标，离开高级设置分类前会二次确认。`others_number_features` 提供换行输入与规范化预览；JavDB 密码留空表示不修改；scheduler cron 字段按业务拆组展示；修改 `logging.level` 保存前会确认 API 进程重启影响。下载器配置依赖媒体库列表：qBittorrent 使用的客户端保存路径与后端本地访问路径拆分配置，115 离线入口则直接绑定 115 媒体库。下载偏好 Tab 始终按 `preferred_client_kinds` 提交 qBittorrent 和 115 离线两个不重复值，用户只需选择首选项；手动搜索/提交会立即使用新顺序，自动下载任务需重启 APS 调度进程。桌面端索引器通过对话框新增 / 编辑，保存时需要为每个索引器至少选择一个下载器；PT 只显示 qBittorrent，BT 可多选 qBittorrent 与 115；如果当前还没有下载器配置，索引器新增入口会禁用并提示先去下载器 Tab 创建下载器。桌面与移动端索引器 API Key 卡都提供“测试 Jackett 连通性”，调用 `GET /indexer-settings/test` 对已保存配置进行一次真实搜索；表单存在未保存改动时禁用测试，结果会在卡内保留查询、检查索引器数、候选数、耗时和失败修复提示。移动端索引器页则使用概览卡 + API Key 卡 + 卡片列表的工作台样式，API Key 单独保存，索引器新增 / 编辑 / 删除走底部抽屉即时提交，不提供整页统一保存。移动端 LLM 配置页使用概览卡 + 单卡表单 + 底部双 CTA 的工作台结构，允许直接测试当前草稿，并明确展示最近一次测试状态；当前该入口名称保持通用，但底层接入的是影片信息翻译共享配置，读写走统一 `/config` 的 `movie_info_translation` 节，测试仍走 `/movie-desc-translation-settings/test`。移动端播放列表页使用说明卡 + 管理卡片列表 + 底部固定 CTA 的工作台结构，仅展示自定义播放列表，并显式提供“查看详情 / 编辑 / 删除”动作；新建、编辑、删除均走底部抽屉即时提交。
-
-移动端当前已落地的配置类子页包括数据源、媒体库、下载器、索引器与 LLM 配置，统一遵循以下模式：
-
-- 顶部说明卡或接入引导卡
-- 中部卡片式列表
-- 底部固定主 CTA
-- 新建 / 编辑通过 `Bottom Drawer` 表单完成
-- 删除通过确认抽屉完成
-- 列表卡点击后进入详情抽屉，详情抽屉底部直接提供 `编辑` / `删除` 操作
-
-### 6.13 排行榜页
-
-当前排行榜页已在桌面端与移动端落地，路由分别为 `/desktop/library/rankings` 与 `/mobile/rankings`，模式为：
-
-- Web 端沿用桌面导航与页面实现，入口与路径同样为 `/desktop/library/rankings`
-- 当前来源与榜单由后端接口动态返回；按当前实现基线，已开放来源为 `javdb`
-- 当前已开放榜单为：`javdb` 下的 `censored` / `uncensored` / `fc2`
-- 当前两个来源都支持 `daily` / `weekly` / `monthly`
-
-- **桌面与移动共用同一条 `AppListHeader`**：左侧筛选入口显示当前榜单名（图标为 `leaderboard`），点击后桌面就地展开浮层、移动弹底部抽屉，两侧面板都是同一个 `RankingFilterSectionGroup`（来源 / 榜单 / 周期 / 排序四个分节）
-- 筛选元数据（来源 / 榜单）加载完成前，筛选入口两端一致地不响应点击，避免点开空面板
-- 信息槽两端一致：总数（`X 部`）+ 抓取时间胶囊；若后端返回顶层 `synced_at`（该榜单+周期当前批次的抓取时间，本地时区），显示为带时钟图标的 `MM/dd HH:mm`
-- 桌面端「选择」位于右侧操作槽；移动端多选入口挂在卡片长按菜单里（与影片列表一致）
-- 下方复用影片卡片网格 + 排名角标（右上角）
-- 底部分页加载反馈（加载中 / 失败重试）
-
-当前交互规则：
-
-- 首屏按“来源 -> 榜单 -> 周期”顺序完成默认选择后再加载榜单条目
-- 默认来源取第一个来源，默认榜单取该来源下第一个榜单
-- 默认周期优先 `default_period`，否则取 `supported_periods` 第一个
-- 筛选面板点选后立即生效并刷新列表，面板保持打开
-- 移动端进入选择态后，整条 `AppListHeader` 原地改写为批量选择栏
-- 点击榜单影片卡片入栈到影片详情页；若由榜单页进入则返回回到榜单页，若深链直达详情则按详情页默认入口回退
-
-### 6.14 媒体导入页
-
-媒体导入页是桌面端「管理」分区下的一级导航页，路由为 `/desktop/system/media-import`（Web 端复用桌面实现），用于把后端文件系统中已有的媒体导入到媒体库。页面内置 **`JAV 影片` / `PornBox 影片` 两个标签页**（`AppTabBar`），两类导入各走独立后端接口与后台作业，但共用同一套页面结构与作业卡片：
-
-- JAV 影片：`media-import` 标签端点（`/import-jobs`），`task_key = media_directory_import`
-- PornBox 影片：`video-imports` 标签端点（`/video-imports`），`task_key = video_directory_import`；两类导入端点同构（列表分页、详情、失败文件重导），PornBox 额外支持导入时归入合集；失败源文件的删除/重命名是 JAV 本地作业专属，PornBox 前端不提供入口
-
-页面结构（每个标签内）：
-
-- 顶部说明卡：左侧文案 + 右侧「刷新」「新建导入」按钮（`AppContentCard` + `AppButton`）
-- 下方为导入作业卡片列表（按作业 id 倒序），使用与页面头部共用滚动容器的 `SliverList` 按视口懒构建；滚动触底自动加载更多（转发给当前激活标签的 controller），底部复用 `AppPagedLoadMoreFooter`；无作业时用 `AppEmptyState`，初次加载用 `CircularProgressIndicator`
-- 每个作业卡为共享组件 `ImportJobCard`（`lib/features/media_import/presentation/import_job_card.dart`），通过 `ImportJobCardData` / `ImportJobCardDetailData` 抽象承载两类作业，展示：源目录名/完整路径、状态徽标、导入方式、`导入/跳过/失败` 计数、创建/完成时间
-- 两个标签各持有独立控制器（JAV `MediaImportController` / PornBox `VideoImportController`，均实现 `ImportJobsViewController` 接口），各自订阅 SSE
-
-实时进度规则：
-
-- 每个控制器独立订阅 task_run SSE（复用 `ActivityApi.streamEvents`），进入时先经 `/system/activity/bootstrap` 获取起始 `latest_event_id` 与活跃任务，避免 `after_event_id=0` 回放全量历史
-- 各自只消费对应 `task_key` 的 `task_run_created` / `task_run_updated` 事件，按 `作业.task_run_id == task_run.id` 对齐
-- 关联任务处于活跃态时，作业卡内联展示进度条（确定进度展示 `当前/总数`，否则展示不确定进度条 + 进度文案）；关联任务进入终态后自动刷新该作业计数与失败文件
-
-新建导入对话框（`AppDesktopDialog`）：
-
-- JAV 走 `showDirectoryPickerDialog`：目录浏览器 + 「导入到媒体库」（`AppSelectField<int>`）+ 「导入方式」（`auto` 硬链接优先 / `cleanup-source` 复制后删除源文件）
-- PornBox 走 `showVideoImportDialog`：目录浏览器 + 「导入到媒体库」+ 「加入合集」（**必选**，可现场「新建合集」）+ 「导入方式」
-- 仅当选齐必填项才可「开始导入」；确认后触发对应作业并刷新该标签列表，失败（含同库同源 `409` 冲突）以 toast 提示
-
-失败文件处理（两类标签共用同一张卡片）：
-
-- 作业 `failed_count > 0` 时卡片提供「查看失败文件」展开，按需懒加载作业详情；少量条目直接展开，超过 8 条后放入有界 `ListView.separated`，避免一次构建大量失败文件行
-- 失败条目按 `kind` 区分：仅 `file` 在作业终态下提供行内操作，并在顶部提供「重导全部失败（N）」；`skipped` / `warning` 仅展示原因，不提供操作
-- 失败清单含 `job`（任务级失败，作业整体中断、没有可逐个重导的文件）且来源可还原时，顶部额外提供「重新导入」——按原参数（`library_id` + 来源 + `transfer_mode`，PornBox 另带 `collection_id`）**新建**一个导入作业；115 作业按 `source_cid` 还原来源（`source_path` 是后端改写的展示面包屑），115 单文件（`source_fid`）来源无法还原、不提供该入口
-- 两个顶部按钮同时出现时（作业先记了文件级失败又整体中断）「重导全部失败」占主按钮（primary），「重新导入」降为 secondary；「重新导入」提交期间置 `isLoading` 防连点（115 来源后端不建 mutex，重复提交会造出重复作业）
-- 行内操作按作业来源分档：JAV 本地作业提供「重导 / 重命名 / 删除」（条目标注「可处理」）；JAV 115 作业与 PornBox 作业仅提供「重导」（条目标注「可重导」）
-- 删除/重命名前弹确认或输入弹窗，操作结果以 toast 反馈，成功后就地刷新该作业失败文件列表
-
-### 6.15 非 JAV 视频域（videos）
-
-非 JAV 视频域是与影片（catalog）平行的「仅播放 + 整理」体系，管理无番号、无外部元数据的视频。后端复用同一套播放底座（缩略图 / 播放进度 / 时刻 / 签名播放地址），前端因此**最大化复用影片侧组件**。PornBox 的导入入口不在本域页面内，而是统一收口到「管理」分区的 `媒体导入` 页 `PornBox 影片` 标签（走 `/video-imports` 异步搬库作业，与 JAV `/import-jobs` 同构，详见 §6.14）。
-
-- **视频列表页**（`/desktop/library/videos`）：顶部为「搜索标题 + 新建视频 + 导入」行；下方依次为标签筛选面板（复用 `TagSelectorPanel`，视频域多标签固定 OR、隐藏匹配模式开关）、人物筛选面板（`PersonSelectorPanel`，按关键词分页搜索）、列表顶栏（`AppListHeader`，与移动端同一条：筛选入口就地展开浮层，面板是与移动抽屉共用的 `VideoFilterSectionGroup`——入库 / 标题 / 时长 / 文件大小 × 升降序，对齐后端 `sort=created_at|title|duration|file_size`，默认 `created_at:desc`；中间总数胶囊，右侧「选择」入口）与视频卡片网格（`VideoSummaryGrid` / `VideoSummaryCard`：封面 + 标题 + 左上角媒体数角标 + 中部播放按钮 + 右上角「···」菜单（加入合集 / 删除），参照切片卡）。分页复用 `PagedLoadController` + `AppPagedLoadMoreFooter`，标签 / 人物「已选项」变化即重载列表。
-- **视频详情页**（`/desktop/library/videos/:videoId`）：头部封面 + 标题 + 简介 + 标签 / 人物 chips；操作区为「播放 / 编辑 / 加入合集 / 删除」；媒体源复用 `MovieMediaItemList`，时刻复用 `MovieMediaPointGallery`（吃同形的 `MovieMediaItemDto`）。编辑 / 新建走 `VideoEditDialog`（标题 / 简介 / 发布时间 / 标签 / 人物，编辑回填、关联整体替换）。
-- **视频播放页**（`/desktop/library/videos/:videoId/player`，shell 外全屏）：复用泛化后的 `MoviePlayerController` + `MoviePlayerSurface` + `MoviePlayerThumbnailPanel`。播放器控制器经泛化——字幕来源可空（视频无字幕抓取，短路为 `unsupported`），媒体项经 `VideoItemDetailDto → MovieDetailDto` 适配器喂入，缩略图 / 进度走 mediaId 维度共享端点。
-- **人物页**（`/desktop/library/persons`）：搜索 + 新建 + 人物卡片网格（头像 + 姓名 + 性别 + 关联视频数 + 编辑 / 删除）；点击进人物详情（`/desktop/library/persons/:personId`，按 person 过滤复用视频网格）。人物增删改走 `PersonEditDialog`。
-- **视频合集页**（`/desktop/library/video-collections`）：合集卡片列表（`VideoCollectionCard`：封面图 + 底部标题 + 封面右下角视频数，编辑 / 删除收进右上角「···」菜单，参照切片「我的合集」卡）+ 新建；合集封面取按顺序排在最前的视频封面，空合集为占位图标；合集详情（`/desktop/library/video-collections/:collectionId`）结构为「标题块（合集名 + 简介 + `播放全部`，**只有一行标题**）→ 成员列表顶栏 `AppListHeader` → 列表 / 网格」，**顶栏与移动端合集详情共用同一条**：筛选入口收排序（`VideoCollectionFilterSectionGroup`：手动顺序 / 入库 / 标题 / 时长 / 文件大小 × 升降序，与视频列表对齐并额外含「手动顺序」对应后端 `position:asc`，默认手动顺序；手动顺序固定升序、隐藏方向分节），桌面点击就地展开浮层、移动弹底部抽屉；信息槽放成员数（`N 个视频`）；右侧操作槽放「选择 / 视图切换」。**成员数放信息槽而不是标题块**——标题块再多一行文字，会在移动端把列表压得很靠下。多选态原地改写整条顶栏。**仅桌面、且在「手动顺序」下**以 `ReorderableListView` 支持拖拽**乐观重排**（失败回滚重载），切到其它排序即退化为普通 `ListView` 并隐藏拖拽手柄（避免与排序冲突）；移动端不提供拖拽重排。另支持移除、单集 / 「播放全部」。
-- **连播**：合集播放携带上下文（`collectionId` + 有序 `playlist` 视频 id），`MoviePlayerSurface` 新增可加性 `onCompleted` 回调，本集自然结束自动跳下一集，到末尾停止；非合集进入不跳转。
-- **视频导入**：PornBox 列表页不再保留导入入口；导入统一在「媒体导入」页 `PornBox 影片` 标签的「新建导入」（`showVideoImportDialog`：目录浏览选源 + 媒体库 + 合集必选 + 导入方式），触发后为异步搬库作业并在该标签历史列表跟踪进度与失败文件（详见 §6.14）。
-- **移动端视频列表**：视频区使用 `AppListHeader`，左侧筛选图标打开排序底部抽屉，中间显示当前排序与总数，右侧「选择」仅控制视频列表；进入选择态后顶栏原地显示退出、已选数量与全选，批量加入合集 / 删除仍保留在底部操作栏。合集区的「新建 / 查看全部」保持在合集标题行，后续统一顶栏迁移时再接入操作槽。
-- **多选态两端规则**：桌面进入选择后**原地改写整条顶栏**为 `AppSelectionHeaderToolbar`（计数 / 全选 / 加入合集 / 删除 / 取消，高度与常规顶栏一致，不在筛选行下方另起一行）；移动端顶栏只留退出 / 计数 / 全选，批量动作在贴底的 `AppSelectionBottomBar`。视频合集详情页因为没有筛选顶栏，选择条用不套高度容器的裸 `AppSelectionToolbar`，挂在标题块下方。
-
-新增共享组件：`lib/widgets/videos/`（`VideoSummaryCard` / `VideoSummaryGrid` / `VideoFilterSectionGroup`（双端共用的筛选分节，取代原 `VideoFilterToolbar`） / `VideoCollectionFilterSectionGroup`（双端共用的合集排序分节，取代原 `VideoCollectionSortBar`））；合集成员行 `CollectionMemberRow` 新增 `reorderable`（默认 `true`，非手动排序时传 `false` 以隐藏拖拽手柄）；视频域专属选择器 `PersonSelectorPanel` 在 `lib/features/videos/presentation/`。`TagSelectorPanel` 新增可选 `showMatchModeToggle`（默认 `true`，影片侧不变；视频域传 `false`）。
-
-### 6.16 订阅管理页
-
-订阅管理页是「管理」分区下的一级导航页，**仅桌面端**（`/desktop/system/movie-subscriptions`，Web 复用桌面实现）。移动端不提供入口——它是运维视图，处理动作（批量重置、批量取消订阅、看索引器错误详情）都不是手机上的场景。它回答的是**「我订的片怎么还没下来」**——展示每部订阅影片的资源查询进展，并提供把卡住的影片放回查询队列的入口。数据源是后端 `/movie-subscriptions` 三端点（列表 / 状态计数 / 重置查询状态）。
-
-与影片页 `status=subscribed` 筛选的区别：影片页是海报墙，只答「订没订」；本页是运维台，答「查到第几次、有没有被放弃、索引器报没报错、试死了几个种子」——这些字段只在本域 schema 里有。
-
-状态与分段签：
-
-- 后端七状态由**同一个** SQL CASE 判定，严格互斥，各签计数之和恒等于总数
-- 分段签顺序**按可操作性排**而非后端 CASE 优先级：`缺资源 · 已放弃 · 导入失败 · 查询出错 · 待查 · 下载中 · 已入库 · 全部`。订阅只增不减、`imported` 常年占九成以上，把「全部 / 已入库」摆最左等于让用户每次先滑过用不上的签
-- **默认落在「缺资源」**（`MovieSubscriptionFilterState.initial`），不是「全部」
-- 标签自带计数角标，来自独立的 `movieSubscriptionStatusCountsProvider`——它挂了只退化成没有数字的纯文字签，列表照常可用
-- 只有「已放弃 / 导入失败 / 查询出错」且计数 > 0 时把**计数**染成 warning 色（需要人工介入才有进展）；「缺资源」刻意留中性——它是默认签又占比最大，染色只会淹没真正要处理的那几态
-- ⚠️ **「导入失败」（`import_failed`）与「查询出错」（`failed`）是两回事**：前者文件已下好、卡在入库；后者索引器调用出错、压根还没找到资源。文案必须分开念，别都写成「失败」。「导入失败」的行**禁用「重置查询」按钮**并在 tooltip 里说清原因——用户的第一直觉恰恰是「那我重下一遍」，而那正是没用的动作
-- 后端按「**导入还在不在途**」二分活跃任务，所以「导入失败」这一档也包含「导入跑完却零产出」（整包只有小于阈值的样本文件）。**tooltip 因此不写"去看失败原因"**——那种情况压根没有错误可看。且后端目前没有暴露重试导入的端点，这一档**给不出可点的修复出口**，只能把状况说清
-
-页面结构（`MovieSubscriptionListSection`）：
-
-- **底色沿用壳层的 `surfaceElevated`（纯白），本页不自铺灰底。** 曾试过铺 `surfacePage`（#F5F5F5）走「灰底浮白卡」的分组卡片范式，实测观感更差：灰块从顶栏底下一整片压到底、把分段签也裹进去，与上方白色顶栏硬切一刀；且本 app 所有桌面页（媒体管理 / 活动中心 / 下载任务 / 各海报墙页）都坐在壳层白底上，单这一页变灰本身就是不协调。**卡片边界交给 `AppLeftCoverCard` 自带的 `borderSubtle` 细边**——它本就是为白底容器设计的（媒体管理页同款）。结论：本仓库的桌面页**统一坐白底**，需要「灰底浮卡」时先想清楚是不是要连壳层一起改，别只改一页
-- 顶部 `AppTabBar` 状态分段签，**固定在滚动区之上**（它是本页导航，滚下去还得滚回来才能换签）。七个签超过了「顶部 tab ≤5」的经验上限，但这里**不该改用「左分类 + 右内容」**：一来页面已经在桌面壳的左侧导航栏里，再加一层左栏就是双层左栏；二来状态是**筛选维度**而非分类导航，横向分段签正是国内订单页的心智（全部/待付款/待发货…），换成左栏反而失真
-- 下方 `AppListHeader`：筛选入口收「搜索 + 排序」（`MovieSubscriptionFilterSectionGroup`，就地浮层；搜索回车生效、排序七档走 `AppSelectField`），信息槽放总数，操作槽放「重置全部（N）」（**仅「已放弃」签出现**）、「选择」、「刷新」
-- 列表为 `AppLeftCoverCard` 行卡片，**不传 `fixedItemExtent`**（错误行条件渲染 + 进度行会换行，行高本就不固定）
-
-行卡片三行，一行答一个问题：
-
-1. **这是哪部片**：番号（s14 semibold，本页操作单位是番号不是片名）+ 标题（s12 secondary）+ 右上角状态 `AppBadge`
-2. **求片走到哪了**：`新片 · 持续查询中`（`is_fresh` 时 `attempt_count` 恒为 0，展示次数会被误读成「一次都没查过」）或 `已查 N/M 次` · `N 天前查过` · `N 个种子已判死`。前两支**都用 muted 文本、不给新片加彩色 badge**——它们占同一个槽、答同一个问题，视觉权重就该一样；一行里的彩色元素也因此收敛到「状态徽标 + 死种告警」最多两个
-3. **背景信息 + 操作**：发行 / 订阅时间 / 本地媒体数靠左，「重置查询」「取消订阅」两个 `AppIconButton`（`regular` = 44 见方）靠右
-
-`status=failed` 时在 2、3 之间插一行索引器错误详情（单行省略 + Tooltip 看全文）。
-
-交互与状态一致性：
-
-- 常规态整卡点击 = 打开影片详情；多选态整卡点击 = 切换选中、行内操作按钮收起（两套入口并存会让「我这一下改了哪些」不可预期）
-- 多选态用 `AppSelectionHeaderToolbar` **原地改写整条顶栏**（不在筛选行下方另起一行）。将来若要补移动端，参考 videos / actors 的做法（`onFilterTap` 弹底部抽屉 + `AppListHeader.selection` + 贴底 `AppSelectionBottomBar`）——现在**不预留没有调用方的分支**
-- 批量重置**不弹确认**（可逆的加法，最坏只多打一轮索引器）；批量取消订阅、一键重置全部**弹确认**
-- 单条取消订阅也不弹确认（可逆、不删文件），结果走 `showMovieSubscriptionFeedback`；批量取消订阅走后端「部分成功」语义，被跳过的番号**保持选中**并复用 `showMovieSubscriptionBatchFeedback` 展开清单
-- 重置成功后就地打补丁：条目回「待查」，当前分段签容不下它就移除并扣减总数——不整页重拉
-- 取消订阅经 `movieSubscriptionEventsProvider.reportChange` 广播；反向广播经 `movieSubscriptionEventsProvider` 回来时就地摘行。页面离屏时该订阅被 Riverpod 挂起，但事件会缓冲、回来时补投，不会丢
-- 空态按状态分文案：待办三态为空是**好消息**（「没有缺资源的订阅」+「查看全部订阅」出口），不用「暂无数据」的失败口吻
-
-新增 token：`subscriptionRowCoverWidth`（桌面 168）、`subscriptionRowMinHeight`（桌面 132）。移动档位按 `AppComponentTokens` 的类型要求同样给了值（116 / 108），但本页无移动端，当前用不到。
-
-状态管理走 Riverpod（`MovieSubscriptionManager` + `PagedAsyncNotifierMixin`），是本仓库第一个**从零就用 Riverpod** 的完整页面。
-
-## 7. 共享组件基线
-
-### 7.1 AppButton
-
-当前按钮支持：
-
-- 变体：`primary`、`secondary`、`ghost`、`danger`
-- 尺寸：`medium`、`small`、`xSmall`、`xxSmall`、`xxxSmall`
-- 图标、尾图标、加载态、选中态
-
-优先用现有按钮变体表达操作层级，不要在页面里临时拼装新按钮皮肤。
-
-### 7.1.1 AppTextButton
-
-当前共享文字按钮特征：
-
-- 轻量筛选与视图切换按钮，支持纯文字，也支持 `leading/trailing icon`
-- 尺寸：`medium`、`small`、`xSmall`、`xxSmall`、`xxxSmall`
-- 选中态为强调色文字 + 极浅主色背景
-- 未选中态默认透明背景，可选 `muted` 轻灰底色
-- 适用于轻量排序、视图切换、弱层级筛选，以及带图标的筛选触发器
-
-当前补充约束：
-
-- `muted` 未选中底色用于影片相关的顶部筛选按钮组，例如影片列表 / 女优详情中的 `全部 / 最新订阅 / 最新入库`
-- 其它带图标的筛选触发器、排序切换、参数切换等场景默认仍使用透明未选中态，避免把所有文字按钮做成统一灰底
-
-不要在业务页继续手写无边框排序按钮样式，优先复用它。
-
-### 7.2 AppTextField
-
-当前输入框特征：
-
-- 浅灰填充背景
-- 细边框
-- 默认紧凑密度
-- 支持 label、helper、prefix、suffix、校验态
-
-登录页和配置页都已经基于这个组件构建。
-
-### 7.3 AppIconButton
-
-当前共享 icon button 特征：
-
-- 支持 `compact`、`regular` 两种尺寸
-- 支持 tooltip、选中态、禁用态
-- 支持按场景覆写图标色、背景色、边框色
-- 默认图标尺寸仍走 `AppComponentTokens.iconSizeMd`
-
-页面里如果只是单个图标操作，不应再直接使用原生 `IconButton` 拼样式。
-
-### 7.3.1 AppListHeader
-
-移动端列表/分区顶栏统一按三段组织：
-
-- 最左侧始终是筛选图标；筛选操作应进入底部抽屉，不再把可点击筛选 chip 铺在顶栏
-- `informationSlots` 只放不可点击信息，推荐使用 `AppListHeaderInfo`（当前条件、总数、更新时间）
-- `actionSlots` 放「新建 / 查看全部 / 更多 / 选择」等操作，业务侧继续复用 `AppTextButton` / `AppIconButton` / `AppButton`
-- `AppListHeader.selection` 用于多选态原地改写整条顶栏；窄屏且插槽较多时，筛选按钮保持固定，其余内容横向滚动
-
-当前已迁移移动影片、女优、排行榜、PornBox 视频区、标签页影片区、热评、时刻、视频合集详情、系列影片页与切片合集详情（桌面侧影片 / 女优 / 女优详情 / 榜单 / PornBox / 热评 / 时刻 / 视频合集详情 / 系列影片 / 切片合集详情也已并入同一条顶栏）；系列影片页**没有筛选维度**，用的是 `AppListHeader` 不带筛选入口的形态（总数进信息槽，「同步系列影片」进操作槽）；桌面把系列名也放信息槽，移动端则报给返回栏（`AppMobileSubpageTitle`，窄屏放信息槽会被压成省略号），且多选与影片列表一致——入口在卡片长按菜单、批量动作在贴底操作条；其余历史自绘顶栏仍按页面现状运行，后续逐步迁移，不应在文档中描述为已经统一。
-
-### 7.4 AppSelectField
-
-当前不是系统原生下拉，而是自绘触发器 + Overlay 菜单。视觉上与 `AppTextField`
-保持同一套表单语言：
-
-- 浅灰填充背景
-- 细边框与统一圆角
-- placeholder / 已选值 / 错误态文本分层清晰
-- 菜单锚定到触发器本身，不应出现明显下沉错位
-- 桌面端支持 hover、高度受限滚动，以及靠近底部时向上展开
-
-使用要求：
-
-- 配置类表单优先复用它
-- 不要在同一页面混用完全不同风格的下拉控件
-
-### 7.5 AppTabBar
-
-当前支持：
-
-- `desktop`
-- `compact`
-
-视觉特征是细线型底部指示器，而不是胶囊式或大块背景切换。
-
-`compact` 变体的首项不额外引入左侧 label padding，左对齐基线应由外层容器内容区决定，而不是由
-Tab 自身制造额外 gutter。
-
-### 7.5.1 Dialog / Drawer 容器边距
-
-弹窗与底部抽屉的容器级外边距统一由宿主组件负责：
-
-- `AppDesktopDialog` 负责桌面弹窗内容 gutter
-- `showAppBottomDrawer` / `AppBottomDrawerSurface` 负责抽屉内容 gutter
-- 内容组件只能定义容器内部各分区间距、卡片内边距、控件之间 spacing
-- 内容组件不得通过根节点 padding 重新定义整体 gutter
-- 复杂布局允许做满高、滚动、分栏，但不允许绕过宿主内容 gutter
-
-### 7.6 AppEmptyState / AppContentCard / AppPageFrame
-
-这三个组件分别负责：
-
-- 空态承载
-- 标准内容卡
-- 页面头部与正文框架
-
-占位页、错误页、说明性页面优先复用，而不是每个页面单独拼一套容器。
-
-`AppEmptyState` 当前基线是简洁的单句居中文案，不带额外 card、icon 或 title。
-
-`AppContentCard` 当前支持可选 `headerTrailing`，用于在标题右侧放置状态徽标或轻量操作；没有传入时保持原有单标题布局。
-
-### 7.7 列表卡片
-
-`MovieSummaryCard` 与 `ActorSummaryCard` 是当前卡片网格的基础样式：
-
-- 大图封面；影片卡优先使用后端 `thin_cover_image` 作为竖版封面，缺失时使用 `cover_image` 在现有竖卡比例内 `contain` 展示，不再裁取横图右侧区域
-- 底部渐变遮罩
-- 白字标题
-- 左上角状态徽标
-- 右上角热度徽标（火焰 icon + 数字；若存在榜单排名，则在排名徽标下方纵向堆叠）
-- 轻卡片阴影
-
-影片卡和女优卡是同一套视觉家族，后续新增同类卡片应尽量保持统一。当前热度徽标属于通用 `MovieSummaryCard` 的一部分，因此复用该卡片的影片场景会共享这一表现。
-
-切片域另有两张卡片（见 6.9.x）：
-
-- `ClipGridCard`：竖向切片卡，`16:9` 封面 + 标题 + 番号，支持鼠标悬停轮播 `preview_frames` 动态预览、右上「···」操作菜单、右下时长角标。
-- `CollectionCoverCard`（`lib/widgets/collections/`）：合集封面卡的**共享实现**，`16:9` 封面 + 底部标题 + 封面右下角计数角标 + 可选右上「···」编辑/删除菜单。切片与视频合集卡仅在 DTO、计数字段、占位图标、封面 `fit`（横图切片用 `cover`、可能竖图的视频封面用 `contain`）与 key 前缀上有差异，故由下列两个薄适配层各自喂参数复用之。
-- `ClipCollectionCard`：`CollectionCoverCard` 的切片适配层（封面取首个切片封面，`fit: cover`）；用于切片页横滑区与合集列表网格。
-- `VideoCollectionCard`：`CollectionCoverCard` 的视频适配层（封面取合集中排序最前视频的封面，`fit: contain`）；用于视频合集主页横滑区与合集列表网格。
-
-### 7.8 Pull To Refresh
-
-当前移动端下拉刷新分为两层共享封装：
-
-- `AppPullToRefresh` 基于 `RefreshIndicator` 封装
-- `AppAdaptiveRefreshScrollView` 负责平台分流：
-  iOS 使用 `CupertinoSliverRefreshControl`
-  Android / Web / 桌面继续走 `AppPullToRefresh`
-- `AppPullToRefresh` 的 spinner 颜色使用主题 `colorScheme.primary`
-- `AppPullToRefresh` 的背景色使用 `surfaceCard`
-- `AppPullToRefresh` 支持传入 `notificationPredicate` 适配嵌套滚动
-
-使用约束：
-
-- 共享内容组件默认不启用下拉刷新，只有移动端宿主显式开启时才接入
-- iOS 需要原生下拉刷新的页面，优先通过 `AppAdaptiveRefreshScrollView` 提供 `slivers`
-- 页面需要保留已有内容时，优先使用控制器静默 `refresh()`，不要复用会清空数据的 `reload()`
-- 刷新失败保留当前内容，并通过 toast 反馈，不回退到骨架屏
-- 需要下拉刷新的滚动容器应显式使用 `AlwaysScrollableScrollPhysics`
-- 桌面端默认不启用 `CupertinoSliverRefreshControl`
-
-## 8. 状态与反馈
-
-当前实现里的状态表达规则：
-
-- 初次加载：骨架屏或块级 skeleton
-- 空数据：`AppEmptyState`
-- 请求失败：页面空态或底部重试条
-- 小型操作成功 / 失败：toast
-- 订阅切换中：徽标位置显示 loading
-- 加载更多：底部圆形进度指示器
-- 移动端下拉刷新：保留现有内容，刷新结束后自动收起指示器；失败时 toast 提示
-
-不要把所有失败都做成弹窗；当前基线是尽量在原上下文里完成提示和重试。
-
-## 9. 后续 UI 开发规则
-
-- 新页面优先放进现有桌面壳层，不要绕开 `AppDesktopShell`
-- 新样式优先复用 `lib/theme/` token
-- 新共享组件优先进入 `lib/widgets/`
-- 如果只是一个 feature 的局部逻辑，不要提前抽成“全局设计系统”
-- 如果某个值已经在多个页面重复出现，应尽快提升为 token 或共享组件
-
-## 10. 不应写进文档的内容
-
-以下内容目前不应被描述成既定规范：
-
-- 移动端完整页面布局规则
-- Web 端完整视觉差异规则
-- 尚未实现的多级侧栏导航
-- 尚未接入的文件整理、UI Kit 页面成品能力
-
-这些内容可以规划，但不能冒充当前代码库现状。
+- `AppDesktopShell`：整体布局容器；
+- `AppSidebar`：左侧导航；
+- `AppTopBar`：顶栏；
+- 内容区承载具体页面。
+
+### 5.2 路由分层
+
+- 主导航页面统一使用 `go`，子流程页面（详情、播放器、搜索子页、图搜等）统一使用 `push`；
+- 返回规则：优先 `pop` 回真实历史栈；无历史时回到该路由的默认入口；
+- 路由身份以 URL 为准，页面来源不再依赖 fallback 字符串。
+
+## 6. 页面地图
+
+### 6.1 桌面端
+
+| 页面 | 路由 |
+|---|---|
+| 概览 | `/desktop/overview` |
+| 发现 | `/desktop/library/discover`（含 `/movies`、`/moments`） |
+| 女优上新 | `/desktop/library/follow` |
+| 影片 | `/desktop/library/movies` |
+| 女优 | `/desktop/library/actors` |
+| 标签 | `/desktop/library/tags` |
+| 时刻 | `/desktop/library/moments` |
+| 播放列表 | `/desktop/library/playlists` |
+| 切片 / 切片合集 | `/desktop/library/clips`、`/desktop/library/clip-collections` |
+| 非 JAV 视频 / 视频合集 | `/desktop/library/videos`、`/desktop/library/video-collections` |
+| 排行榜 | `/desktop/library/rankings` |
+| 热评 | `/desktop/library/hot-reviews` |
+| 搜索 | `/desktop/search` |
+| 以图搜图 | `/desktop/search/image` |
+| 活动中心 | `/desktop/system/activity` |
+| 通知 | `/desktop/system/notifications` |
+| 媒体管理 | `/desktop/system/media` |
+| 资源导入 | `/desktop/system/media-import` |
+| 订阅管理 | `/desktop/system/movie-subscriptions` |
+| 系统诊断 | `/desktop/system/diagnostics` |
+| 系统设置 | `/desktop/system/configuration` |
+
+影片/女优详情、系列影片、播放器等属于子流程页面，路径挂在对应列表路由之下。
+
+### 6.2 移动端
+
+移动端当前真实页面包括：
+
+- 底部导航：`/mobile/overview`、`/mobile/library/movies`、
+  `/mobile/library/actors`、`/mobile/rankings`、`/mobile/pornbox`；
+- 搜索与图搜：`/mobile/search`、`/mobile/search/image`；
+- 媒体管理：`/mobile/system/media`；
+- 设置子页：媒体库、下载器、索引器、播放列表、修改用户名、修改密码等
+  `/mobile/settings/*` 页面；
+- 影片/女优详情、播放器、播放列表详情、发现子页等子流程。
+
+其余 `/mobile/settings/*` 与移动端扩展页面若未实现，仍保持骨架或占位，文档不写成已完整支持。
+
+## 7. 页面共用模式
+
+大多数列表页遵循同一套模式：
+
+1. 顶部 `AppListHeader`：筛选入口、当前条件、总数/更新时间、操作槽；
+2. 内容区为响应式卡片网格；
+3. 滚动触底加载更多；
+4. 加载失败保留旧内容并提供重试；
+5. 下拉刷新（移动端）或页面刷新（桌面端）复用同一套状态层。
+
+筛选交互：
+
+- 桌面端筛选面板就地展开浮层；
+- 移动端筛选面板使用底部抽屉；
+- 两侧共用同一份筛选状态层和筛选组件；
+- 影片筛选含状态（全部/已订阅/未订阅/可播放）、合集类型、番号来源、热度范围、发行年份、排序；
+  其中热度范围为 0–2w 的双滑块（拖动中只更新面板显示，松手才应用），
+  左端拖到 0 = 下限不限，右端拖到顶 = 无上界（2w 及以上都包含），对应接口 `heat_min` / `heat_max` 不传。
+
+多选交互：
+
+- 桌面端入口在顶栏「选择」，选中后顶栏原地改写；
+- 移动端入口在卡片长按菜单，批量动作在贴底操作条。
+
+详情页共用结构：
+
+- 头部摘要（封面/标题/元信息）；
+- 主体内容分节；
+- 影片详情的「字幕」分节展示后端可用的 `.srt` 文件，点击后在桌面弹窗或移动端底部抽屉中查看原始文本；
+- 检查面板或操作区按页面能力接入；
+- 双端共用同一份内容层，只差布局容器。
+
+## 8. 共享组件
+
+优先使用以下共享组件，不在业务页面自绘基础控件：
+
+- 动作：`AppButton`、`AppTextButton`、`AppIconButton`、`AppSwitch`（紧凑启停开关，尺寸走组件 token）；
+- 表单：`AppTextField`、`AppPasswordField`、`AppSelectField`；
+- 导航/结构：`AppTabBar`、`AppListHeader`、`AppContentCard`、`AppPageFrame`；
+- 反馈：`AppEmptyState`、`AppBadge`、`AppSectionSkeleton`、`AppSectionError`、
+  `AppFilterUpdateBar`、`AppPagedLoadMoreFooter`；
+- 弹层：`AppDesktopDialog`、`AppBottomDrawer`、确认弹窗；
+- 卡片：影片卡、女优卡、榜单卡、时刻卡、切片卡、合集卡等业务域共享卡片。
+
+新增通用组件或设计 token 后，同步更新 `docs/widgets/` 与本文。
+
+## 9. 状态与反馈规则
+
+- 列表/详情加载优先骨架屏或占位块；
+- 空态统一使用 `AppEmptyState`；
+- 分页加载失败保留原列表并提供重试入口；
+- 轻量操作反馈优先使用 toast；
+- 删除、覆盖、离开未保存表单等破坏性操作先确认；
+- 筛选更新不阻塞旧内容：失败时保留当前结果并展示失败条；
+- 活动中心、下载任务等实时状态优先 SSE 事件流，不支持时降级轮询；
+- 订阅管理「导入失败」档在卡片上直接展示失败原因（来自最新导入作业的 `failed_files`
+  摘要），并提供「查看导入作业」入口跳资源导入中心；「删除下载记录」按钮复用下载
+  中心的删除任务语义（可选删除文件），删除后本片重新参与自动下载；
+- 下载任务卡片提供「文件列表」弹窗，按任务实时拉取 qB / 115 文件清单；`.iso` 等
+  常见光盘镜像格式在列表中标红提示（仅视觉提示，不参与导入判定）；
+- 配置保存后如后端返回需要重启的字段，明确提示「需重启容器才生效」。
+
+## 10. 插件机制相关 UI 现状
+
+- 桌面端「系统设置 > 插件」页提供插件管理：zip 上传安装（small 主按钮）、启停（紧凑 `AppSwitch`）、删除与插件私有 JSON 配置编辑；写操作后需重启容器才生效；
+- 已启用插件注册的任务会出现在任务中心「可执行任务」面板，点击「查看任务」后在独立弹层中手动执行；
+- 带参数的插件任务按后端返回的 `params_schema` 渲染参数表单，提交时将表单值作为
+  JSON body 发送；服务端仍负责最终参数校验；
+- 排行榜来源由插件注册：未安装/未启用排行榜插件时，排行榜页显示「暂无可用排行榜」；
+- 高级设置页不再提供 JavDB 账号/密码与排行榜同步 cron，这些归插件私有配置和插件任务管理。
+
+## 11. 开发规则
+
+- 桌面端优先：布局、导航、页面结构优先复用桌面壳层；
+- 设计系统优先：颜色、间距、圆角、阴影、尺寸统一来自 token；
+- 最小可靠实现：不为未来不确定的需求做抽象和兜底；
+- feature 内沿用 `data/`（DTO + API）与 `presentation/`（页面 + provider）分层；
+- 修改 provider、路由定义后执行 `dart run build_runner build --delete-conflicting-outputs`；
+- 修改主题 token、共享组件、路由、页面交互时同步补充或更新对应测试。
+
+## 12. 不应写进本文的内容
+
+- 后端接口实现细节与数据库结构；
+- 尚未落地的规划或「未来蓝图」；
+- 参考项目的目录结构、组件命名或交互模式；
+- 逐页字段级表单说明（需要时以当前代码为准，不再在这里维护长文）。

@@ -11,8 +11,8 @@ part of 'media_browse_provider.dart';
 /// 「媒体管理」列表控制器（Riverpod）：分页拉取全局 `/media`，持有筛选与多选。
 ///
 /// 筛选状态遵循项目主流约定：值对象 [MediaBrowseFilterState] 由 State 持有，
-/// `fetchPage` 通过内部 [_activeFilter] 字段读取拼参数。UI 改完调 [applyFilterState]
-/// 才 reload。多选独立于 filter，reload 会清空。
+/// `fetchPage` 从共享筛选 mixin 的 [activeFilter] 读取参数；UI 改筛选时先同步
+/// 写入 State 并清多选，再防抖刷新第一页。
 ///
 /// 迁移前对应：`MediaBrowseController extends PagedLoadController<MediaListItemDto>`。
 
@@ -22,8 +22,8 @@ final mediaBrowseProvider = MediaBrowseProvider._();
 /// 「媒体管理」列表控制器（Riverpod）：分页拉取全局 `/media`，持有筛选与多选。
 ///
 /// 筛选状态遵循项目主流约定：值对象 [MediaBrowseFilterState] 由 State 持有，
-/// `fetchPage` 通过内部 [_activeFilter] 字段读取拼参数。UI 改完调 [applyFilterState]
-/// 才 reload。多选独立于 filter，reload 会清空。
+/// `fetchPage` 从共享筛选 mixin 的 [activeFilter] 读取参数；UI 改筛选时先同步
+/// 写入 State 并清多选，再防抖刷新第一页。
 ///
 /// 迁移前对应：`MediaBrowseController extends PagedLoadController<MediaListItemDto>`。
 final class MediaBrowseProvider
@@ -31,8 +31,8 @@ final class MediaBrowseProvider
   /// 「媒体管理」列表控制器（Riverpod）：分页拉取全局 `/media`，持有筛选与多选。
   ///
   /// 筛选状态遵循项目主流约定：值对象 [MediaBrowseFilterState] 由 State 持有，
-  /// `fetchPage` 通过内部 [_activeFilter] 字段读取拼参数。UI 改完调 [applyFilterState]
-  /// 才 reload。多选独立于 filter，reload 会清空。
+  /// `fetchPage` 从共享筛选 mixin 的 [activeFilter] 读取参数；UI 改筛选时先同步
+  /// 写入 State 并清多选，再防抖刷新第一页。
   ///
   /// 迁移前对应：`MediaBrowseController extends PagedLoadController<MediaListItemDto>`。
   MediaBrowseProvider._()
@@ -54,13 +54,13 @@ final class MediaBrowseProvider
   MediaBrowse create() => MediaBrowse();
 }
 
-String _$mediaBrowseHash() => r'e444b38aaff40acf79445cfb91257b94967a3e11';
+String _$mediaBrowseHash() => r'668c594ae3e966736bb005e5ebfa150973eaa259';
 
 /// 「媒体管理」列表控制器（Riverpod）：分页拉取全局 `/media`，持有筛选与多选。
 ///
 /// 筛选状态遵循项目主流约定：值对象 [MediaBrowseFilterState] 由 State 持有，
-/// `fetchPage` 通过内部 [_activeFilter] 字段读取拼参数。UI 改完调 [applyFilterState]
-/// 才 reload。多选独立于 filter，reload 会清空。
+/// `fetchPage` 从共享筛选 mixin 的 [activeFilter] 读取参数；UI 改筛选时先同步
+/// 写入 State 并清多选，再防抖刷新第一页。
 ///
 /// 迁移前对应：`MediaBrowseController extends PagedLoadController<MediaListItemDto>`。
 

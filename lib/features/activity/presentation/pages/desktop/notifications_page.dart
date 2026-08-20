@@ -10,6 +10,7 @@ import 'package:sakuramedia/widgets/base/actions/app_button.dart';
 import 'package:sakuramedia/widgets/base/interaction/refresh/app_page_refresh_scope.dart';
 import 'package:sakuramedia/widgets/base/layout/scrolling/app_paged_load_more_footer.dart';
 import 'package:sakuramedia/widgets/base/feedback/app_empty_state.dart';
+import 'package:sakuramedia/widgets/base/feedback/app_filter_update_bar.dart';
 
 /// 独立的「通知」消息中心页。列表、分页、筛选和无感已读由全局通知 provider
 /// 驱动，卡片被渲染时即上报已读。
@@ -79,29 +80,36 @@ class _DesktopNotificationsPageState
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(notificationCenterProvider);
+    ref.listen(notificationCenterProvider.select((value) => value.filter), (
+      previous,
+      next,
+    ) {
+      if (previous != next && _scrollController.hasClients) {
+        _scrollController.jumpTo(0);
+      }
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _maybeAutoLoadMore();
       }
     });
     return AppPageRefreshScope(
-      onRefresh:
-          ref.read(notificationCenterProvider.notifier).refreshNotifications,
-      child:
-          state.isInitialLoading && state.notifications.isEmpty
-              ? const _NotificationsLoadingState()
-              : state.initialErrorMessage != null && state.notifications.isEmpty
-              ? _NotificationsErrorState(
-                message: state.initialErrorMessage!,
-                onRetry:
-                    ref.read(notificationCenterProvider.notifier).reloadAll,
-              )
-              : CustomScrollView(
-                controller: _scrollController,
-                // 收敛视口外预构建，避免卡片「提前已读」。
-                cacheExtent: 0,
-                slivers: _buildSlivers(context, state),
-              ),
+      onRefresh: ref
+          .read(notificationCenterProvider.notifier)
+          .refreshNotifications,
+      child: state.isInitialLoading && state.notifications.isEmpty
+          ? const _NotificationsLoadingState()
+          : state.initialErrorMessage != null && state.notifications.isEmpty
+          ? _NotificationsErrorState(
+              message: state.initialErrorMessage!,
+              onRetry: ref.read(notificationCenterProvider.notifier).reloadAll,
+            )
+          : CustomScrollView(
+              controller: _scrollController,
+              // 收敛视口外预构建，避免卡片「提前已读」。
+              cacheExtent: 0,
+              slivers: _buildSlivers(context, state),
+            ),
     );
   }
 
@@ -134,27 +142,26 @@ class _DesktopNotificationsPageState
                     size: AppButtonSize.small,
                     variant: AppButtonVariant.secondary,
                     isLoading: state.isMarkingAllRead,
-                    onPressed:
-                        state.unreadCount > 0 && !state.isMarkingAllRead
-                            ? notifier.markAllRead
-                            : null,
+                    onPressed: state.unreadCount > 0 && !state.isMarkingAllRead
+                        ? notifier.markAllRead
+                        : null,
                   ),
                 ],
               ),
-              if (state.refreshErrorMessage != null) ...[
-                SizedBox(height: context.appSpacing.md),
-                AppPagedLoadMoreFooter(
-                  isLoading: false,
-                  errorMessage: state.refreshErrorMessage,
-                  onRetry: notifier.refreshNotifications,
-                ),
-              ],
+              AppFilterUpdateBar(
+                state: state.filterUpdate,
+                hasPreviousItems: state.notifications.isNotEmpty,
+                onRetry: notifier.refreshNotifications,
+              ),
             ],
           ),
         ),
       ),
     ];
 
+    if (state.notifications.isEmpty && state.filterUpdate.hasFailed) {
+      return slivers;
+    }
     if (state.notifications.isEmpty) {
       slivers.add(
         const SliverToBoxAdapter(child: AppEmptyState(message: '当前筛选下暂无通知')),

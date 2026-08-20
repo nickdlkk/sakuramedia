@@ -15,9 +15,7 @@ part of 'download_task_center_provider.dart';
 /// 差异：
 /// - 首屏 loading / error 由外层 [AsyncValue] 表达（[AsyncLoading]/[AsyncError]）；
 ///   retry 走 `ref.invalidateSelf()`。
-/// - 筛选切换（[applyFilter]）**不走 [reload]**（那样会 AsyncLoading 让筛选栏消失），
-///   而是自定义流程：`state = AsyncData(旧 items + isReloading: true)` → 拉新首页 →
-///   写回。开始前调 [invalidateInFlightLoadMore] 让旧 loadMore 作废。
+/// - 筛选切换（[applyFilter]）先同步更新筛选控件，保留旧列表并防抖刷新第一页。
 /// - SSE 触发的「首页去抖合并」维持原生流程：独立 fetchPage(1) + 手工 upsert，
 ///   有 [_minMergeInterval] 限流兜底。
 
@@ -31,9 +29,7 @@ final downloadTaskCenterProvider = DownloadTaskCenterProvider._();
 /// 差异：
 /// - 首屏 loading / error 由外层 [AsyncValue] 表达（[AsyncLoading]/[AsyncError]）；
 ///   retry 走 `ref.invalidateSelf()`。
-/// - 筛选切换（[applyFilter]）**不走 [reload]**（那样会 AsyncLoading 让筛选栏消失），
-///   而是自定义流程：`state = AsyncData(旧 items + isReloading: true)` → 拉新首页 →
-///   写回。开始前调 [invalidateInFlightLoadMore] 让旧 loadMore 作废。
+/// - 筛选切换（[applyFilter]）先同步更新筛选控件，保留旧列表并防抖刷新第一页。
 /// - SSE 触发的「首页去抖合并」维持原生流程：独立 fetchPage(1) + 手工 upsert，
 ///   有 [_minMergeInterval] 限流兜底。
 final class DownloadTaskCenterProvider
@@ -46,9 +42,7 @@ final class DownloadTaskCenterProvider
   /// 差异：
   /// - 首屏 loading / error 由外层 [AsyncValue] 表达（[AsyncLoading]/[AsyncError]）；
   ///   retry 走 `ref.invalidateSelf()`。
-  /// - 筛选切换（[applyFilter]）**不走 [reload]**（那样会 AsyncLoading 让筛选栏消失），
-  ///   而是自定义流程：`state = AsyncData(旧 items + isReloading: true)` → 拉新首页 →
-  ///   写回。开始前调 [invalidateInFlightLoadMore] 让旧 loadMore 作废。
+  /// - 筛选切换（[applyFilter]）先同步更新筛选控件，保留旧列表并防抖刷新第一页。
   /// - SSE 触发的「首页去抖合并」维持原生流程：独立 fetchPage(1) + 手工 upsert，
   ///   有 [_minMergeInterval] 限流兜底。
   DownloadTaskCenterProvider._()
@@ -71,7 +65,7 @@ final class DownloadTaskCenterProvider
 }
 
 String _$downloadTaskCenterHash() =>
-    r'48240bc57439b1ab282140296de7335eb97f7f4c';
+    r'f59705ed4e19faf4a34e49ac10260c40c791d2a0';
 
 /// 下载任务中心（Riverpod）：分页拉 `/download-tasks` + SSE 实时进度 + 暂停/恢复/删除。
 ///
@@ -80,9 +74,7 @@ String _$downloadTaskCenterHash() =>
 /// 差异：
 /// - 首屏 loading / error 由外层 [AsyncValue] 表达（[AsyncLoading]/[AsyncError]）；
 ///   retry 走 `ref.invalidateSelf()`。
-/// - 筛选切换（[applyFilter]）**不走 [reload]**（那样会 AsyncLoading 让筛选栏消失），
-///   而是自定义流程：`state = AsyncData(旧 items + isReloading: true)` → 拉新首页 →
-///   写回。开始前调 [invalidateInFlightLoadMore] 让旧 loadMore 作废。
+/// - 筛选切换（[applyFilter]）先同步更新筛选控件，保留旧列表并防抖刷新第一页。
 /// - SSE 触发的「首页去抖合并」维持原生流程：独立 fetchPage(1) + 手工 upsert，
 ///   有 [_minMergeInterval] 限流兜底。
 

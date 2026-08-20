@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:sakuramedia/theme.dart';
+import 'package:sakuramedia/features/shared/presentation/providers/paged_async_notifier.dart';
 import 'package:sakuramedia/widgets/base/actions/app_icon_button.dart';
+import 'package:sakuramedia/widgets/base/feedback/app_filter_update_bar.dart';
 import 'package:sakuramedia/widgets/base/navigation/app_filter_entry_button.dart';
 import 'package:sakuramedia/widgets/base/overlays/app_filter_popover.dart';
 
@@ -12,8 +14,8 @@ import 'package:sakuramedia/widgets/base/overlays/app_filter_popover.dart';
 /// 3. 最右侧若干可交互的 [actionSlots]（选择、新建、查看全部…）。
 ///
 /// **两端唯一的差别是筛选面板的容器**：桌面传 [filterPanelBuilder] 就地展开
-/// 浮层，移动传 [onFilterTap] 弹底部抽屉；按钮外观、面板内容、即时生效的行为
-/// 完全一致。
+/// 浮层，移动传 [onFilterTap] 弹底部抽屉；按钮外观、面板内容、条件同步更新的行为
+/// 完全一致。服务端结果由 Provider 防抖刷新，不阻塞控件选中态。
 ///
 /// **两个都不传**表示这个列表没有筛选维度（如系列影片页——后端
 /// `/movies/by-series` 只吃 seriesId/分页），此时左侧不渲染入口，信息槽从最左
@@ -35,6 +37,9 @@ class AppListHeader extends StatelessWidget {
     this.filterTooltip = '筛选',
     this.filterButtonKey,
     this.filterEnabled = true,
+    this.filterUpdate = const FilterUpdateState.idle(),
+    this.hasPreviousFilterItems = true,
+    this.onRetryFilter,
     this.informationSlots = const <Widget>[],
     this.actionSlots = const <Widget>[],
   }) : assert(
@@ -65,6 +70,9 @@ class AppListHeader extends StatelessWidget {
        filterTooltip = null,
        filterButtonKey = null,
        filterEnabled = true,
+       filterUpdate = const FilterUpdateState.idle(),
+       hasPreviousFilterItems = true,
+       onRetryFilter = null,
        informationSlots = const <Widget>[];
 
   /// **移动端**筛选入口：点击弹底部抽屉。与 [filterPanelBuilder] 二选一。
@@ -97,6 +105,11 @@ class AppListHeader extends StatelessWidget {
   /// 还没加载完时传 `false`，避免点开一个空面板。外观不变——它只是暂时不响应，
   /// 不是另一种状态。
   final bool filterEnabled;
+
+  /// 当前筛选条件与列表结果的同步状态。非 idle 时在顶栏下方显示轻量反馈。
+  final FilterUpdateState filterUpdate;
+  final bool hasPreviousFilterItems;
+  final VoidCallback? onRetryFilter;
 
   /// 不可点击的信息节点，例如当前筛选摘要、总数、排行榜更新时间。
   final List<Widget> informationSlots;
@@ -140,20 +153,18 @@ class AppListHeader extends StatelessWidget {
       alignment: AppFilterPopoverAlignment.leftAlignedToTrigger,
       panelBuilder: panelBuilder,
       footer: filterPanelFooter,
-      triggerBuilder:
-          (context, isOpen, toggle) => KeyedSubtree(
-            key: filterButtonKey,
-            child: AppFilterEntryButton(
-              icon: filterIcon,
-              label: filterLabel,
-              tooltip: filterTooltip,
-              trailingIcon:
-                  isOpen
-                      ? Icons.expand_less_rounded
-                      : Icons.expand_more_rounded,
-              onTap: toggle,
-            ),
-          ),
+      triggerBuilder: (context, isOpen, toggle) => KeyedSubtree(
+        key: filterButtonKey,
+        child: AppFilterEntryButton(
+          icon: filterIcon,
+          label: filterLabel,
+          tooltip: filterTooltip,
+          trailingIcon: isOpen
+              ? Icons.expand_less_rounded
+              : Icons.expand_more_rounded,
+          onTap: toggle,
+        ),
+      ),
     );
   }
 
@@ -162,50 +173,59 @@ class AppListHeader extends StatelessWidget {
     final spacing = context.appSpacing;
     final componentTokens = context.appComponentTokens;
     // 无筛选维度的列表（两个筛选参数都不传）左侧不占位，信息槽从最左开始。
-    final Widget? leading =
-        _isSelectionMode
-            ? AppIconButton(
-              key: selectionExitButtonKey,
-              icon: const Icon(Icons.close_rounded),
-              tooltip: selectionExitTooltip,
-              semanticLabel: selectionExitTooltip,
-              // regular = iconSizeMd + md*2 = 44，达到 iOS HIG 的最小点按尺寸。
-              size: AppIconButtonSize.regular,
-              onPressed: onExitSelection,
-            )
-            : (_hasFilterEntry ? _buildFilterEntry(context) : null);
+    final Widget? leading = _isSelectionMode
+        ? AppIconButton(
+            key: selectionExitButtonKey,
+            icon: const Icon(Icons.close_rounded),
+            tooltip: selectionExitTooltip,
+            semanticLabel: selectionExitTooltip,
+            // regular = iconSizeMd + md*2 = 44，达到 iOS HIG 的最小点按尺寸。
+            size: AppIconButtonSize.regular,
+            onPressed: onExitSelection,
+          )
+        : (_hasFilterEntry ? _buildFilterEntry(context) : null);
 
-    return Padding(
-      padding: EdgeInsets.only(top: spacing.xs),
-      child: SizedBox(
-        height: componentTokens.mobileTopTabHeight,
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            if (leading != null) ...[leading, SizedBox(width: spacing.sm)],
-            Expanded(
-              child: _HeaderSlotsViewport(
-                informationSlots:
-                    _isSelectionMode
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: EdgeInsets.only(top: spacing.xs),
+          child: SizedBox(
+            height: componentTokens.mobileTopTabHeight,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                if (leading != null) ...[leading, SizedBox(width: spacing.sm)],
+                Expanded(
+                  child: _HeaderSlotsViewport(
+                    informationSlots: _isSelectionMode
                         ? <Widget>[
-                          Text(
-                            selectionLabel!,
-                            key: const Key('app-list-header-selection-label'),
-                            style: resolveAppTextStyle(
-                              context,
-                              size: AppTextSize.s14,
-                              weight: AppTextWeight.medium,
-                              tone: AppTextTone.primary,
+                            Text(
+                              selectionLabel!,
+                              key: const Key('app-list-header-selection-label'),
+                              style: resolveAppTextStyle(
+                                context,
+                                size: AppTextSize.s14,
+                                weight: AppTextWeight.medium,
+                                tone: AppTextTone.primary,
+                              ),
                             ),
-                          ),
-                        ]
+                          ]
                         : informationSlots,
-                actionSlots: actionSlots,
-              ),
+                    actionSlots: actionSlots,
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
-      ),
+        AppFilterUpdateBar(
+          state: filterUpdate,
+          hasPreviousItems: hasPreviousFilterItems,
+          onRetry: onRetryFilter,
+        ),
+      ],
     );
   }
 }
@@ -276,32 +296,31 @@ class _HeaderSlotsViewport extends StatelessWidget {
   Widget build(BuildContext context) {
     final spacing = context.appSpacing;
     return LayoutBuilder(
-      builder:
-          (context, constraints) => SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: ConstrainedBox(
-              constraints: BoxConstraints(minWidth: constraints.maxWidth),
-              child: IntrinsicWidth(
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Row(
-                      key: const Key('app-list-header-information-slots'),
-                      mainAxisSize: MainAxisSize.min,
-                      children: _withSpacing(informationSlots, spacing.xs),
-                    ),
-                    if (informationSlots.isNotEmpty && actionSlots.isNotEmpty)
-                      SizedBox(width: spacing.lg),
-                    Row(
-                      key: const Key('app-list-header-action-slots'),
-                      mainAxisSize: MainAxisSize.min,
-                      children: _withSpacing(actionSlots, spacing.xs),
-                    ),
-                  ],
+      builder: (context, constraints) => SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(minWidth: constraints.maxWidth),
+          child: IntrinsicWidth(
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  key: const Key('app-list-header-information-slots'),
+                  mainAxisSize: MainAxisSize.min,
+                  children: _withSpacing(informationSlots, spacing.xs),
                 ),
-              ),
+                if (informationSlots.isNotEmpty && actionSlots.isNotEmpty)
+                  SizedBox(width: spacing.lg),
+                Row(
+                  key: const Key('app-list-header-action-slots'),
+                  mainAxisSize: MainAxisSize.min,
+                  children: _withSpacing(actionSlots, spacing.xs),
+                ),
+              ],
             ),
           ),
+        ),
+      ),
     );
   }
 

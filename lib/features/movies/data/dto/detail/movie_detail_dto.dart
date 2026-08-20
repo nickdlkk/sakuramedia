@@ -6,7 +6,6 @@ class MovieDetailDto {
     required this.javdbId,
     required this.movieNumber,
     required this.title,
-    this.titleZh = '',
     this.seriesId,
     required this.seriesName,
     required this.makerName,
@@ -24,8 +23,6 @@ class MovieDetailDto {
     required this.isSubscribed,
     required this.canPlay,
     required this.summary,
-    required this.descZh,
-    required this.desc,
     required this.thinCoverImage,
     required this.plotImages,
     required this.actors,
@@ -42,7 +39,6 @@ class MovieDetailDto {
   final String javdbId;
   final String movieNumber;
   final String title;
-  final String titleZh;
   final int? seriesId;
   final String seriesName;
   final String makerName;
@@ -60,8 +56,6 @@ class MovieDetailDto {
   final bool isSubscribed;
   final bool canPlay;
   final String summary;
-  final String descZh;
-  final String desc;
   final MovieImageDto? thinCoverImage;
   final List<MovieImageDto> plotImages;
   final List<MovieActorDto> actors;
@@ -69,23 +63,12 @@ class MovieDetailDto {
   final List<MovieMediaItemDto> mediaItems;
   final List<MoviePlaylistSummaryDto> playlists;
 
-  String get preferredDescription {
-    for (final candidate in <String>[descZh, summary, desc]) {
-      final resolved = candidate.trim();
-      if (resolved.isNotEmpty) {
-        return resolved;
-      }
-    }
-    return '';
-  }
+  /// DMM 简介与翻译链路已下线，desc/desc_zh 随 API 移除（存量收拢进 [summary]），
+  /// 这里保留 getter 只做 trim。
+  String get preferredDescription => summary.trim();
 
-  String get preferredTitle {
-    final resolvedTitleZh = titleZh.trim();
-    if (resolvedTitleZh.isNotEmpty) {
-      return resolvedTitleZh;
-    }
-    return title.trim();
-  }
+  /// DMM 中文标题已收拢进 [title]，保留 getter 只做 trim。
+  String get preferredTitle => title.trim();
 
   factory MovieDetailDto.fromJson(Map<String, dynamic> json) {
     return MovieDetailDto(
@@ -94,7 +77,6 @@ class MovieDetailDto {
       javdbId: json['javdb_id'] as String? ?? '',
       movieNumber: json['movie_number'] as String? ?? '',
       title: json['title'] as String? ?? '',
-      titleZh: json['title_zh'] as String? ?? '',
       seriesId: _intFromJson(json['series_id']),
       seriesName: json['series_name'] as String? ?? '',
       makerName: json['maker_name'] as String? ?? '',
@@ -112,8 +94,6 @@ class MovieDetailDto {
       isSubscribed: json['is_subscribed'] as bool? ?? false,
       canPlay: json['can_play'] as bool? ?? false,
       summary: json['summary'] as String? ?? '',
-      descZh: json['desc_zh'] as String? ?? '',
-      desc: json['desc'] as String? ?? '',
       thinCoverImage: _movieImageFromJson(json['thin_cover_image']),
       plotImages: _listFromJson(
         json['plot_images'],

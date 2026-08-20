@@ -5,11 +5,11 @@ import 'package:sakuramedia/theme.dart';
 ///
 /// **刻意与桌面 `AppFilterPopover` 的面板结构逐行对齐**——同样是
 /// `Flexible(SingleChildScrollView)` 包内容、footer 留在滚动区之外。两端筛选
-/// 面板因此是同一套内容 + 同一套行为（即时生效、footer 里重置），只有外层容器
+/// 面板因此是同一套内容 + 同一套行为（条件即时更新、footer 里重置），只有外层容器
 /// 不同：桌面浮层、移动底抽屉。
 ///
-/// 这里**没有标题行、没有确定按钮**：筛选即时生效，不需要提交动作；关闭靠下拉
-/// 或点遮罩，与桌面点面板外部收起同义。
+/// 这里**没有标题行、没有确定按钮**：筛选控件先动，服务端结果由 Provider 防抖
+/// 更新；关闭靠下拉或点遮罩，与桌面点面板外部收起同义。
 class AppMobileFilterDrawerScaffold extends StatelessWidget {
   const AppMobileFilterDrawerScaffold({
     super.key,

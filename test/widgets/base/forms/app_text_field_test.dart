@@ -205,4 +205,26 @@ void main() {
       ),
     );
   });
+
+  testWidgets('applies a custom style override for code editing', (
+    WidgetTester tester,
+  ) async {
+    const style = TextStyle(
+      fontSize: 18,
+      fontFamilyFallback: <String>['Menlo'],
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: sakuraThemeData,
+        home: const Material(
+          child: AppTextField(fieldKey: Key('styled-field'), style: style),
+        ),
+      ),
+    );
+
+    final editableText = tester.widget<EditableText>(find.byType(EditableText));
+
+    expect(editableText.style.fontSize, 18);
+    expect(editableText.style.fontFamilyFallback, <String>['Menlo']);
+  });
 }

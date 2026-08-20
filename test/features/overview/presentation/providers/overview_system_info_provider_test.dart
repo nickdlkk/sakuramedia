@@ -232,17 +232,15 @@ void main() {
         return _jsonResponse(_cloud115StatusJson(alive: 1));
       },
     );
-    for (final provider in <String>['javdb', 'dmm']) {
-      adapter.enqueueJson(
-        method: 'GET',
-        path: '/status/metadata-providers/$provider/test',
-        body: <String, dynamic>{
-          'healthy': true,
-          'provider': provider,
-          'error': null,
-        },
-      );
-    }
+    adapter.enqueueJson(
+      method: 'GET',
+      path: '/status/metadata-providers/javdb/test',
+      body: <String, dynamic>{
+        'healthy': true,
+        'provider': 'javdb',
+        'error': null,
+      },
+    );
 
     keepAlive();
     await settle();
@@ -258,7 +256,6 @@ void main() {
     expect(state.isTestingCloud115Authentication, isTrue);
     expect(state.isTestingMetadataProviders, isFalse);
     expect(state.javdbHealthy, isTrue);
-    expect(state.dmmHealthy, isTrue);
 
     releaseCloud115.complete();
     await cloud115Probe;

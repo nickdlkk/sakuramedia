@@ -29,9 +29,6 @@ class ResourceTaskActionSkippedItemDto {
   /// 领域合格性：影片已删除。
   static const String reasonMovieNotFound = 'movie_not_found';
 
-  /// 领域合格性：缺原始简介（翻译任务）。
-  static const String reasonMovieDescMissing = 'movie_desc_missing';
-
   /// 领域合格性：缺 JavDB ID（互动同步）。
   static const String reasonMovieJavdbIdMissing = 'movie_javdb_id_missing';
 
@@ -56,8 +53,6 @@ class ResourceTaskActionSkippedItemDto {
         return '当前状态不支持该操作';
       case reasonMovieNotFound:
         return '影片已被删除';
-      case reasonMovieDescMissing:
-        return '影片缺少原始简介';
       case reasonMovieJavdbIdMissing:
         return '影片缺少 JavDB ID';
       case reasonMovieNotSubscribed:
@@ -117,21 +112,19 @@ class ResourceTaskActionResultDto {
       taskKey: json['task_key'] as String? ?? '',
       action: json['action'] as String? ?? '',
       taskRunId: asIntOrNull(json['task_run_id']),
-      acceptedResourceIds:
-          rawAccepted is List
-              ? rawAccepted
-                  .whereType<num>()
-                  .map((value) => value.toInt())
-                  .toList(growable: false)
-              : const <int>[],
-      skipped:
-          rawSkipped is List
-              ? rawSkipped
-                  .map(asMapOrNull)
-                  .whereType<Map<String, dynamic>>()
-                  .map(ResourceTaskActionSkippedItemDto.fromJson)
-                  .toList(growable: false)
-              : const <ResourceTaskActionSkippedItemDto>[],
+      acceptedResourceIds: rawAccepted is List
+          ? rawAccepted
+                .whereType<num>()
+                .map((value) => value.toInt())
+                .toList(growable: false)
+          : const <int>[],
+      skipped: rawSkipped is List
+          ? rawSkipped
+                .map(asMapOrNull)
+                .whereType<Map<String, dynamic>>()
+                .map(ResourceTaskActionSkippedItemDto.fromJson)
+                .toList(growable: false)
+          : const <ResourceTaskActionSkippedItemDto>[],
     );
   }
 }

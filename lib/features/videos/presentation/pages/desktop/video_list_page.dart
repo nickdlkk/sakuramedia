@@ -61,8 +61,9 @@ class _DesktopVideoListPageState extends ConsumerState<DesktopVideoListPage>
         .obtain(
           key: desktopVideosPageCacheKey(),
           resolveLinks: () {
-            final link =
-                ref.read(videoSummaryProvider(_scope).notifier).cacheLink;
+            final link = ref
+                .read(videoSummaryProvider(_scope).notifier)
+                .cacheLink;
             return link == null ? const [] : [link];
           },
         );
@@ -161,18 +162,16 @@ class _DesktopVideoListPageState extends ConsumerState<DesktopVideoListPage>
     showDesktopVideoActionsDialog(
       context,
       video: video,
-      onPlay:
-          () => showVideoQuickPlayDialog(
-            context,
-            videoId: video.id,
-            title: video.preferredTitle,
-          ),
+      onPlay: () => showVideoQuickPlayDialog(
+        context,
+        videoId: video.id,
+        title: video.preferredTitle,
+      ),
       onAddToCollection: () => _addToCollection(video),
       onDelete: () => _deleteVideo(video),
       collections: video.collections,
-      onCollectionTap:
-          (ref) =>
-              context.pushDesktopVideoCollectionDetail(collectionId: ref.id),
+      onCollectionTap: (ref) =>
+          context.pushDesktopVideoCollectionDetail(collectionId: ref.id),
     );
   }
 
@@ -267,11 +266,8 @@ class _DesktopVideoListPageState extends ConsumerState<DesktopVideoListPage>
       context,
       title: '正在加入「${target.name}」',
       items: selected,
-      action:
-          (video) => api.addCollectionItem(
-            collectionId: target.id,
-            videoItemId: video.id,
-          ),
+      action: (video) =>
+          api.addCollectionItem(collectionId: target.id, videoItemId: video.id),
     );
     if (!mounted) {
       return;
@@ -330,17 +326,16 @@ class _DesktopVideoListPageState extends ConsumerState<DesktopVideoListPage>
             VideoListContent(
               paged: paged ?? const PagedListState<VideoItemListItemDto>(),
               isInitialLoading: videosAsync.isLoading && summary == null,
-              initialErrorMessage:
-                  videosAsync.hasError && summary == null
-                      ? '视频列表加载失败，请稍后重试'
-                      : null,
+              initialErrorMessage: videosAsync.hasError && summary == null
+                  ? '视频列表加载失败，请稍后重试'
+                  : null,
               filterState: filter,
               onFilterChanged: _applySort,
-              onLoadMore:
-                  () =>
-                      ref
-                          .read(videoSummaryProvider(_scope).notifier)
-                          .loadMore(),
+              onRetryFilter: () => unawaited(
+                ref.read(videoSummaryProvider(_scope).notifier).retryFilter(),
+              ),
+              onLoadMore: () =>
+                  ref.read(videoSummaryProvider(_scope).notifier).loadMore(),
               contentKey: const Key('videos-page-list'),
               totalKey: const Key('videos-page-total'),
               sectionSpacing: context.appSpacing.lg,
@@ -379,8 +374,9 @@ class _DesktopVideoListPageState extends ConsumerState<DesktopVideoListPage>
       countKey: const Key('videos-selection-count-text'),
       selectAllLabel: allSelected ? '取消全选' : '全选(${_loadedVideos.length})',
       selectAllKey: const Key('videos-select-all-button'),
-      onToggleAll:
-          _loadedVideos.isEmpty ? null : () => toggleSelectAll(videoIds),
+      onToggleAll: _loadedVideos.isEmpty
+          ? null
+          : () => toggleSelectAll(videoIds),
       actions: [
         AppButton(
           key: const Key('videos-batch-add-collection-button'),
@@ -458,9 +454,11 @@ class _DesktopVideoListPageState extends ConsumerState<DesktopVideoListPage>
       );
     }
     if (async.isLoading && collections.isEmpty) {
-      return const SizedBox(
-        height: 60,
-        child: Center(child: CircularProgressIndicator()),
+      return CollectionCardSkeletonRow(
+        key: const Key('videos-collections-skeleton-row'),
+        height: 172,
+        itemWidth: 210,
+        itemSpacing: context.appSpacing.md,
       );
     }
     if (collections.isEmpty) {
@@ -472,18 +470,17 @@ class _DesktopVideoListPageState extends ConsumerState<DesktopVideoListPage>
         key: const Key('videos-collections-row'),
         scrollDirection: Axis.horizontal,
         itemCount: collections.length,
-        separatorBuilder:
-            (context, index) => SizedBox(width: context.appSpacing.md),
+        separatorBuilder: (context, index) =>
+            SizedBox(width: context.appSpacing.md),
         itemBuilder: (context, index) {
           final collection = collections[index];
           return SizedBox(
             width: 210,
             child: CollectionCard.video(
               collection: collection,
-              onTap:
-                  () => context.pushDesktopVideoCollectionDetail(
-                    collectionId: collection.id,
-                  ),
+              onTap: () => context.pushDesktopVideoCollectionDetail(
+                collectionId: collection.id,
+              ),
             ),
           );
         },

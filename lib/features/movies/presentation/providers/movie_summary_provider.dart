@@ -91,6 +91,8 @@ class MovieSummary extends _$MovieSummary
         numberSource: filter.movie.numberSource,
         sort: filter.movie.sortExpression,
         year: filter.movie.year,
+        heatMin: filter.movie.heatMin,
+        heatMax: filter.movie.heatMax,
       ),
       MovieSummarySource.tags => moviesApi.getMovies(
         tagIds: filter.tagIds,
@@ -102,6 +104,8 @@ class MovieSummary extends _$MovieSummary
         numberSource: filter.movie.numberSource,
         sort: filter.movie.sortExpression,
         year: filter.movie.year,
+        heatMin: filter.movie.heatMin,
+        heatMax: filter.movie.heatMax,
       ),
       MovieSummarySource.subscribedActorsLatest => moviesApi
           .getSubscribedActorsLatestMovies(page: page, pageSize: pageSize),
@@ -114,6 +118,8 @@ class MovieSummary extends _$MovieSummary
         numberSource: filter.movie.numberSource,
         sort: filter.movie.sortExpression,
         year: filter.movie.year,
+        heatMin: filter.movie.heatMin,
+        heatMax: filter.movie.heatMax,
       ),
       MovieSummarySource.playlist => ref
           .read(playlistsApiProvider)
@@ -356,15 +362,19 @@ class MovieSummary extends _$MovieSummary
     }
     var paged = current.paged;
     for (final change in changes) {
-      paged =
-          !change.isSubscribed && _removesUnsubscribedMovies
-              ? paged.removeWhere(
-                (item) => item.movieNumber == change.movieNumber,
-              )
-              : paged.patchWhere(
-                (item) => item.movieNumber == change.movieNumber,
-                (item) => item.copyWith(isSubscribed: change.isSubscribed),
-              );
+      final shouldRemoveRow =
+          _removesSubscriptionFlipRows &&
+          (activeFilter.movie.status == MovieStatusFilter.subscribed
+              ? !change.isSubscribed
+              : change.isSubscribed);
+      paged = shouldRemoveRow
+          ? paged.removeWhere(
+            (item) => item.movieNumber == change.movieNumber,
+          )
+          : paged.patchWhere(
+            (item) => item.movieNumber == change.movieNumber,
+            (item) => item.copyWith(isSubscribed: change.isSubscribed),
+          );
     }
     if (identical(paged, current.paged)) {
       return;
@@ -401,10 +411,15 @@ class MovieSummary extends _$MovieSummary
                 MovieCollectionTypeFilter.single);
   }
 
-  bool get _removesUnsubscribedMovies {
-    return (scope.source == MovieSummarySource.movies ||
-            scope.source == MovieSummarySource.tags) &&
-        activeFilter.movie.status == MovieStatusFilter.subscribed;
+  bool get _removesSubscriptionFlipRows {
+    if (scope.source != MovieSummarySource.movies &&
+        scope.source != MovieSummarySource.tags) {
+      return false;
+    }
+    // subscribed 视图：取消订阅的影片不再满足条件；
+    // unsubscribed 视图：订阅的影片不再满足条件。两种视图都就地移除翻转行。
+    return activeFilter.movie.status == MovieStatusFilter.subscribed ||
+        activeFilter.movie.status == MovieStatusFilter.unsubscribed;
   }
 
   void _patchSubscription(String movieNumber, bool isSubscribed) {
