@@ -1,18 +1,17 @@
-import 'dart:async';
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:oktoast/oktoast.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sakuramedia/app/providers/app_shell_providers.dart';
 import 'package:sakuramedia/features/activity/presentation/providers/notification_center_provider.dart';
-import 'package:sakuramedia/app/app_version_info_state.dart';
 import 'package:sakuramedia/features/image_search/presentation/image_search_file_picker.dart';
+import 'package:sakuramedia/features/image_search/presentation/providers/image_search_state.dart';
 import 'package:sakuramedia/routes/app_navigation_actions.dart';
 import 'package:sakuramedia/routes/app_route_spec.dart';
 import 'package:sakuramedia/theme.dart';
 import 'package:sakuramedia/widgets/base/actions/app_icon_button.dart';
 import 'package:sakuramedia/widgets/base/layout/cards/app_badge.dart';
+import 'package:sakuramedia/widgets/shell/app_version_info_card.dart';
 import 'package:sakuramedia/widgets/shell/window/app_window_drag_area.dart';
 import 'package:sakuramedia/widgets/domain/search/catalog_search_field.dart';
 
@@ -31,28 +30,30 @@ class AppSidebar extends ConsumerWidget {
     final isCompact = ref.watch(appShellSidebarCollapsedProvider);
     final sidebarTokens = context.appSidebarTokens;
     final appColors = context.appColors;
-    final useMacSidebarGlass = _useMacSidebarGlass;
-    final width =
-        isCompact ? sidebarTokens.collapsedWidth : sidebarTokens.expandedWidth;
+    final useDesktopSidebarGlass = _useDesktopSidebarGlass;
+    final glassTint = defaultTargetPlatform == TargetPlatform.windows
+        ? appColors.windowsSidebarGlassTint
+        : appColors.desktopSidebarGlassTint;
+    final width = isCompact
+        ? sidebarTokens.collapsedWidth
+        : sidebarTokens.expandedWidth;
 
     return AnimatedContainer(
       key: const Key('desktop-shell-sidebar'),
       duration: const Duration(milliseconds: 180),
       width: width,
       decoration: BoxDecoration(
-        color:
-            useMacSidebarGlass
-                ? appColors.desktopSidebarGlassTint
-                : appColors.sidebarBackground,
+        color: useDesktopSidebarGlass
+            ? glassTint
+            : appColors.sidebarBackground,
         border: Border(
           right: BorderSide(
-            color:
-                useMacSidebarGlass
-                    ? appColors.borderSubtle.withValues(alpha: 0.68)
-                    : appColors.borderSubtle,
+            color: useDesktopSidebarGlass
+                ? appColors.borderSubtle.withValues(alpha: 0.68)
+                : appColors.borderSubtle,
           ),
         ),
-        boxShadow: useMacSidebarGlass ? const [] : context.appShadows.panel,
+        boxShadow: useDesktopSidebarGlass ? const [] : context.appShadows.panel,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -65,13 +66,12 @@ class AppSidebar extends ConsumerWidget {
                 final toggleButton = AppIconButton(
                   key: const Key('sidebar-toggle-button'),
                   iconColor: context.appTextPalette.primary,
-                  onPressed:
-                      ref
-                          .read(appShellSidebarCollapsedProvider.notifier)
-                          .toggle,
+                  onPressed: ref
+                      .read(appShellSidebarCollapsedProvider.notifier)
+                      .toggle,
                   icon: Icon(isCompact ? Icons.menu_open : Icons.menu_open),
                 );
-                if (useMacSidebarGlass) {
+                if (defaultTargetPlatform == TargetPlatform.macOS) {
                   return Stack(
                     children: [
                       const Positioned.fill(
@@ -98,7 +98,7 @@ class AppSidebar extends ConsumerWidget {
           Divider(
             key: const Key('sidebar-header-divider'),
             height: 1,
-            color: _sidebarDividerColor(appColors, useMacSidebarGlass),
+            color: _sidebarDividerColor(appColors, useDesktopSidebarGlass),
           ),
           Padding(
             padding: EdgeInsets.all(context.appSpacing.sm),
@@ -110,10 +110,9 @@ class AppSidebar extends ConsumerWidget {
           Expanded(
             child: _SidebarNavScrollArea(
               horizontalPadding: context.appSpacing.sm,
-              fadeColor:
-                  useMacSidebarGlass
-                      ? appColors.desktopSidebarGlassTint
-                      : appColors.sidebarBackground,
+              fadeColor: useDesktopSidebarGlass
+                  ? glassTint
+                  : appColors.sidebarBackground,
               children: _buildNavChildren(context, isCompact),
             ),
           ),
@@ -124,10 +123,13 @@ class AppSidebar extends ConsumerWidget {
               children: [
                 Divider(
                   height: 1,
-                  color: _sidebarDividerColor(appColors, useMacSidebarGlass),
+                  color: _sidebarDividerColor(
+                    appColors,
+                    useDesktopSidebarGlass,
+                  ),
                 ),
                 SizedBox(height: context.appSpacing.sm),
-                _SidebarVersionInfo(isCompact: isCompact),
+                AppVersionInfoCard(isCompact: isCompact),
                 SizedBox(height: context.appSpacing.sm),
                 AppSidebarItem(
                   key: const Key('sidebar-logout-button'),
@@ -188,7 +190,10 @@ class _SidebarSectionHeader extends StatelessWidget {
         padding: EdgeInsets.symmetric(vertical: context.appSpacing.xs),
         child: Divider(
           height: 1,
-          color: _sidebarDividerColor(context.appColors, _useMacSidebarGlass),
+          color: _sidebarDividerColor(
+            context.appColors,
+            _useDesktopSidebarGlass,
+          ),
         ),
       );
     }
@@ -324,127 +329,6 @@ class _SidebarNavScrollAreaState extends State<_SidebarNavScrollArea> {
 
 const double _sidebarNavFadeHeight = 32;
 
-class _SidebarVersionInfo extends ConsumerStatefulWidget {
-  const _SidebarVersionInfo({required this.isCompact});
-
-  final bool isCompact;
-
-  @override
-  ConsumerState<_SidebarVersionInfo> createState() =>
-      _SidebarVersionInfoState();
-}
-
-class _SidebarVersionInfoState extends ConsumerState<_SidebarVersionInfo> {
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        unawaited(ref.read(appVersionInfoProvider.notifier).load());
-      }
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final versionInfo =
-        ref.watch(appVersionInfoProvider).value ?? AppVersionInfoState.initial;
-    final frontendVersion = versionInfo.frontendVersionLabel;
-    final backendVersion = versionInfo.backendVersionLabel;
-
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final shouldUseCompact =
-            widget.isCompact || constraints.maxWidth < sidebarVersionMinWidth;
-        if (shouldUseCompact) {
-          return Tooltip(
-            message: versionInfo.tooltipLabel,
-            waitDuration: const Duration(milliseconds: 300),
-            child: Center(
-              child: Container(
-                key: const Key('sidebar-version-info-collapsed'),
-                width: context.appSidebarTokens.itemHeight,
-                height: context.appSidebarTokens.itemHeight,
-                decoration: BoxDecoration(
-                  color: context.appColors.surfaceMuted,
-                  borderRadius: context.appRadius.smBorder,
-                ),
-                child: Icon(
-                  Icons.info_outline_rounded,
-                  size: context.appComponentTokens.iconSizeSm,
-                  color: context.appTextPalette.muted,
-                ),
-              ),
-            ),
-          );
-        }
-
-        return Padding(
-          key: const Key('sidebar-version-info'),
-          padding: EdgeInsets.all(context.appSpacing.sm),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                '系统版本',
-                style: resolveAppTextStyle(
-                  context,
-                  size: AppTextSize.s12,
-                  weight: AppTextWeight.medium,
-                  tone: AppTextTone.tertiary,
-                ),
-              ),
-              SizedBox(height: context.appSpacing.xs),
-              _SidebarVersionRow(label: '客户端', value: frontendVersion),
-              SizedBox(height: context.appSpacing.xs),
-              _SidebarVersionRow(label: '服务端', value: backendVersion),
-            ],
-          ),
-        );
-      },
-    );
-  }
-}
-
-const double sidebarVersionMinWidth = 144;
-
-class _SidebarVersionRow extends StatelessWidget {
-  const _SidebarVersionRow({required this.label, required this.value});
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Text(
-          label,
-          style: resolveAppTextStyle(
-            context,
-            size: AppTextSize.s12,
-            tone: AppTextTone.muted,
-          ),
-        ),
-        SizedBox(width: context.appSpacing.sm),
-        Expanded(
-          child: Text(
-            value,
-            textAlign: TextAlign.end,
-            overflow: TextOverflow.ellipsis,
-            style: resolveAppTextStyle(
-              context,
-              size: AppTextSize.s12,
-              weight: AppTextWeight.medium,
-              tone: AppTextTone.tertiary,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
 class AppSidebarGroup extends ConsumerWidget {
   const AppSidebarGroup({
     super.key,
@@ -523,11 +407,10 @@ class _SidebarSearchSectionState extends State<_SidebarSearchSection> {
             borderRadius: context.appRadius.smBorder,
             child: InkWell(
               key: const Key('sidebar-search-button'),
-              onTap:
-                  () => context.pushDesktopSearch(
-                    query: '',
-                    fallbackPath: widget.currentPath,
-                  ),
+              onTap: () => context.pushDesktopSearch(
+                query: '',
+                fallbackPath: widget.currentPath,
+              ),
               borderRadius: context.appRadius.smBorder,
               child: SizedBox(
                 height: context.appSidebarTokens.itemHeight,
@@ -545,15 +428,17 @@ class _SidebarSearchSectionState extends State<_SidebarSearchSection> {
         return CatalogSearchField(
           key: const Key('sidebar-search-field'),
           fieldKey: const Key('sidebar-search-input'),
-          searchButtonKey: const Key('sidebar-search-submit'),
           imageSearchButtonKey: const Key('sidebar-search-image'),
+          textImageSearchButtonKey: const Key('sidebar-search-text-image'),
           controller: _controller,
           hintText: '如 SSNI-888、三上悠亚',
+          showSearchButton: false,
           showImageSearchButton: true,
+          showTextImageSearchButton: true,
           fillColor: context.appColors.surfaceElevated,
           onSubmitted: (_) => _submit(context),
           onImageSearchTap: () => _pickAndOpenImageSearch(context),
-          onSearchTap: () => _submit(context),
+          onTextImageSearchTap: () => _openTextImageSearch(context),
         );
       },
     );
@@ -566,6 +451,13 @@ class _SidebarSearchSectionState extends State<_SidebarSearchSection> {
     }
     context.pushDesktopSearch(query: query, fallbackPath: widget.currentPath);
     _controller.clear();
+  }
+
+  void _openTextImageSearch(BuildContext context) {
+    context.pushDesktopImageSearch(
+      fallbackPath: widget.currentPath,
+      initialInputKind: ImageSearchInputKind.text,
+    );
   }
 
   Future<void> _pickAndOpenImageSearch(BuildContext context) async {
@@ -665,20 +557,19 @@ class _AppSidebarItemState extends State<AppSidebarItem> {
   Widget build(BuildContext context) {
     final appColors = context.appColors;
     final sidebarTokens = context.appSidebarTokens;
-    final useMacSidebarGlass = _useMacSidebarGlass;
+    final useDesktopSidebarGlass = _useDesktopSidebarGlass;
     final isHovered = _hovered && !widget.selected;
-    final backgroundColor =
-        useMacSidebarGlass
-            ? widget.selected
-                ? appColors.desktopSidebarGlassActive
-                : isHovered
-                ? appColors.desktopSidebarGlassHover
-                : Colors.transparent
-            : widget.selected
-            ? appColors.sidebarActiveBackground
-            : isHovered
-            ? appColors.sidebarHoverBackground
-            : appColors.sidebarBackground;
+    final backgroundColor = useDesktopSidebarGlass
+        ? widget.selected
+              ? appColors.desktopSidebarGlassActive
+              : isHovered
+              ? appColors.desktopSidebarGlassHover
+              : Colors.transparent
+        : widget.selected
+        ? appColors.sidebarActiveBackground
+        : isHovered
+        ? appColors.sidebarHoverBackground
+        : appColors.sidebarBackground;
 
     final foregroundColor = context.appTextPalette.primary;
 
@@ -708,20 +599,18 @@ class _AppSidebarItemState extends State<AppSidebarItem> {
               duration: const Duration(milliseconds: 120),
               height: sidebarTokens.itemHeight,
               padding: EdgeInsets.symmetric(
-                horizontal:
-                    widget.collapsed
-                        ? context.appSpacing.sm
-                        : context.appSpacing.md,
+                horizontal: widget.collapsed
+                    ? context.appSpacing.sm
+                    : context.appSpacing.md,
               ),
               decoration: BoxDecoration(
                 color: backgroundColor,
                 borderRadius: context.appRadius.smBorder,
               ),
               child: Row(
-                mainAxisAlignment:
-                    widget.collapsed
-                        ? MainAxisAlignment.center
-                        : MainAxisAlignment.start,
+                mainAxisAlignment: widget.collapsed
+                    ? MainAxisAlignment.center
+                    : MainAxisAlignment.start,
                 children: [
                   _buildIcon(context, foregroundColor),
                   if (!widget.collapsed) ...[
@@ -757,10 +646,12 @@ class _AppSidebarItemState extends State<AppSidebarItem> {
   }
 }
 
-bool get _useMacSidebarGlass =>
-    !kIsWeb && defaultTargetPlatform == TargetPlatform.macOS;
+bool get _useDesktopSidebarGlass =>
+    !kIsWeb &&
+    (defaultTargetPlatform == TargetPlatform.macOS ||
+        defaultTargetPlatform == TargetPlatform.windows);
 
-Color _sidebarDividerColor(AppColors appColors, bool useMacSidebarGlass) =>
-    useMacSidebarGlass
-        ? appColors.borderSubtle.withValues(alpha: 0.68)
-        : appColors.borderSubtle;
+Color _sidebarDividerColor(AppColors appColors, bool useDesktopSidebarGlass) =>
+    useDesktopSidebarGlass
+    ? appColors.borderSubtle.withValues(alpha: 0.68)
+    : appColors.borderSubtle;

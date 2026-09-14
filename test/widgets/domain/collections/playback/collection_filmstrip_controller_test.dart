@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sakuramedia/features/movies/data/dto/listing/movie_list_item_dto.dart';
 import 'package:sakuramedia/widgets/domain/collections/playback/collection_filmstrip_controller.dart';
@@ -36,6 +37,68 @@ CollectionEpisodeFrameLoader _loaderFrom(
 }
 
 void main() {
+  test('移出复用已加载帧，连续移除后点击与高亮仍映射到正确集', () async {
+    final requests = <int>[];
+    final loader = _loaderFrom([
+      [0, 10],
+      [0],
+      [0, 30],
+    ]);
+    final controller = CollectionFilmstripController(
+      episodeCount: 3,
+      frameLoader: (index) {
+        requests.add(index);
+        return loader(index);
+      },
+    );
+    addTearDown(controller.dispose);
+    await controller.start();
+    controller.setColumns(4);
+    controller.toggleScrollLock();
+    controller.updatePosition(2, 31);
+    controller.removeEpisode(0);
+    expect(controller.activeIndex.value, 2);
+    expect(controller.resolveTarget(2), (episodeIndex: 1, offsetSeconds: 30));
+    expect(controller.thumbnails.map((frame) => frame.mediaId), [2, 3, 3]);
+    controller.removeEpisode(0);
+    expect(controller.resolveTarget(1), (episodeIndex: 0, offsetSeconds: 30));
+    expect(controller.activeIndex.value, 1);
+    expect(controller.columns, 4);
+    expect(controller.isScrollLocked, false);
+    expect(requests, [0, 1, 2]);
+    controller.removeEpisode(0);
+    expect(controller.thumbnails, isEmpty);
+    expect(controller.activeIndex.value, isNull);
+    expect(controller.isLoading, false);
+  });
+  test('移出正在加载及尚未加载的集：丢弃迟到响应，不请求已移出集', () async {
+    final pending = Completer<CollectionEpisodeFrames>();
+    final requests = <int>[];
+    final loader = _loaderFrom([
+      [0],
+      [0],
+      [0],
+    ]);
+    final controller = CollectionFilmstripController(
+      episodeCount: 3,
+      frameLoader: (index) {
+        requests.add(index);
+        return index == 0 ? pending.future : loader(index);
+      },
+    );
+    addTearDown(controller.dispose);
+    final loading = controller.start();
+    controller.removeEpisode(0);
+    controller.removeEpisode(0);
+    pending.complete(await loader(0));
+    await loading;
+    expect(requests, [0, 2]);
+    expect(controller.thumbnails.single.mediaId, 3);
+    expect(controller.resolveTarget(0)?.episodeIndex, 0);
+    expect(controller.loadedEpisodeCount, 1);
+    expect(controller.isLoading, false);
+  });
+
   test('按集顺序无缝拼接全局帧序列（升序追加）', () async {
     final controller = CollectionFilmstripController(
       episodeCount: 3,

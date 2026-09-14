@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:sakuramedia/widgets/base/layout/scrolling/app_pinned_list_header.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:oktoast/oktoast.dart';
 import 'package:sakuramedia/core/network/api_error_message.dart';
@@ -12,10 +13,10 @@ import 'package:sakuramedia/features/clip_collections/presentation/widgets/add_t
 import 'package:sakuramedia/features/clip_collections/presentation/widgets/create_clip_collection_dialog.dart';
 import 'package:sakuramedia/features/clip_collections/presentation/widgets/pick_clip_collection_dialog.dart';
 import 'package:sakuramedia/features/clips/data/dto/media_clip_dto.dart';
-import 'package:sakuramedia/features/clips/presentation/controllers/clip_mutation_change.dart';
 import 'package:sakuramedia/features/clips/presentation/pages/mobile/clip_actions_sheet.dart';
 import 'package:sakuramedia/features/clips/presentation/pages/mobile/clip_confirm_drawer.dart';
 import 'package:sakuramedia/features/clips/presentation/pages/mobile/clip_player_page.dart';
+import 'package:sakuramedia/features/clips/presentation/actions/clip_playback_launcher.dart';
 import 'package:sakuramedia/features/clips/presentation/providers/clip_mutation_events_provider.dart';
 import 'package:sakuramedia/features/clips/presentation/providers/clips_api_provider.dart';
 import 'package:sakuramedia/features/clips/presentation/providers/clips_filter.dart';
@@ -26,7 +27,10 @@ import 'package:sakuramedia/routes/mobile_routes.dart';
 import 'package:sakuramedia/theme.dart';
 import 'package:sakuramedia/widgets/base/actions/app_button.dart';
 import 'package:sakuramedia/widgets/base/actions/app_text_button.dart';
+import 'package:sakuramedia/widgets/base/feedback/app_confirm_dialog.dart';
+import 'package:sakuramedia/widgets/base/feedback/app_cover_card_skeleton.dart';
 import 'package:sakuramedia/widgets/base/feedback/app_empty_state.dart';
+import 'package:sakuramedia/widgets/base/feedback/app_filter_result_loading_overlay.dart';
 import 'package:sakuramedia/widgets/base/feedback/app_filter_update_bar.dart';
 import 'package:sakuramedia/widgets/base/interaction/selection/multi_select_state_mixin.dart';
 import 'package:sakuramedia/widgets/base/layout/scrolling/app_adaptive_refresh_scroll_view.dart';
@@ -34,7 +38,7 @@ import 'package:sakuramedia/widgets/base/operations/batch/batch_progress_dialog.
 import 'package:sakuramedia/widgets/domain/clips/clip_cover_card.dart';
 import 'package:sakuramedia/widgets/domain/collections/collection_card.dart';
 
-/// 概览页「切片」tab：上方「我的合集」横滑区 + 下方「全部切片」网格。
+/// 概览页「切片」tab：上方「切片合集」横滑区 + 下方「全部切片」网格。
 ///
 /// 数据层与桌面 `DesktopClipsPage` 完全一致（复用同一组 provider 与 mutation
 /// 广播），仅在布局上改为移动端竖屏网格 + 底部抽屉形态的编辑交互；长按切片卡进入
@@ -50,6 +54,7 @@ class MobileOverviewClipsTab extends ConsumerStatefulWidget {
 class _MobileOverviewClipsTabState extends ConsumerState<MobileOverviewClipsTab>
     with MultiSelectStateMixin<MobileOverviewClipsTab, int> {
   final ScrollController _scrollController = ScrollController();
+  final _listHeaderKey = GlobalKey();
   bool _railRefreshScheduled = false;
 
   @override
@@ -132,24 +137,35 @@ class _MobileOverviewClipsTabState extends ConsumerState<MobileOverviewClipsTab>
 
     return Column(
       children: [
-        if (selectionMode) _buildSelectionBar(context, clips),
         Expanded(
-          child: AppAdaptiveRefreshScrollView(
-            key: const Key('mobile-clips-tab-scroll'),
-            controller: _scrollController,
-            onRefresh: _refresh,
-            slivers: <Widget>[
-              // 选择模式下隐藏合集横滑区，只剩切片网格，与移动 PornBox 一致。
-              if (!selectionMode)
-                SliverToBoxAdapter(
-                  child: _buildCollectionsSection(context, collectionsAsync),
+          child: AppFilterResultLoadingOverlay(
+            protectedHeaderKey: _listHeaderKey,
+            scrollController: _scrollController,
+            isLoading: clipsState?.paged.filterUpdate.isLoading ?? false,
+            hasPreviousItems: clips.isNotEmpty,
+            child: AppAdaptiveRefreshScrollView(
+              key: const Key('mobile-clips-tab-scroll'),
+              controller: _scrollController,
+              onRefresh: _refresh,
+              slivers: <Widget>[
+                // 选择模式下隐藏合集横滑区，只剩切片网格，与移动 PornBox 一致。
+                if (!selectionMode)
+                  SliverToBoxAdapter(
+                    child: _buildCollectionsSection(context, collectionsAsync),
+                  ),
+                AppPinnedListHeader(
+                  key: _listHeaderKey,
+                  color: context.appColors.surfaceCard,
+                  child: selectionMode
+                      ? _buildSelectionBar(context, clips)
+                      : _buildClipsHeader(context, clips),
                 ),
-              SliverToBoxAdapter(child: _buildClipsHeader(context, clips)),
-              _buildClipsSliver(context, clipsAsync, clips),
-              SliverToBoxAdapter(
-                child: _buildFooter(context, clipsState?.paged),
-              ),
-            ],
+                _buildClipsSliver(context, clipsAsync, clips),
+                SliverToBoxAdapter(
+                  child: _buildFooter(context, clipsState?.paged),
+                ),
+              ],
+            ),
           ),
         ),
         if (selectionMode) _buildBatchBar(context),
@@ -172,10 +188,10 @@ class _MobileOverviewClipsTabState extends ConsumerState<MobileOverviewClipsTab>
         Row(
           children: [
             Text(
-              '我的合集',
+              '切片合集',
               style: resolveAppTextStyle(
                 context,
-                size: AppTextSize.s16,
+                size: AppTextSize.s14,
                 weight: AppTextWeight.semibold,
                 tone: AppTextTone.primary,
               ),
@@ -210,6 +226,7 @@ class _MobileOverviewClipsTabState extends ConsumerState<MobileOverviewClipsTab>
     AsyncValue<List<ClipCollectionDto>> collectionsAsync,
     List<ClipCollectionDto> collections,
   ) {
+    final spacing = context.appSpacing;
     if (collectionsAsync.hasError && collections.isEmpty) {
       return _HintBox(
         message: apiErrorMessage(
@@ -219,15 +236,16 @@ class _MobileOverviewClipsTabState extends ConsumerState<MobileOverviewClipsTab>
       );
     }
     if (collectionsAsync.isLoading && collections.isEmpty) {
-      return const SizedBox(
-        height: 60,
-        child: Center(child: CircularProgressIndicator()),
+      return CollectionCardSkeletonRow(
+        key: const Key('mobile-clips-collections-skeleton-row'),
+        height: 148,
+        itemWidth: 168,
+        itemSpacing: spacing.sm,
       );
     }
     if (collections.isEmpty) {
       return const _HintBox(message: '还没有合集，点「新建」把喜欢的切片攒成一个连播合集吧');
     }
-    final spacing = context.appSpacing;
     return SizedBox(
       height: 148,
       child: ListView.separated(
@@ -270,7 +288,7 @@ class _MobileOverviewClipsTabState extends ConsumerState<MobileOverviewClipsTab>
                 '全部切片',
                 style: resolveAppTextStyle(
                   context,
-                  size: AppTextSize.s16,
+                  size: AppTextSize.s14,
                   weight: AppTextWeight.semibold,
                   tone: AppTextTone.primary,
                 ),
@@ -336,7 +354,7 @@ class _MobileOverviewClipsTabState extends ConsumerState<MobileOverviewClipsTab>
     final current = ref.read(clipsOverviewProvider).value?.filter.sort;
     if (current == sort) return;
     if (_scrollController.hasClients) {
-      _scrollController.jumpTo(0);
+      AppPinnedListHeader.scrollToStart(_listHeaderKey, _scrollController);
     }
     unawaited(ref.read(clipsOverviewProvider.notifier).applySort(sort));
   }
@@ -355,18 +373,30 @@ class _MobileOverviewClipsTabState extends ConsumerState<MobileOverviewClipsTab>
       return const SliverToBoxAdapter(child: SizedBox.shrink());
     }
     if (clipsAsync.isLoading && clips.isEmpty) {
-      return const SliverToBoxAdapter(
-        child: SizedBox(
-          height: 200,
-          child: Center(
-            child: SizedBox(
-              key: Key('mobile-clips-loading'),
-              width: 32,
-              height: 32,
-              child: CircularProgressIndicator(),
+      final spacing = context.appSpacing;
+      return SliverLayoutBuilder(
+        builder: (context, constraints) {
+          final columns = _resolveColumnCount(
+            constraints.crossAxisExtent,
+            spacing.md,
+          );
+          return SliverGrid(
+            key: const Key('mobile-clips-grid-skeleton'),
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: columns,
+              mainAxisSpacing: spacing.md,
+              crossAxisSpacing: spacing.md,
+              childAspectRatio: 16 / 9,
             ),
-          ),
-        ),
+            delegate: SliverChildBuilderDelegate(
+              (context, index) => AppCoverCardSkeleton(
+                key: Key('mobile-clips-grid-skeleton-$index'),
+                aspectRatio: 16 / 9,
+              ),
+              childCount: 6,
+            ),
+          );
+        },
       );
     }
     if (clipsAsync.hasError && clips.isEmpty) {
@@ -459,7 +489,7 @@ class _MobileOverviewClipsTabState extends ConsumerState<MobileOverviewClipsTab>
           child: SizedBox(
             width: 24,
             height: 24,
-            child: CircularProgressIndicator(strokeWidth: 2),
+            child: CircularProgressIndicator.adaptive(strokeWidth: 2),
           ),
         ),
       );
@@ -567,7 +597,17 @@ class _MobileOverviewClipsTabState extends ConsumerState<MobileOverviewClipsTab>
     );
   }
 
-  void _playClip(MediaClipDto clip) {
+  Future<void> _playClip(MediaClipDto clip) async {
+    if (await tryLaunchExternalClipPlayback(
+      context,
+      streamUrl: clip.streamUrl,
+      title: clip.title,
+    )) {
+      return;
+    }
+    if (!mounted) {
+      return;
+    }
     // 用根 Navigator 推全屏页，覆盖底部导航；切片很短，直接传 streamUrl 即可，
     // 无需经 go_router 把签名地址放进 URL。
     Navigator.of(context, rootNavigator: true).push(
@@ -606,26 +646,23 @@ class _MobileOverviewClipsTabState extends ConsumerState<MobileOverviewClipsTab>
 
   Future<void> _deleteClip(MediaClipDto clip) async {
     final title = clip.title.trim().isEmpty ? '该切片' : '“${clip.title.trim()}”';
-    final confirmed = await showMobileClipConfirmDrawer(
+    final confirmed = await showAppConfirmDialog(
       context,
       title: '删除切片',
       message: '确认删除$title？切片文件会被一并删除，该操作不可恢复。',
       confirmLabel: '删除',
-      drawerKey: const Key('mobile-clip-delete-drawer'),
-      confirmButtonKey: const Key('mobile-clip-delete-confirm-button'),
+      danger: true,
+      dialogKey: const Key('mobile-clip-delete-drawer'),
+      confirmKey: const Key('mobile-clip-delete-confirm-button'),
+      onConfirm: () =>
+          ref.read(clipsApiProvider).deleteClip(clipId: clip.clipId),
+      failureFallback: '删除失败，请重试',
     );
-    if (!mounted || confirmed != true) {
+    if (!mounted || !confirmed) {
       return;
     }
-    try {
-      await ref.read(clipsApiProvider).deleteClip(clipId: clip.clipId);
-      ref.read(clipMutationEventsProvider.notifier).reportDeleted(clip.clipId);
-      if (mounted) {
-        showToast('已删除切片');
-      }
-    } catch (error) {
-      showToast(apiErrorMessage(error, fallback: '删除失败，请重试'));
-    }
+    ref.read(clipMutationEventsProvider.notifier).reportDeleted(clip.clipId);
+    showToast('已删除切片');
   }
 
   Future<void> _addToCollection(MediaClipDto clip) async {

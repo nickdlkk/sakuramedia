@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:sakuramedia/widgets/base/layout/scrolling/app_pinned_list_header.dart';
 import 'package:oktoast/oktoast.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sakuramedia/features/videos/presentation/providers/video_mutation_events_provider.dart';
@@ -20,18 +21,19 @@ import 'package:sakuramedia/features/videos/presentation/pages/shared/video_list
 import 'package:sakuramedia/features/videos/presentation/providers/video_summary_provider.dart';
 import 'package:sakuramedia/features/videos/presentation/providers/video_summary_scope.dart';
 import 'package:sakuramedia/features/shared/presentation/providers/paged_async_notifier.dart';
+import 'package:sakuramedia/features/videos/presentation/actions/video_playback_launcher.dart';
 import 'package:sakuramedia/features/videos/presentation/pages/desktop/video_actions_dialog.dart';
 import 'package:sakuramedia/routes/app_navigation_actions.dart';
 import 'package:sakuramedia/theme.dart';
 import 'package:sakuramedia/widgets/base/actions/app_button.dart';
 import 'package:sakuramedia/widgets/base/actions/app_text_button.dart';
+import 'package:sakuramedia/widgets/base/feedback/app_filter_result_loading_overlay.dart';
 import 'package:sakuramedia/widgets/base/interaction/refresh/app_page_refresh_scope.dart';
 import 'package:sakuramedia/widgets/base/operations/batch/batch_progress_dialog.dart';
 import 'package:sakuramedia/widgets/base/feedback/app_confirm_dialog.dart';
 import 'package:sakuramedia/widgets/domain/collections/collection_card.dart';
 import 'package:sakuramedia/widgets/base/interaction/selection/app_selection_toolbar.dart';
 import 'package:sakuramedia/widgets/base/interaction/selection/multi_select_state_mixin.dart';
-import 'package:sakuramedia/widgets/domain/media/quick_play_dialog.dart';
 
 /// PornBox 主页：顶部「新建合集」，中部「视频合集」横滑区（参照切片页），
 /// 下方「全部视频」网格。导入入口统一收口到「媒体导入」页。
@@ -50,6 +52,7 @@ class _DesktopVideoListPageState extends ConsumerState<DesktopVideoListPage>
 
   late final RiverpodPageHandle _pageCacheHandle;
   late final ScrollController _scrollController;
+  final _listHeaderKey = GlobalKey();
   bool _railRefreshScheduled = false;
 
   @override
@@ -117,7 +120,7 @@ class _DesktopVideoListPageState extends ConsumerState<DesktopVideoListPage>
       return;
     }
     if (_scrollController.hasClients) {
-      _scrollController.jumpTo(0);
+      AppPinnedListHeader.scrollToStart(_listHeaderKey, _scrollController);
     }
     unawaited(
       ref.read(videoSummaryProvider(_scope).notifier).applyFilter(next),
@@ -157,16 +160,25 @@ class _DesktopVideoListPageState extends ConsumerState<DesktopVideoListPage>
   }
 
   /// 点视频卡：弹桌面版动作弹窗（对齐移动端 sheet）。用户在弹窗里选「播放」
-  /// 再走原来的快速播放弹窗；「加入合集」/「删除」都是本页原有的入口。
+  /// 后进入 PornBox 单视频播放页；「加入合集」/「删除」都是本页原有的入口。
   void _openActionsDialog(VideoItemListItemDto video) {
     showDesktopVideoActionsDialog(
       context,
       video: video,
-      onPlay: () => showVideoQuickPlayDialog(
-        context,
-        videoId: video.id,
-        title: video.preferredTitle,
-      ),
+      onPlay: () async {
+        if (await tryLaunchExternalVideoPlayback(
+          context,
+          videoId: video.id,
+          title: video.preferredTitle,
+        )) {
+          return;
+        }
+        if (!mounted) {
+          return;
+        }
+        context.pushDesktopVideoPlayer(videoId: video.id);
+      },
+      onThumbnails: () => context.pushDesktopVideoThumbnails(videoId: video.id),
       onAddToCollection: () => _addToCollection(video),
       onDelete: () => _deleteVideo(video),
       collections: video.collections,
@@ -185,20 +197,15 @@ class _DesktopVideoListPageState extends ConsumerState<DesktopVideoListPage>
       danger: true,
       confirmLabel: '删除',
       confirmKey: const Key('video-delete-confirm-button'),
+      onConfirm: () => ref.read(videosApiProvider).deleteVideo(video.id),
+      failureFallback: '删除失败，请重试',
     );
     if (!mounted || !confirmed) {
       return;
     }
-    try {
-      await ref.read(videosApiProvider).deleteVideo(video.id);
-      // 广播删除信号：列表 provider 精准移除，页面刷新合集横滑区。
-      ref.read(videoMutationEventsProvider.notifier).reportDeleted(video.id);
-      if (mounted) {
-        showToast('已删除视频');
-      }
-    } catch (error) {
-      showToast(apiErrorMessage(error, fallback: '删除失败，请重试'));
-    }
+    // 广播删除信号：列表 provider 精准移除，页面刷新合集横滑区。
+    ref.read(videoMutationEventsProvider.notifier).reportDeleted(video.id);
+    showToast('已删除视频');
   }
 
   List<VideoItemListItemDto> get _loadedVideos =>
@@ -309,44 +316,51 @@ class _DesktopVideoListPageState extends ConsumerState<DesktopVideoListPage>
       onRefresh: _handlePageRefresh,
       child: ColoredBox(
         color: context.appColors.surfaceElevated,
-        child: CustomScrollView(
-          key: const PageStorageKey<String>('desktop:videos:list'),
-          controller: _scrollController,
-          slivers: [
-            SliverToBoxAdapter(
-              child: Column(
-                key: const Key('videos-page'),
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildCollectionsSection(context),
-                  SizedBox(height: context.appSpacing.lg),
-                ],
+        child: AppFilterResultLoadingOverlay(
+          protectedHeaderKey: _listHeaderKey,
+          scrollController: _scrollController,
+          isLoading: paged?.filterUpdate.isLoading ?? false,
+          hasPreviousItems: paged?.items.isNotEmpty ?? false,
+          child: CustomScrollView(
+            key: const PageStorageKey<String>('desktop:videos:list'),
+            controller: _scrollController,
+            slivers: [
+              SliverToBoxAdapter(
+                child: Column(
+                  key: const Key('videos-page'),
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildCollectionsSection(context),
+                    SizedBox(height: context.appSpacing.lg),
+                  ],
+                ),
               ),
-            ),
-            VideoListContent(
-              paged: paged ?? const PagedListState<VideoItemListItemDto>(),
-              isInitialLoading: videosAsync.isLoading && summary == null,
-              initialErrorMessage: videosAsync.hasError && summary == null
-                  ? '视频列表加载失败，请稍后重试'
-                  : null,
-              filterState: filter,
-              onFilterChanged: _applySort,
-              onRetryFilter: () => unawaited(
-                ref.read(videoSummaryProvider(_scope).notifier).retryFilter(),
+              VideoListContent(
+                headerKey: _listHeaderKey,
+                paged: paged ?? const PagedListState<VideoItemListItemDto>(),
+                isInitialLoading: videosAsync.isLoading && summary == null,
+                initialErrorMessage: videosAsync.hasError && summary == null
+                    ? '视频列表加载失败，请稍后重试'
+                    : null,
+                filterState: filter,
+                onFilterChanged: _applySort,
+                onRetryFilter: () => unawaited(
+                  ref.read(videoSummaryProvider(_scope).notifier).retryFilter(),
+                ),
+                onLoadMore: () =>
+                    ref.read(videoSummaryProvider(_scope).notifier).loadMore(),
+                contentKey: const Key('videos-page-list'),
+                totalKey: const Key('videos-page-total'),
+                sectionSpacing: context.appSpacing.lg,
+                onVideoTap: _openActionsDialog,
+                selectionMode: selectionMode,
+                selectedIds: selectedIds,
+                onVideoToggleSelect: (video) => toggleSelect(video.id),
+                selectionHeaderBuilder: _buildSelectionHeader,
+                headerActionsBuilder: _buildInlineSelectionTrigger,
               ),
-              onLoadMore: () =>
-                  ref.read(videoSummaryProvider(_scope).notifier).loadMore(),
-              contentKey: const Key('videos-page-list'),
-              totalKey: const Key('videos-page-total'),
-              sectionSpacing: context.appSpacing.lg,
-              onVideoTap: _openActionsDialog,
-              selectionMode: selectionMode,
-              selectedIds: selectedIds,
-              onVideoToggleSelect: (video) => toggleSelect(video.id),
-              selectionHeaderBuilder: _buildSelectionHeader,
-              headerActionsBuilder: _buildInlineSelectionTrigger,
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -412,7 +426,7 @@ class _DesktopVideoListPageState extends ConsumerState<DesktopVideoListPage>
                   '视频合集',
                   style: resolveAppTextStyle(
                     context,
-                    size: AppTextSize.s16,
+                    size: AppTextSize.s14,
                     weight: AppTextWeight.semibold,
                     tone: AppTextTone.primary,
                   ),

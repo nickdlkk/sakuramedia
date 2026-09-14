@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:oktoast/oktoast.dart';
+import 'package:sakuramedia/app/app_platform.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sakuramedia/features/videos/presentation/providers/videos_api_provider.dart';
 import 'package:sakuramedia/features/configuration/data/dto/media_library_dto.dart';
-import 'package:sakuramedia/features/media_import/data/import_job_dto.dart';
 import 'package:sakuramedia/features/media_import/data/media_import_source.dart';
 import 'package:sakuramedia/features/videos/data/dto/video_collection_dto.dart';
 import 'package:sakuramedia/features/videos/presentation/widgets/collections/create_video_collection_dialog.dart';
@@ -11,30 +10,31 @@ import 'package:sakuramedia/theme.dart';
 import 'package:sakuramedia/widgets/base/actions/app_button.dart';
 import 'package:sakuramedia/widgets/base/actions/app_text_button.dart';
 import 'package:sakuramedia/widgets/base/forms/app_select_field.dart';
-import 'package:sakuramedia/widgets/base/overlays/app_desktop_dialog.dart';
+import 'package:sakuramedia/widgets/base/overlays/app_adaptive_modal.dart';
 import 'package:sakuramedia/widgets/domain/media_import/media_import_source_picker.dart';
 import 'package:sakuramedia/widgets/domain/media_import/media_library_selector_field.dart';
 
-/// PornBox 视频导入的表单结果：来源可以是本地路径或 115 目录 CID；导入方式随来源类型联动。
+/// Provider-neutral 视频导入表单结果。
 class VideoImportRequest {
   const VideoImportRequest({
     required this.libraryId,
     required this.source,
-    required this.transferMode,
+    required this.sourceDisposition,
     required this.collectionId,
   });
 
   final int libraryId;
   final MediaImportSource source;
-  final TransferMode transferMode;
-  final int collectionId;
+  final SourceDisposition sourceDisposition;
+  final int? collectionId;
 }
 
 /// 打开视频导入对话框；用户确认后返回 [VideoImportRequest]，取消返回 `null`。
 Future<VideoImportRequest?> showVideoImportDialog(BuildContext context) {
-  return showDialog<VideoImportRequest>(
+  return showAppAdaptiveModal<VideoImportRequest>(
     context: context,
-    builder: (dialogContext) => const VideoImportDialog(),
+    modalKey: const Key('video-import-modal'),
+    builder: (_) => const VideoImportDialog(),
   );
 }
 
@@ -48,7 +48,7 @@ class VideoImportDialog extends ConsumerStatefulWidget {
 class _VideoImportDialogState extends ConsumerState<VideoImportDialog> {
   MediaLibraryDto? _selectedLibrary;
   MediaImportSource? _source;
-  TransferMode _transferMode = TransferMode.auto;
+  SourceDisposition _sourceDisposition = SourceDisposition.keep;
 
   List<VideoCollectionDto> _collections = const <VideoCollectionDto>[];
   int? _collectionId;
@@ -61,8 +61,9 @@ class _VideoImportDialogState extends ConsumerState<VideoImportDialog> {
 
   Future<void> _loadCollections() async {
     try {
-      final collections =
-          await ref.read(videoCollectionsApiProvider).getCollections();
+      final collections = await ref
+          .read(videoCollectionsApiProvider)
+          .getCollections();
       if (mounted) {
         setState(() => _collections = collections);
       }
@@ -72,7 +73,12 @@ class _VideoImportDialogState extends ConsumerState<VideoImportDialog> {
   }
 
   Future<void> _createCollection() async {
-    final created = await showVideoCollectionDialog(context);
+    final created = await showVideoCollectionDialog(
+      context,
+      presentation: AppPlatformScope.maybeOf(context) == AppPlatform.mobile
+          ? VideoCollectionEditPresentation.bottomDrawer
+          : VideoCollectionEditPresentation.dialog,
+    );
     if (created == null || !mounted) {
       return;
     }
@@ -86,35 +92,22 @@ class _VideoImportDialogState extends ConsumerState<VideoImportDialog> {
     setState(() {
       _selectedLibrary = library;
       _source = null;
-      _transferMode =
-          library == null
-              ? TransferMode.auto
-              : MediaImportSourcePicker.defaultTransferModeFor(library);
+      _sourceDisposition = SourceDisposition.keep;
     });
   }
 
   void _submit() {
     final library = _selectedLibrary;
     final source = _source;
-    if (source == null) {
-      showToast('请先选择要导入的目录');
-      return;
-    }
-    if (library == null) {
-      showToast('请选择导入到的媒体库');
-      return;
-    }
-    final collectionId = _collectionId;
-    if (collectionId == null) {
-      showToast('请选择或新建一个合集');
+    if (library == null || source == null) {
       return;
     }
     Navigator.of(context).pop(
       VideoImportRequest(
         libraryId: library.id,
         source: source,
-        transferMode: _transferMode,
-        collectionId: collectionId,
+        sourceDisposition: _sourceDisposition,
+        collectionId: _collectionId,
       ),
     );
   }
@@ -122,17 +115,14 @@ class _VideoImportDialogState extends ConsumerState<VideoImportDialog> {
   @override
   Widget build(BuildContext context) {
     final spacing = context.appSpacing;
-    final deletingCloudSource =
-        _selectedLibrary?.isCloud115 == true &&
-        _transferMode == TransferMode.cleanupSource;
-    return AppDesktopDialog(
-      width: context.appLayoutTokens.dialogWidthMd,
+    return SafeArea(
+      top: false,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '导入 PornBox 视频',
+            '导入视频',
             style: resolveAppTextStyle(
               context,
               size: AppTextSize.s16,
@@ -154,18 +144,19 @@ class _VideoImportDialogState extends ConsumerState<VideoImportDialog> {
                     SizedBox(height: spacing.md),
                     MediaImportSourcePicker(
                       selectedLibrary: _selectedLibrary,
-                      transferMode: _transferMode,
+                      sourceDisposition: _sourceDisposition,
+                      allowFileSource: true,
                       onSourceChanged: (source) {
                         if (source == _source) {
                           return;
                         }
                         setState(() => _source = source);
                       },
-                      onTransferModeChanged: (mode) {
-                        if (mode == _transferMode) {
+                      onSourceDispositionChanged: (disposition) {
+                        if (disposition == _sourceDisposition) {
                           return;
                         }
-                        setState(() => _transferMode = mode);
+                        setState(() => _sourceDisposition = disposition);
                       },
                     ),
                   ],
@@ -178,19 +169,22 @@ class _VideoImportDialogState extends ConsumerState<VideoImportDialog> {
           SizedBox(height: spacing.xl),
           Row(
             children: [
-              const Spacer(),
-              AppButton(
-                label: '取消',
-                size: AppButtonSize.small,
-                onPressed: () => Navigator.of(context).pop(),
+              Expanded(
+                child: AppButton(
+                  label: '取消',
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
               ),
               SizedBox(width: spacing.sm),
-              AppButton(
-                key: const Key('video-import-submit-button'),
-                label: deletingCloudSource ? '导入并删除源文件' : '开始导入',
-                variant: AppButtonVariant.primary,
-                size: AppButtonSize.small,
-                onPressed: _submit,
+              Expanded(
+                child: AppButton(
+                  key: const Key('video-import-submit-button'),
+                  label: '开始导入',
+                  variant: AppButtonVariant.primary,
+                  onPressed: _selectedLibrary != null && _source != null
+                      ? _submit
+                      : null,
+                ),
               ),
             ],
           ),
@@ -206,7 +200,7 @@ class _VideoImportDialogState extends ConsumerState<VideoImportDialog> {
         Row(
           children: [
             Text(
-              '加入合集',
+              '加入合集（可选）',
               style: resolveAppTextStyle(
                 context,
                 size: AppTextSize.s12,
@@ -225,7 +219,7 @@ class _VideoImportDialogState extends ConsumerState<VideoImportDialog> {
         SizedBox(height: context.appSpacing.sm),
         AppSelectField<int?>(
           value: _collectionId,
-          placeholder: _collections.isEmpty ? '暂无合集，点右上「新建合集」' : '请选择合集',
+          placeholder: _collections.isEmpty ? '暂无合集，可直接导入' : '不加入合集',
           items: <DropdownMenuItem<int?>>[
             for (final collection in _collections)
               DropdownMenuItem<int?>(

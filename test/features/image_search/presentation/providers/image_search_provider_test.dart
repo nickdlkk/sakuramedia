@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sakuramedia/core/session/session_store.dart';
 import 'package:sakuramedia/features/actors/data/dto/actor_list_item_dto.dart';
+import 'package:sakuramedia/features/image_search/data/image_search_target.dart';
 import 'package:sakuramedia/features/image_search/presentation/image_search_filter_state.dart';
 import 'package:sakuramedia/features/image_search/presentation/providers/image_search_provider.dart';
 import 'package:sakuramedia/features/image_search/presentation/providers/image_search_scope.dart';
@@ -67,6 +68,67 @@ void main() {
     expect(readState().errorMessage, isNull);
     expect(readState().items.map((item) => item.thumbnailId), contains(123));
     expect(readState().nextCursor, 'cursor-1');
+  });
+
+  test('text source creates a text search session', () async {
+    bundle.adapter.enqueueJson(
+      method: 'POST',
+      path: '/image-search/text-sessions',
+      body: _sessionBody(nextCursor: null, thumbnailId: 123),
+    );
+
+    notifier.setTextSource('白色连衣裙');
+    await notifier.search();
+
+    expect(readState().inputKind, ImageSearchInputKind.text);
+    expect(readState().items.single.thumbnailId, 123);
+    final formData = bundle.adapter.requests.single.body as FormData;
+    expect(Map<String, String>.fromEntries(formData.fields)['text'], '白色连衣裙');
+  });
+
+  test('input mode can start as text and switch without a stale source', () {
+    notifier.initialize(
+      ImageSearchCurrentMovieScope.all,
+      initialInputKind: ImageSearchInputKind.text,
+    );
+
+    expect(readState().inputKind, ImageSearchInputKind.text);
+    expect(readState().hasSource, isFalse);
+
+    notifier.setTextSource('海边');
+    notifier.selectInputKind(ImageSearchInputKind.image);
+
+    expect(readState().inputKind, ImageSearchInputKind.image);
+    expect(readState().textQuery, isNull);
+    expect(readState().hasSource, isFalse);
+  });
+
+  test('plot target uses dedicated paths for search and pagination', () async {
+    bundle.adapter.enqueueJson(
+      method: 'POST',
+      path: '/image-search/plot-sessions',
+      body: _plotSessionBody(nextCursor: 'plot-cursor-1', plotImageId: 101),
+    );
+    bundle.adapter.enqueueJson(
+      method: 'GET',
+      path: '/image-search/plot-sessions/plot-session-1/results',
+      body: _plotSessionBody(plotImageId: 102),
+    );
+
+    _setSource(notifier);
+    await notifier.search(
+      filter: const ImageSearchFilterState(
+        searchTarget: ImageSearchTarget.plot,
+      ),
+    );
+    notifier.updateFilter(const ImageSearchFilterState());
+    await notifier.loadMore();
+
+    expect(bundle.adapter.requests.map((request) => request.path), <String>[
+      '/image-search/plot-sessions',
+      '/image-search/plot-sessions/plot-session-1/results',
+    ]);
+    expect(readState().items.map((item) => item.plotImageId), <int?>[101, 102]);
   });
 
   test('ensureSubscribedActorsLoaded requests all genders', () async {
@@ -132,6 +194,29 @@ void main() {
       expect(readState().sessionId, isNull);
       expect(readState().items, isEmpty);
       expect(readState().errorMessage, '以图搜图失败，请稍后重试');
+    },
+  );
+
+  test(
+    'space mismatch tells the user to rebuild the image-search index',
+    () async {
+      bundle.adapter.enqueueJson(
+        method: 'POST',
+        path: '/image-search/sessions',
+        statusCode: 409,
+        body: <String, dynamic>{
+          'error': <String, dynamic>{
+            'code': 'image_search_index_rebuild_required',
+            'message': 'Image search index must be rebuilt',
+          },
+        },
+      );
+
+      _setSource(notifier);
+      await notifier.search();
+
+      expect(readState().errorMessage, '嵌入空间已变更，请先重建图搜索索引');
+      expect(readState().sessionId, isNull);
     },
   );
 
@@ -351,6 +436,34 @@ Map<String, dynamic> _itemBody({
       'medium': '/thumb-$thumbnailId.webp',
       'large': '/thumb-$thumbnailId.webp',
     },
+  };
+}
+
+Map<String, dynamic> _plotSessionBody({
+  String? nextCursor,
+  required int plotImageId,
+}) {
+  return <String, dynamic>{
+    'session_id': 'plot-session-1',
+    'status': 'ready',
+    'page_size': 20,
+    'next_cursor': nextCursor,
+    'expires_at': '2026-03-08T10:10:00Z',
+    'items': <Map<String, dynamic>>[
+      <String, dynamic>{
+        'plot_image_id': plotImageId,
+        'movie_id': 789,
+        'movie_number': 'ABC-001',
+        'score': 0.91,
+        'image': <String, dynamic>{
+          'id': 10,
+          'origin': '/plot-$plotImageId.webp',
+          'small': '/plot-$plotImageId.webp',
+          'medium': '/plot-$plotImageId.webp',
+          'large': '/plot-$plotImageId.webp',
+        },
+      },
+    ],
   };
 }
 

@@ -11,8 +11,7 @@ part of 'activity_api_provider.dart';
 /// activity 域 API 的 Riverpod 入口。
 ///
 /// 原生装配：依赖经 `ref.watch` 拉取，组合根不再 override。
-/// 首个消费方是订阅管理页（统一资源任务操作走它）。测试需要替身时用
-/// `overrideWithValue(...)`。
+/// 测试需要替身时用 `overrideWithValue(...)`。
 
 @ProviderFor(activityApi)
 final activityApiProvider = ActivityApiProvider._();
@@ -20,8 +19,7 @@ final activityApiProvider = ActivityApiProvider._();
 /// activity 域 API 的 Riverpod 入口。
 ///
 /// 原生装配：依赖经 `ref.watch` 拉取，组合根不再 override。
-/// 首个消费方是订阅管理页（统一资源任务操作走它）。测试需要替身时用
-/// `overrideWithValue(...)`。
+/// 测试需要替身时用 `overrideWithValue(...)`。
 
 final class ActivityApiProvider
     extends $FunctionalProvider<ActivityApi, ActivityApi, ActivityApi>
@@ -29,8 +27,7 @@ final class ActivityApiProvider
   /// activity 域 API 的 Riverpod 入口。
   ///
   /// 原生装配：依赖经 `ref.watch` 拉取，组合根不再 override。
-  /// 首个消费方是订阅管理页（统一资源任务操作走它）。测试需要替身时用
-  /// `overrideWithValue(...)`。
+  /// 测试需要替身时用 `overrideWithValue(...)`。
   ActivityApiProvider._()
     : super(
         from: null,
@@ -64,4 +61,4 @@ final class ActivityApiProvider
   }
 }
 
-String _$activityApiHash() => r'd2735d3da948b00941af11648cf37eb62b9c080d';
+String _$activityApiHash() => r'2e9ad8f9ea13d93f8421e19b3775709b98d6a1e8';

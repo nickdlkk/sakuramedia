@@ -1,13 +1,11 @@
+import 'package:sakuramedia/features/downloads/presentation/providers/downloads_api_provider.dart';
 import 'dart:async';
 
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:sakuramedia/core/network/api_error_message.dart';
 import 'package:sakuramedia/core/network/paginated_response_dto.dart';
-import 'package:sakuramedia/features/activity/data/resource_task_action_result_dto.dart';
-import 'package:sakuramedia/features/activity/presentation/providers/activity_api_provider.dart';
 import 'package:sakuramedia/features/movies/data/dto/listing/movie_subscription_batch_dto.dart';
 import 'package:sakuramedia/features/movies/presentation/movie_subscription_toggle_result.dart';
-import 'package:sakuramedia/features/movies/presentation/controllers/notifiers/movie_subscription_change.dart';
 import 'package:sakuramedia/features/movies/presentation/providers/movies_api_provider.dart';
 import 'package:sakuramedia/features/movies/presentation/providers/mutation_events_provider.dart';
 import 'package:sakuramedia/features/shared/presentation/providers/async_notifier_dispose_guard.dart';
@@ -26,8 +24,7 @@ part 'movie_subscription_manager_provider.g.dart';
 ///
 /// 职责边界：
 /// - **读**订阅列表走 `MovieSubscriptionsApi`（本域）；
-/// - **重置**资源查询状态走统一 action（`ActivityApi.applyResourceTaskAction`，
-///   task_key `subscribed_movie_auto_download`、action `reset_retry_budget`）；
+/// - **重置**资源查询状态走本域 `/movie-subscriptions/search-resets`；
 /// - **取消订阅**走 `MoviesApi`——后端刻意没在 `/movie-subscriptions` 下平行造写
 ///   端点，这里也不绕过它。
 ///
@@ -49,7 +46,7 @@ class MovieSubscriptionManager extends _$MovieSubscriptionManager
         > {
   @override
   MovieSubscriptionFilterState get initialFilter =>
-      MovieSubscriptionFilterState.initial;
+      MovieSubscriptionFilterState.initial.copyWith(status: status);
 
   @override
   int get pageSize => 20;
@@ -89,7 +86,9 @@ class MovieSubscriptionManager extends _$MovieSubscriptionManager
   }
 
   @override
-  Future<MovieSubscriptionManagerState> build() async {
+  Future<MovieSubscriptionManagerState> build(
+    MovieSubscriptionStatus? status,
+  ) async {
     invalidateOnSignOut(ref);
     attachDisposeGuard();
     // 页面离开后本 provider 没有监听者，Riverpod 会**挂起**这条入站订阅——但底层
@@ -110,11 +109,6 @@ class MovieSubscriptionManager extends _$MovieSubscriptionManager
 
   // --- 筛选 -----------------------------------------------------------------
 
-  /// 切换状态分段签。
-  Future<void> applyStatus(MovieSubscriptionStatus? status) {
-    return applyFilterState(activeFilter.copyWith(status: status));
-  }
-
   @override
   MovieSubscriptionManagerState applyFilterToState(
     MovieSubscriptionManagerState state,
@@ -127,6 +121,7 @@ class MovieSubscriptionManager extends _$MovieSubscriptionManager
 
   @override
   Future<String?> refresh() async {
+    ref.invalidate(movieDownloadTasksProvider);
     unawaited(
       ref.read(movieSubscriptionStatusCountsProvider.notifier).refresh(),
     );
@@ -186,9 +181,9 @@ class MovieSubscriptionManager extends _$MovieSubscriptionManager
     state = AsyncData(current.copyWith(selectedMovieNumbers: const <String>{}));
   }
 
-  // --- 重置资源查询状态 -------------------------------------------------------
+  // --- 重置订阅搜索状态 -------------------------------------------------------
 
-  /// 重置指定影片的资源查询状态（行内单条动作）。
+  /// 重置指定影片的搜索状态（行内单条动作）。
   Future<MovieSubscriptionActionResult> resetSearch(String movieNumber) async {
     _markPending(<String>{movieNumber});
     try {
@@ -198,44 +193,7 @@ class MovieSubscriptionManager extends _$MovieSubscriptionManager
     }
   }
 
-  /// 批量重置已选影片；已入库 / 下载中的选中项会被剔除（重置对它们无意义）。
-  Future<MovieSubscriptionActionResult> batchResetSearch() async {
-    final current = state.value;
-    if (current == null || current.isBatchRunning) {
-      return const MovieSubscriptionActionResult.success(0);
-    }
-    final targets = current.paged.items
-        .where(
-          (item) =>
-              item.canResetSearch &&
-              current.selectedMovieNumbers.contains(item.movieNumber),
-        )
-        .map((item) => item.movieNumber)
-        .toList(growable: false);
-    if (targets.isEmpty) {
-      return const MovieSubscriptionActionResult.success(0);
-    }
-
-    _setBatchAction(MovieSubscriptionBatchAction.resetSearch);
-    try {
-      final result = await _resetSearch(targets);
-      if (!result.hasError) {
-        clearSelection();
-      }
-      return result;
-    } finally {
-      _setBatchAction(null);
-    }
-  }
-
-  /// 统一 action 协议里订阅资源查询的 task_key（与后端 job 同名）。
-  static const String _searchTaskKey = 'subscribed_movie_auto_download';
-
   /// 一键把全部「已放弃」的影片放回查询队列（不依赖多选）。
-  ///
-  /// 走统一 action 的「缺省 resource_ids + state 圈定」批量形态（仅
-  /// reset_retry_budget 支持）。影响面可能很大且跨页，走完整 [reload] 而不是
-  /// 就地补丁。
   Future<MovieSubscriptionActionResult> resetAllExhausted() async {
     final current = state.value;
     if (current != null && current.isBatchRunning) {
@@ -244,12 +202,8 @@ class MovieSubscriptionManager extends _$MovieSubscriptionManager
     _setBatchAction(MovieSubscriptionBatchAction.resetAllExhausted);
     try {
       final response = await ref
-          .read(activityApiProvider)
-          .applyResourceTaskAction(
-            taskKey: _searchTaskKey,
-            action: 'reset_retry_budget',
-            state: 'exhausted',
-          );
+          .read(movieSubscriptionsApiProvider)
+          .resetSearches();
       unawaited(
         ref.read(movieSubscriptionStatusCountsProvider.notifier).refresh(),
       );
@@ -259,7 +213,7 @@ class MovieSubscriptionManager extends _$MovieSubscriptionManager
           selectedMovieNumbers: const <String>{},
         ),
       );
-      return MovieSubscriptionActionResult.success(response.acceptedCount);
+      return MovieSubscriptionActionResult.success(response.resetCount);
     } catch (error) {
       return MovieSubscriptionActionResult.failure(_resetErrorMessage(error));
     } finally {
@@ -267,13 +221,11 @@ class MovieSubscriptionManager extends _$MovieSubscriptionManager
     }
   }
 
-  /// 调统一 action + 就地补丁：**只有后端受理的行**回到「待查」，被跳过的
-  /// （已取消订阅 / 状态已变等）原样保留；若当前分段签容不下重置行就移除。
+  /// 调搜索重置接口后刷新当前列表。
   Future<MovieSubscriptionActionResult> _resetSearch(
     List<String> movieNumbers,
   ) async {
-    // 统一 action 收整数 movie id：经当前列表把番号映射成 id。选中项必然来自
-    // 已加载列表，映射不会失配；万一列表已被外部补丁摘行，缺失项直接跳过。
+    // 后端 reset 接口收整数 movie id；选中项来自当前列表，直接映射。
     final items =
         state.value?.paged.items ?? const <MovieSubscriptionListItemDto>[];
     final numbers = movieNumbers.toSet();
@@ -285,35 +237,27 @@ class MovieSubscriptionManager extends _$MovieSubscriptionManager
     if (numberById.isEmpty) {
       return const MovieSubscriptionActionResult.success(0);
     }
-    final ResourceTaskActionResultDto result;
     try {
-      result = await ref
-          .read(activityApiProvider)
-          .applyResourceTaskAction(
-            taskKey: _searchTaskKey,
-            action: 'reset_retry_budget',
-            resourceIds: numberById.keys.toList(growable: false),
-          );
+      final response = await ref
+          .read(movieSubscriptionsApiProvider)
+          .resetSearches(movieIds: numberById.keys.toList(growable: false));
+      await reload(
+        updateBaseState: (s) => s.copyWith(
+          selectionMode: false,
+          selectedMovieNumbers: const <String>{},
+        ),
+      );
+      unawaited(
+        ref.read(movieSubscriptionStatusCountsProvider.notifier).refresh(),
+      );
+      return MovieSubscriptionActionResult.success(response.resetCount);
     } catch (error) {
       return MovieSubscriptionActionResult.failure(_resetErrorMessage(error));
     }
-    final acceptedNumbers = result.acceptedResourceIds
-        .map((id) => numberById[id])
-        .whereType<String>()
-        .toSet();
-    if (acceptedNumbers.isNotEmpty) {
-      _applySearchReset(acceptedNumbers);
-    }
-    unawaited(
-      ref.read(movieSubscriptionStatusCountsProvider.notifier).refresh(),
-    );
-    return MovieSubscriptionActionResult.success(result.acceptedCount);
   }
 
   String _resetErrorMessage(Object error) {
-    return isResourceTaskActionConflict(error)
-        ? '已有重置操作在执行中，请稍后再试'
-        : apiErrorMessage(error, fallback: '重置资源查询状态失败');
+    return apiErrorMessage(error, fallback: '重置订阅搜索状态失败');
   }
 
   // --- 取消订阅 --------------------------------------------------------------
@@ -449,40 +393,6 @@ class MovieSubscriptionManager extends _$MovieSubscriptionManager
     );
   }
 
-  void _applySearchReset(Set<String> movieNumbers) {
-    final current = state.value;
-    if (current == null || movieNumbers.isEmpty) return;
-
-    // 重置后条目回到「待查」；当前分段签若不是「待查」也不是「全部」，它就不该
-    // 再留在这一屏——直接移除，避免列表和签的语义对不上。
-    final activeStatus = current.filter.status;
-    final dropsResetRows =
-        activeStatus != null && activeStatus != MovieSubscriptionStatus.pending;
-    if (dropsResetRows) {
-      _removeRows(movieNumbers);
-      return;
-    }
-
-    var mutated = false;
-    final nextItems = <MovieSubscriptionListItemDto>[];
-    for (final item in current.paged.items) {
-      if (movieNumbers.contains(item.movieNumber)) {
-        nextItems.add(item.afterSearchReset());
-        mutated = true;
-        continue;
-      }
-      nextItems.add(item);
-    }
-    if (!mutated) return;
-    state = AsyncData(
-      current.copyWith(
-        paged: current.paged.copyWith(
-          items: List<MovieSubscriptionListItemDto>.unmodifiable(nextItems),
-        ),
-      ),
-    );
-  }
-
   /// 移除若干行 + 同步扣减 total、重算 hasMore、清理多选与进行中集合。
   ///
   /// [keepSelected] 里的番号即使被清出多选集合也会被放回——批量取消订阅要让被
@@ -559,5 +469,19 @@ class MovieSubscriptionManager extends _$MovieSubscriptionManager
     final current = state.value;
     if (current == null) return;
     state = AsyncData(current.copyWith(runningBatchAction: action));
+  }
+}
+
+@Riverpod(keepAlive: true)
+class MovieSubscriptionStatusSelection
+    extends _$MovieSubscriptionStatusSelection {
+  @override
+  MovieSubscriptionStatus? build() {
+    invalidateOnSignOut(ref);
+    return MovieSubscriptionFilterState.initial.status;
+  }
+
+  void select(MovieSubscriptionStatus? status) {
+    state = status;
   }
 }

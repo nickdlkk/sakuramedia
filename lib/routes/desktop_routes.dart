@@ -6,6 +6,7 @@ import 'package:sakuramedia/features/actors/presentation/pages/desktop/actor_det
 import 'package:sakuramedia/features/auth/presentation/login_page.dart';
 import 'package:sakuramedia/features/discovery/presentation/pages/desktop/discover_moments_page.dart';
 import 'package:sakuramedia/features/discovery/presentation/pages/desktop/discover_movies_page.dart';
+import 'package:sakuramedia/features/discovery/presentation/pages/desktop/hot_actress_releases_page.dart';
 import 'package:sakuramedia/features/image_search/presentation/pages/desktop/image_search_page.dart';
 import 'package:sakuramedia/features/image_search/presentation/providers/image_search_draft_store_provider.dart';
 import 'package:sakuramedia/features/movies/presentation/pages/desktop/movie_detail_page.dart';
@@ -14,10 +15,14 @@ import 'package:sakuramedia/features/movies/presentation/pages/desktop/series_mo
 import 'package:sakuramedia/features/videos/presentation/pages/desktop/video_collections_page.dart';
 import 'package:sakuramedia/features/videos/presentation/pages/desktop/video_collection_detail_page.dart';
 import 'package:sakuramedia/features/videos/presentation/pages/desktop/video_collection_play_page.dart';
+import 'package:sakuramedia/features/videos/presentation/pages/desktop/video_player_page.dart';
+import 'package:sakuramedia/features/videos/presentation/pages/desktop/video_thumbnail_page.dart';
 import 'package:sakuramedia/features/playlists/presentation/pages/desktop/playlist_detail_page.dart';
 import 'package:sakuramedia/features/clip_collections/presentation/pages/desktop/clip_collections_page.dart';
 import 'package:sakuramedia/features/clip_collections/presentation/pages/desktop/clip_collection_detail_page.dart';
 import 'package:sakuramedia/features/clip_collections/presentation/pages/desktop/clip_collection_play_page.dart';
+import 'package:sakuramedia/features/moment_collections/presentation/pages/desktop/moment_collections_page.dart';
+import 'package:sakuramedia/features/moment_collections/presentation/pages/desktop/moment_collection_detail_page.dart';
 import 'package:sakuramedia/features/subscriptions/presentation/pages/desktop/follow_page.dart';
 import 'package:sakuramedia/features/activity/presentation/pages/desktop/activity_page.dart';
 import 'package:sakuramedia/features/system_diagnostics/presentation/pages/desktop/system_diagnostics_page.dart';
@@ -26,8 +31,10 @@ import 'package:sakuramedia/routes/app_route_helpers.dart';
 import 'package:sakuramedia/features/search/presentation/catalog_search_page.dart';
 import 'package:sakuramedia/routes/app_navigation.dart';
 import 'package:sakuramedia/routes/desktop_image_search_route_state.dart';
+import 'package:sakuramedia/routes/desktop_navigation_route_state.dart';
 import 'package:sakuramedia/routes/desktop_top_bar_config.dart';
 import 'package:sakuramedia/widgets/shell/desktop/app_desktop_shell.dart';
+import 'package:sakuramedia/widgets/shell/desktop/desktop_branch_cache.dart';
 
 part 'desktop_routes.g.dart';
 
@@ -83,6 +90,7 @@ class DesktopMoviePlayerRouteData extends _DesktopNoTransitionRouteData
     // 兼容 typed route 新参数名与现有 URL 中的旧参数名。
     return DesktopMoviePlayerPage(
       movieNumber: movieNumber,
+      fallbackPath: desktopNavigationFallbackPathFromExtra(state.extra),
       initialMediaId: resolveIntQueryParameter(
         state,
         names: const <String>['mediaId', 'media-id'],
@@ -93,6 +101,46 @@ class DesktopMoviePlayerRouteData extends _DesktopNoTransitionRouteData
         names: const <String>['positionSeconds', 'position-seconds'],
         fallback: positionSeconds,
       ),
+    );
+  }
+}
+
+@TypedGoRoute<DesktopVideoPlayerRouteData>(
+  path: '/desktop/library/videos/:videoId/player',
+)
+class DesktopVideoPlayerRouteData extends _DesktopNoTransitionRouteData
+    with $DesktopVideoPlayerRouteData {
+  const DesktopVideoPlayerRouteData({
+    required this.videoId,
+    this.positionSeconds,
+  });
+
+  final int videoId;
+  final int? positionSeconds;
+
+  @override
+  String get pageName => 'desktop-video-player';
+
+  @override
+  String get location => buildRouteLocation(
+    path: '/desktop/library/videos/$videoId/player',
+    queryParameters: <String, String?>{
+      if (positionSeconds != null) 'positionSeconds': '$positionSeconds',
+    },
+  );
+
+  @override
+  Widget buildContent(BuildContext context, GoRouterState state) {
+    return DesktopVideoPlayerPage(
+      videoId: videoId,
+      initialPositionSeconds: resolveIntQueryParameter(
+        state,
+        names: const <String>['positionSeconds', 'position-seconds'],
+        fallback: positionSeconds,
+      ),
+      fallbackPath:
+          desktopNavigationFallbackPathFromExtra(state.extra) ??
+          desktopVideosPath,
     );
   }
 }
@@ -187,34 +235,104 @@ class DesktopVideoCollectionPlayRouteData extends _DesktopNoTransitionRouteData
 
 @TypedShellRoute<DesktopShellRouteData>(
   routes: <TypedRoute<RouteData>>[
-    TypedGoRoute<DesktopOverviewRouteData>(path: desktopOverviewPath),
-    TypedGoRoute<DesktopDiscoverRouteData>(path: desktopDiscoverPath),
+    TypedStatefulShellRoute<DesktopPrimaryShellRouteData>(
+      branches: [
+        TypedStatefulShellBranch<DesktopPrimaryBranchData>(
+          routes: [
+            TypedGoRoute<DesktopOverviewRouteData>(path: desktopOverviewPath),
+          ],
+        ),
+        TypedStatefulShellBranch<DesktopPrimaryBranchData>(
+          routes: [
+            TypedGoRoute<DesktopDiscoverRouteData>(path: desktopDiscoverPath),
+          ],
+        ),
+        TypedStatefulShellBranch<DesktopPrimaryBranchData>(
+          routes: [
+            TypedGoRoute<DesktopMoviesRouteData>(path: desktopMoviesPath),
+          ],
+        ),
+        TypedStatefulShellBranch<DesktopPrimaryBranchData>(
+          routes: [
+            TypedGoRoute<DesktopActorsRouteData>(path: desktopActorsPath),
+          ],
+        ),
+        TypedStatefulShellBranch<DesktopPrimaryBranchData>(
+          routes: [TypedGoRoute<DesktopTagsRouteData>(path: desktopTagsPath)],
+        ),
+        TypedStatefulShellBranch<DesktopPrimaryBranchData>(
+          routes: [
+            TypedGoRoute<DesktopMomentsRouteData>(path: desktopMomentsPath),
+          ],
+        ),
+        TypedStatefulShellBranch<DesktopPrimaryBranchData>(
+          routes: [
+            TypedGoRoute<DesktopPlaylistsRouteData>(path: desktopPlaylistsPath),
+          ],
+        ),
+        TypedStatefulShellBranch<DesktopPrimaryBranchData>(
+          routes: [TypedGoRoute<DesktopClipsRouteData>(path: desktopClipsPath)],
+        ),
+        TypedStatefulShellBranch<DesktopPrimaryBranchData>(
+          routes: [
+            TypedGoRoute<DesktopVideosRouteData>(path: desktopVideosPath),
+          ],
+        ),
+        TypedStatefulShellBranch<DesktopPrimaryBranchData>(
+          routes: [
+            TypedGoRoute<DesktopRankingsRouteData>(path: desktopRankingsPath),
+          ],
+        ),
+        TypedStatefulShellBranch<DesktopPrimaryBranchData>(
+          routes: [
+            TypedGoRoute<DesktopActivityRouteData>(path: desktopActivityPath),
+          ],
+        ),
+        TypedStatefulShellBranch<DesktopPrimaryBranchData>(
+          routes: [TypedGoRoute<DesktopMediaRouteData>(path: desktopMediaPath)],
+        ),
+        TypedStatefulShellBranch<DesktopPrimaryBranchData>(
+          routes: [
+            TypedGoRoute<DesktopNotificationsRouteData>(
+              path: desktopNotificationsPath,
+            ),
+          ],
+        ),
+        TypedStatefulShellBranch<DesktopPrimaryBranchData>(
+          routes: [
+            TypedGoRoute<DesktopConfigurationRouteData>(
+              path: desktopConfigurationPath,
+            ),
+          ],
+        ),
+        TypedStatefulShellBranch<DesktopPrimaryBranchData>(
+          routes: [
+            TypedGoRoute<DesktopMediaImportRouteData>(
+              path: desktopMediaImportPath,
+            ),
+          ],
+        ),
+        TypedStatefulShellBranch<DesktopPrimaryBranchData>(
+          routes: [
+            TypedGoRoute<DesktopMovieSubscriptionsRouteData>(
+              path: desktopMovieSubscriptionsPath,
+            ),
+          ],
+        ),
+      ],
+    ),
     TypedGoRoute<DesktopDiscoverMoviesRouteData>(
       path: desktopDiscoverMoviesPath,
     ),
     TypedGoRoute<DesktopDiscoverMomentsRouteData>(
       path: desktopDiscoverMomentsPath,
     ),
+    TypedGoRoute<DesktopHotActressReleasesRouteData>(
+      path: desktopHotActressReleasesPath,
+    ),
     TypedGoRoute<DesktopFollowRouteData>(path: desktopFollowPath),
-    TypedGoRoute<DesktopMoviesRouteData>(path: desktopMoviesPath),
-    TypedGoRoute<DesktopActorsRouteData>(path: desktopActorsPath),
-    TypedGoRoute<DesktopTagsRouteData>(path: desktopTagsPath),
-    TypedGoRoute<DesktopMomentsRouteData>(path: desktopMomentsPath),
-    TypedGoRoute<DesktopPlaylistsRouteData>(path: desktopPlaylistsPath),
-    TypedGoRoute<DesktopClipsRouteData>(path: desktopClipsPath),
-    TypedGoRoute<DesktopVideosRouteData>(path: desktopVideosPath),
     TypedGoRoute<DesktopVideoCollectionsRouteData>(
       path: desktopVideoCollectionsPath,
-    ),
-    TypedGoRoute<DesktopRankingsRouteData>(path: desktopRankingsPath),
-    TypedGoRoute<DesktopHotReviewsRouteData>(path: desktopHotReviewsPath),
-    TypedGoRoute<DesktopActivityRouteData>(path: desktopActivityPath),
-    TypedGoRoute<DesktopMediaRouteData>(path: desktopMediaPath),
-    TypedGoRoute<DesktopNotificationsRouteData>(path: desktopNotificationsPath),
-    TypedGoRoute<DesktopConfigurationRouteData>(path: desktopConfigurationPath),
-    TypedGoRoute<DesktopMediaImportRouteData>(path: desktopMediaImportPath),
-    TypedGoRoute<DesktopMovieSubscriptionsRouteData>(
-      path: desktopMovieSubscriptionsPath,
     ),
     TypedGoRoute<DesktopSystemDiagnosticsRouteData>(
       path: desktopSystemDiagnosticsPath,
@@ -240,12 +358,21 @@ class DesktopVideoCollectionPlayRouteData extends _DesktopNoTransitionRouteData
     TypedGoRoute<DesktopClipCollectionDetailRouteData>(
       path: '$desktopClipCollectionsPath/:collectionId',
     ),
+    TypedGoRoute<DesktopMomentCollectionsRouteData>(
+      path: desktopMomentCollectionsPath,
+    ),
+    TypedGoRoute<DesktopMomentCollectionDetailRouteData>(
+      path: '$desktopMomentCollectionsPath/:collectionId',
+    ),
     TypedGoRoute<DesktopActorDetailRouteData>(
       path: '/desktop/library/actors/:actorId',
     ),
     TypedGoRoute<DesktopTagMoviesRouteData>(path: '$desktopTagsPath/:tagId'),
     TypedGoRoute<DesktopVideoCollectionDetailRouteData>(
       path: '$desktopVideoCollectionsPath/:collectionId',
+    ),
+    TypedGoRoute<DesktopVideoThumbnailRouteData>(
+      path: '$desktopVideosPath/:videoId/thumbnails',
     ),
   ],
 )
@@ -273,6 +400,32 @@ class DesktopShellRouteData extends ShellRouteData {
       child: navigator,
     );
   }
+}
+
+/// Only fixed primary destinations are retained. Detail routes remain on the
+/// outer shell navigator so push/pop keeps its existing return behavior.
+class DesktopPrimaryShellRouteData extends StatefulShellRouteData {
+  const DesktopPrimaryShellRouteData();
+
+  static Widget $navigatorContainerBuilder(
+    BuildContext context,
+    StatefulNavigationShell navigationShell,
+    List<Widget> children,
+  ) => DesktopBranchCache(
+    currentIndex: navigationShell.currentIndex,
+    children: children,
+  );
+
+  @override
+  Widget builder(
+    BuildContext context,
+    GoRouterState state,
+    StatefulNavigationShell navigationShell,
+  ) => navigationShell;
+}
+
+class DesktopPrimaryBranchData extends StatefulShellBranchData {
+  const DesktopPrimaryBranchData();
 }
 
 class DesktopOverviewRouteData extends _DesktopShellSpecRouteData
@@ -308,6 +461,19 @@ class DesktopDiscoverMomentsRouteData extends _DesktopShellPageRouteData
   @override
   Widget buildContent(BuildContext context, GoRouterState state) {
     return const DesktopDiscoverMomentsPage();
+  }
+}
+
+class DesktopHotActressReleasesRouteData extends _DesktopShellPageRouteData
+    with $DesktopHotActressReleasesRouteData {
+  const DesktopHotActressReleasesRouteData();
+
+  @override
+  String get pageName => 'desktop-hot-actress-releases';
+
+  @override
+  Widget buildContent(BuildContext context, GoRouterState state) {
+    return const DesktopHotActressReleasesPage();
   }
 }
 
@@ -357,11 +523,6 @@ class DesktopClipsRouteData extends _DesktopShellSpecRouteData
 class DesktopRankingsRouteData extends _DesktopShellSpecRouteData
     with $DesktopRankingsRouteData {
   const DesktopRankingsRouteData() : super(desktopRankingsPath);
-}
-
-class DesktopHotReviewsRouteData extends _DesktopShellSpecRouteData
-    with $DesktopHotReviewsRouteData {
-  const DesktopHotReviewsRouteData() : super(desktopHotReviewsPath);
 }
 
 class DesktopConfigurationRouteData extends _DesktopShellSpecRouteData
@@ -503,11 +664,13 @@ class DesktopImageSearchRouteData extends _DesktopShellPageRouteData
     this.draftId,
     this.currentMovieNumber,
     this.currentMovieScope = 'all',
+    this.mode = 'image',
   });
 
   final String? draftId;
   final String? currentMovieNumber;
   final String currentMovieScope;
+  final String mode;
 
   @override
   String get pageName => 'desktop-image-search';
@@ -519,6 +682,7 @@ class DesktopImageSearchRouteData extends _DesktopShellPageRouteData
       if (draftId != null) 'draftId': draftId,
       if (currentMovieNumber != null) 'currentMovieNumber': currentMovieNumber,
       if (currentMovieScope != 'all') 'currentMovieScope': currentMovieScope,
+      if (mode != 'image') 'mode': mode,
     },
   );
 
@@ -551,6 +715,14 @@ class DesktopImageSearchRouteData extends _DesktopShellPageRouteData
               fallback: currentMovieScope,
             ) ??
             currentMovieScope,
+      ),
+      initialInputKind: parseImageSearchInputKind(
+        resolveStringQueryParameter(
+              state,
+              names: const <String>['mode'],
+              fallback: mode,
+            ) ??
+            mode,
       ),
     );
   }
@@ -646,6 +818,34 @@ class DesktopClipCollectionDetailRouteData extends _DesktopShellPageRouteData
   }
 }
 
+class DesktopMomentCollectionsRouteData extends _DesktopShellPageRouteData
+    with $DesktopMomentCollectionsRouteData {
+  const DesktopMomentCollectionsRouteData();
+
+  @override
+  String get pageName => 'desktop-moment-collections';
+
+  @override
+  Widget buildContent(BuildContext context, GoRouterState state) {
+    return const DesktopMomentCollectionsPage();
+  }
+}
+
+class DesktopMomentCollectionDetailRouteData extends _DesktopShellPageRouteData
+    with $DesktopMomentCollectionDetailRouteData {
+  const DesktopMomentCollectionDetailRouteData({required this.collectionId});
+
+  final int collectionId;
+
+  @override
+  String get pageName => 'desktop-moment-collection-detail';
+
+  @override
+  Widget buildContent(BuildContext context, GoRouterState state) {
+    return DesktopMomentCollectionDetailPage(collectionId: collectionId);
+  }
+}
+
 class DesktopActorDetailRouteData extends _DesktopShellPageRouteData
     with $DesktopActorDetailRouteData {
   const DesktopActorDetailRouteData({required this.actorId});
@@ -706,6 +906,21 @@ class DesktopVideoCollectionDetailRouteData extends _DesktopShellPageRouteData
   @override
   Widget buildContent(BuildContext context, GoRouterState state) {
     return DesktopVideoCollectionDetailPage(collectionId: collectionId);
+  }
+}
+
+class DesktopVideoThumbnailRouteData extends _DesktopShellPageRouteData
+    with $DesktopVideoThumbnailRouteData {
+  const DesktopVideoThumbnailRouteData({required this.videoId});
+
+  final int videoId;
+
+  @override
+  String get pageName => 'desktop-video-thumbnails';
+
+  @override
+  Widget buildContent(BuildContext context, GoRouterState state) {
+    return DesktopVideoThumbnailPage(videoId: videoId);
   }
 }
 

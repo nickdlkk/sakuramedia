@@ -94,7 +94,6 @@ void main() {
     expect(componentTokens.movieCardTargetWidth, 160);
     expect(componentTokens.movieThumbnailTargetWidth, 128);
     expect(componentTokens.movieCardAspectRatio, 0.7);
-    expect(componentTokens.movieCardCoverVisibleWidthFactor, 0.47);
     expect(componentTokens.iconSizeXs, 16);
     expect(componentTokens.iconSize2xs, 14);
     expect(componentTokens.iconSize3xs, 12);
@@ -138,7 +137,6 @@ void main() {
     expect(componentTokens.mobileLatestMovieCardWidth, 142);
     expect(componentTokens.mobileFollowMovieCardHeight, 150);
     expect(componentTokens.mobileFollowMovieThinCoverWidth, 96);
-    expect(componentTokens.mobileFollowMovieStillWidth, 86);
     expect(formTokens.labelGap, 8);
     expect(formTokens.miniFieldHorizontalPadding, 10);
     expect(formTokens.miniFieldHeight, 28);
@@ -201,6 +199,7 @@ void main() {
     expect(sakuraMobileThemeData.appComponentTokens.buttonHeightSm, 36);
     expect(sakuraMobileThemeData.appComponentTokens.buttonHeight2xs, 28);
     expect(sakuraMobileThemeData.appComponentTokens.buttonHeight3xs, 24);
+    expect(sakuraMobileThemeData.appComponentTokens.downloadTaskCoverWidth, 96);
     expect(sakuraMobileThemeData.appComponentTokens.switchTrackWidth, 44);
     expect(sakuraMobileThemeData.appComponentTokens.switchTrackHeight, 24);
     expect(sakuraMobileThemeData.appComponentTokens.switchThumbDiameter, 18);

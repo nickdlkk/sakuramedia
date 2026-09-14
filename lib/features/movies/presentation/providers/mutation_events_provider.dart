@@ -82,3 +82,33 @@ class MovieCollectionTypeEvents extends _$MovieCollectionTypeEvents {
     );
   }
 }
+
+/// 删除资源后从服务端取得的影片状态，供已加载列表就地同步。
+class MovieMediaChange {
+  const MovieMediaChange({
+    required this.movieNumber,
+    required this.canPlay,
+    required this.isSubscribed,
+  });
+
+  final String movieNumber;
+  final bool canPlay;
+  final bool isSubscribed;
+}
+
+@Riverpod(keepAlive: true)
+class MovieMediaEvents extends _$MovieMediaEvents {
+  final StreamController<MovieMediaChange> _controller =
+      StreamController<MovieMediaChange>.broadcast(sync: true);
+
+  @override
+  Stream<MovieMediaChange> build() {
+    ref.onDispose(_controller.close);
+    return _controller.stream;
+  }
+
+  void reportChange(MovieMediaChange change) {
+    if (_controller.isClosed) return;
+    _controller.add(change);
+  }
+}

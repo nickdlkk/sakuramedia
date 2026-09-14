@@ -10,7 +10,8 @@ import 'package:sakuramedia/widgets/base/overlays/app_filter_popover.dart'
 /// 「媒体管理」筛选工具栏：仿 `MovieFilterToolbar` 的 popover 触发按钮 +
 /// 内部分节面板 + 底部重置。
 ///
-/// 归属 / 所属媒体库 / 排序方式全部通过 chip 选择，避免 5 项排序挤在下拉里。
+/// 归属 / 所属媒体库 / 缩略图状态 / 排序方式全部通过 chip 选择，
+/// 避免多项状态挤在下拉里。
 class MediaBrowseFilterToolbar extends StatelessWidget {
   const MediaBrowseFilterToolbar({
     super.key,
@@ -49,12 +50,11 @@ class MediaBrowseFilterToolbar extends StatelessWidget {
           // 面板 trigger 位于 leading 最左端，向右延伸自然填入内容区、不会
           // 反过来遮挡左侧配置分类栏（默认的 right-aligned 会往左溢出）。
           alignment: AppFilterPopoverAlignment.leftAlignedToTrigger,
-          panelBuilder:
-              (_) => MediaBrowseFilterSectionGroup(
-                filterState: filterState,
-                libraries: libraries,
-                onChanged: onChanged,
-              ),
+          panelBuilder: (_) => MediaBrowseFilterSectionGroup(
+            filterState: filterState,
+            libraries: libraries,
+            onChanged: onChanged,
+          ),
           footer: AppFilterPanelFooter(
             isDefault: filterState.isDefault,
             onReset: onReset,
@@ -65,7 +65,7 @@ class MediaBrowseFilterToolbar extends StatelessWidget {
   }
 }
 
-/// 面板内的分节 Column：归属 / 媒体库 / 排序，各自 chip 选择。
+/// 面板内的分节 Column：归属 / 媒体库 / 缩略图 / 排序，各自 chip 选择。
 class MediaBrowseFilterSectionGroup extends StatelessWidget {
   const MediaBrowseFilterSectionGroup({
     super.key,
@@ -92,15 +92,13 @@ class MediaBrowseFilterSectionGroup extends StatelessWidget {
     ),
   ];
 
-  /// 秒传状态 chip 顺序：先"全部"，再"未秒传"（最常用于找可秒传的候选），
-  /// 然后按活跃度排"进行中→失败→待清理→未命中"。
-  static const List<MediaBrowseRapidUploadFilter?> _rapidUploadOrder = [
+  static const List<MediaBrowseThumbnailGenerationFilter?>
+  _thumbnailGenerationOrder = [
     null,
-    MediaBrowseRapidUploadFilter.none,
-    MediaBrowseRapidUploadFilter.inProgress,
-    MediaBrowseRapidUploadFilter.failed,
-    MediaBrowseRapidUploadFilter.cleanupFailed,
-    MediaBrowseRapidUploadFilter.notHit,
+    MediaBrowseThumbnailGenerationFilter.pending,
+    MediaBrowseThumbnailGenerationFilter.retryWait,
+    MediaBrowseThumbnailGenerationFilter.terminal,
+    MediaBrowseThumbnailGenerationFilter.succeeded,
   ];
 
   @override
@@ -122,13 +120,12 @@ class MediaBrowseFilterSectionGroup extends StatelessWidget {
                 label: option.label,
                 size: AppTextButtonSize.xSmall,
                 isSelected: filterState.kind == option.kind,
-                onPressed:
-                    () => onChanged(
-                      filterState.copyWith(
-                        kind: option.kind,
-                        resetKind: option.kind == null,
-                      ),
-                    ),
+                onPressed: () => onChanged(
+                  filterState.copyWith(
+                    kind: option.kind,
+                    resetKind: option.kind == null,
+                  ),
+                ),
               ),
           ],
         ),
@@ -149,32 +146,32 @@ class MediaBrowseFilterSectionGroup extends StatelessWidget {
             for (final library in libraries)
               AppTextButton(
                 key: Key('media-library-filter-${library.id}'),
-                label: library.displayLabel,
+                label: library.name,
                 size: AppTextButtonSize.xSmall,
                 isSelected: filterState.libraryId == library.id,
-                onPressed:
-                    () =>
-                        onChanged(filterState.copyWith(libraryId: library.id)),
+                onPressed: () =>
+                    onChanged(filterState.copyWith(libraryId: library.id)),
               ),
           ],
         ),
         SizedBox(height: spacing.lg),
-        _SectionTitle(text: '秒传状态'),
+        _SectionTitle(text: '缩略图状态'),
         SizedBox(height: spacing.sm),
         Wrap(
           spacing: spacing.sm,
           runSpacing: spacing.sm,
           children: [
-            for (final filter in _rapidUploadOrder)
+            for (final filter in _thumbnailGenerationOrder)
               AppTextButton(
-                key: Key('media-rapid-upload-filter-${filter?.name ?? 'all'}'),
+                key: Key(
+                  'media-thumbnail-generation-filter-${filter?.name ?? 'all'}',
+                ),
                 label: filter?.label ?? '全部',
                 size: AppTextButtonSize.xSmall,
-                isSelected: filterState.rapidUploadStatus == filter,
-                onPressed:
-                    () => onChanged(
-                      filterState.copyWith(rapidUploadStatus: filter),
-                    ),
+                isSelected: filterState.thumbnailGenerationState == filter,
+                onPressed: () => onChanged(
+                  filterState.copyWith(thumbnailGenerationState: filter),
+                ),
               ),
           ],
         ),
@@ -192,13 +189,11 @@ class MediaBrowseFilterSectionGroup extends StatelessWidget {
                 size: AppTextButtonSize.xSmall,
                 isSelected: filterState.sortField == field,
                 // 已选字段再点则清空，退回后端默认（入库时间倒序）。
-                onPressed:
-                    () => onChanged(
-                      filterState.copyWith(
-                        sortField:
-                            filterState.sortField == field ? null : field,
-                      ),
-                    ),
+                onPressed: () => onChanged(
+                  filterState.copyWith(
+                    sortField: filterState.sortField == field ? null : field,
+                  ),
+                ),
               ),
           ],
         ),
@@ -213,10 +208,8 @@ class MediaBrowseFilterSectionGroup extends StatelessWidget {
                   label: direction.label,
                   size: AppTextButtonSize.xSmall,
                   isSelected: filterState.sortDirection == direction,
-                  onPressed:
-                      () => onChanged(
-                        filterState.copyWith(sortDirection: direction),
-                      ),
+                  onPressed: () =>
+                      onChanged(filterState.copyWith(sortDirection: direction)),
                 ),
             ],
           ),

@@ -24,10 +24,10 @@ class DesktopMovieSubscriptionsPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final status = ref.watch(movieSubscriptionStatusSelectionProvider);
+    final managerProvider = movieSubscriptionManagerProvider(status);
     return AppPageRefreshScope(
-      onRefresh:
-          () async =>
-              ref.read(movieSubscriptionManagerProvider.notifier).refresh(),
+      onRefresh: () async => ref.read(managerProvider.notifier).refresh(),
       child: Column(
         key: const Key('desktop-movie-subscriptions-page'),
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -36,8 +36,9 @@ class DesktopMovieSubscriptionsPage extends ConsumerWidget {
           SizedBox(height: context.appSpacing.sm),
           Expanded(
             child: MovieSubscriptionListSection(
-              onOpenMovie:
-                  (context, movieNumber) => context.pushDesktopMovieDetail(
+              key: ValueKey(status),
+              onOpenMovie: (context, movieNumber) =>
+                  context.pushDesktopMovieDetail(
                     movieNumber: movieNumber,
                     fallbackPath: desktopMovieSubscriptionsPath,
                   ),

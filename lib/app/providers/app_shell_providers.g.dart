@@ -131,17 +131,17 @@ final class AppPackageInfoLoaderProvider
 String _$appPackageInfoLoaderHash() =>
     r'7cd06c31f5770373df163de2010ec55bba149bae';
 
-/// 前后端版本信息。provider 本身常驻，但 [load] 仍由版本 UI 首次出现时显式
+/// 前后端版本信息。provider 本身常驻，但 [load] 仍由版本 UI 出现时显式
 /// 触发，避免仅创建应用容器就请求 `/status`。
 
 @ProviderFor(AppVersionInfo)
 final appVersionInfoProvider = AppVersionInfoProvider._();
 
-/// 前后端版本信息。provider 本身常驻，但 [load] 仍由版本 UI 首次出现时显式
+/// 前后端版本信息。provider 本身常驻，但 [load] 仍由版本 UI 出现时显式
 /// 触发，避免仅创建应用容器就请求 `/status`。
 final class AppVersionInfoProvider
     extends $AsyncNotifierProvider<AppVersionInfo, AppVersionInfoState> {
-  /// 前后端版本信息。provider 本身常驻，但 [load] 仍由版本 UI 首次出现时显式
+  /// 前后端版本信息。provider 本身常驻，但 [load] 仍由版本 UI 出现时显式
   /// 触发，避免仅创建应用容器就请求 `/status`。
   AppVersionInfoProvider._()
     : super(
@@ -162,9 +162,9 @@ final class AppVersionInfoProvider
   AppVersionInfo create() => AppVersionInfo();
 }
 
-String _$appVersionInfoHash() => r'1a52a37e0d8732c157d5ca5317f354de73b53c5a';
+String _$appVersionInfoHash() => r'64b29681f87dd888c53297e015f69504ed98f6fa';
 
-/// 前后端版本信息。provider 本身常驻，但 [load] 仍由版本 UI 首次出现时显式
+/// 前后端版本信息。provider 本身常驻，但 [load] 仍由版本 UI 出现时显式
 /// 触发，避免仅创建应用容器就请求 `/status`。
 
 abstract class _$AppVersionInfo extends $AsyncNotifier<AppVersionInfoState> {

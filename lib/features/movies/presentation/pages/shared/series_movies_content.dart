@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:sakuramedia/widgets/base/layout/scrolling/app_fixed_header_layout.dart';
 import 'package:oktoast/oktoast.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sakuramedia/features/movies/presentation/actions/movie_collection_feature_actions.dart';
@@ -89,6 +90,10 @@ class _SeriesMoviesContentState extends ConsumerState<SeriesMoviesContent>
       ref.read(movieSummaryProvider(_scope).notifier).batchToggleSubscription;
 
   @override
+  MovieBlacklistBatchExecutor get batchBlacklistExecutor =>
+      ref.read(movieSummaryProvider(_scope).notifier).blacklistMovies;
+
+  @override
   List<String> get batchSelectableNumbers =>
       ref
           .read(movieSummaryProvider(_scope))
@@ -154,8 +159,9 @@ class _SeriesMoviesContentState extends ConsumerState<SeriesMoviesContent>
 
   Future<void> _handleRefresh() async {
     try {
-      final error =
-          await ref.read(movieSummaryProvider(_scope).notifier).refresh();
+      final error = await ref
+          .read(movieSummaryProvider(_scope).notifier)
+          .refresh();
       if (error != null) {
         throw Exception(error);
       }
@@ -193,47 +199,45 @@ class _SeriesMoviesContentState extends ConsumerState<SeriesMoviesContent>
       onRefresh: _handleRefresh,
       child: ColoredBox(
         color: widget.surfaceColor,
-        child: widget.bodyBuilder(
-          context,
-          _scrollController,
-          SliverMainAxisGroup(
-            slivers: [
-              SliverToBoxAdapter(
-                child: Column(
-                  key: widget.contentKey,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    if (selectionMode)
-                      (widget.useMobileSelectionLayout
-                          ? buildMobileBatchSelectionHeader()
-                          : buildBatchSelectionToolbar())
-                    else
-                      _buildHeader(context, summary),
-                    SizedBox(height: widget.sectionSpacing),
-                  ],
-                ),
-              ),
-              _buildMoviesArea(context, moviesAsync),
-              if (paged != null &&
-                  paged.items.isNotEmpty &&
-                  (paged.isLoadingMore || paged.loadMoreErrorMessage != null))
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: EdgeInsets.only(top: context.appSpacing.md),
-                    child: AppPagedLoadMoreFooter(
-                      isLoading: paged.isLoadingMore,
-                      errorMessage: paged.loadMoreErrorMessage,
-                      onRetry:
-                          () =>
-                              ref
-                                  .read(movieSummaryProvider(_scope).notifier)
-                                  .loadMore(),
-                    ),
-                  ),
-                ),
+        child: AppFixedHeaderLayout(
+          header: Column(
+            key: widget.contentKey,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (selectionMode)
+                (widget.useMobileSelectionLayout
+                    ? buildMobileBatchSelectionHeader()
+                    : buildBatchSelectionToolbar())
+              else
+                _buildHeader(context, summary),
+              SizedBox(height: widget.sectionSpacing),
             ],
           ),
-          widget.enableRefresh ? _handleRefresh : null,
+          child: widget.bodyBuilder(
+            context,
+            _scrollController,
+            SliverMainAxisGroup(
+              slivers: [
+                _buildMoviesArea(context, moviesAsync),
+                if (paged != null &&
+                    paged.items.isNotEmpty &&
+                    (paged.isLoadingMore || paged.loadMoreErrorMessage != null))
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: EdgeInsets.only(top: context.appSpacing.md),
+                      child: AppPagedLoadMoreFooter(
+                        isLoading: paged.isLoadingMore,
+                        errorMessage: paged.loadMoreErrorMessage,
+                        onRetry: () => ref
+                            .read(movieSummaryProvider(_scope).notifier)
+                            .loadMore(),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            widget.enableRefresh ? _handleRefresh : null,
+          ),
         ),
       ),
     );
@@ -314,11 +318,8 @@ class _SeriesMoviesContentState extends ConsumerState<SeriesMoviesContent>
             SizedBox(height: context.appSpacing.md),
             Center(
               child: TextButton(
-                onPressed:
-                    () =>
-                        ref
-                            .read(movieSummaryProvider(_scope).notifier)
-                            .reload(),
+                onPressed: () =>
+                    ref.read(movieSummaryProvider(_scope).notifier).reload(),
                 child: const Text('重试'),
               ),
             ),
@@ -338,22 +339,23 @@ class _SeriesMoviesContentState extends ConsumerState<SeriesMoviesContent>
             movieNumber: movie.movieNumber,
             globalPosition: globalPosition,
             isSubscribed: movie.isSubscribed,
+            onBlacklisted: () => ref
+                .read(movieSummaryProvider(_scope).notifier)
+                .removeMovies(<String>[movie.movieNumber]),
             // 移动端多选入口挂在长按菜单里，桌面仍在顶栏。
-            onEnterSelection:
-                widget.useMobileSelectionLayout
-                    ? () {
-                      enterSelection();
-                      toggleSelect(movie.movieNumber);
-                    }
-                    : null,
+            onEnterSelection: widget.useMobileSelectionLayout
+                ? () {
+                    enterSelection();
+                    toggleSelect(movie.movieNumber);
+                  }
+                : null,
           ),
         );
       },
-      onMovieSubscriptionTap:
-          (movie) => _toggleMovieSubscription(movie.movieNumber),
-      isMovieSubscriptionUpdating:
-          (movie) =>
-              summary?.isSubscriptionUpdating(movie.movieNumber) ?? false,
+      onMovieSubscriptionTap: (movie) =>
+          _toggleMovieSubscription(movie.movieNumber),
+      isMovieSubscriptionUpdating: (movie) =>
+          summary?.isSubscriptionUpdating(movie.movieNumber) ?? false,
       emptyMessage: '该系列暂无影片',
       selectionMode: selectionMode,
       isMovieSelected: (movie) => isSelected(movie.movieNumber),

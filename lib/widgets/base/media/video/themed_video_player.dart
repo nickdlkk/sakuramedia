@@ -38,6 +38,7 @@ class ThemedVideoPlayer extends StatefulWidget {
     this.guardInitialSeek = false,
     this.resumePosition,
     this.onResumePromptResolved,
+    this.playbackSessionKey,
   });
 
   final VideoController videoController;
@@ -76,6 +77,9 @@ class ThemedVideoPlayer extends StatefulWidget {
   /// 用户继续、从头、手动 seek 或提示超时后调用，用于解除业务层的进度上报冻结。
   final VoidCallback? onResumePromptResolved;
 
+  /// Playlist 切换时标识新的首帧阶段；普通单媒体不需要传。
+  final Object? playbackSessionKey;
+
   @override
   State<ThemedVideoPlayer> createState() => _ThemedVideoPlayerState();
 }
@@ -111,6 +115,10 @@ class _ThemedVideoPlayerState extends State<ThemedVideoPlayer> {
       _armFirstFrameIndicator();
       _armInitialSeekGuard();
       return;
+    }
+    if (oldWidget.playbackSessionKey != widget.playbackSessionKey) {
+      _initialFrameReady = false;
+      _armFirstFrameIndicator();
     }
     if (oldWidget.resumePosition != widget.resumePosition) {
       if (widget.resumePosition == null) {
@@ -242,17 +250,21 @@ class _ThemedVideoPlayerState extends State<ThemedVideoPlayer> {
     final theme = Theme.of(context);
     final fullscreenBottom =
         widget.fullscreenBottomControls ?? widget.bottomControls;
+    // 首帧前由本组件的加载浮层统一反馈，避免和 media_kit 的 buffering 指示器重叠。
+    final showBufferingIndicator = _initialFrameReady;
     final desktopThemeData = buildMoviePlayerDesktopControlsThemeData(
       theme: theme,
       topControls: widget.topControls,
       bottomControls: widget.bottomControls,
       displaySeekBar: widget.displaySeekBar,
+      showBufferingIndicator: showBufferingIndicator,
     );
     final desktopFullscreenThemeData = buildMoviePlayerDesktopControlsThemeData(
       theme: theme,
       topControls: widget.topControls,
       bottomControls: fullscreenBottom,
       displaySeekBar: widget.displaySeekBar,
+      showBufferingIndicator: showBufferingIndicator,
     );
     final mobileThemeData = buildMoviePlayerMobileControlsThemeData(
       theme: theme,
@@ -260,6 +272,7 @@ class _ThemedVideoPlayerState extends State<ThemedVideoPlayer> {
       bottomControls: widget.bottomControls,
       displaySeekBar: widget.displaySeekBar,
       seekEnabled: _seekEnabled,
+      showBufferingIndicator: showBufferingIndicator,
     );
     final mobileFullscreenThemeData = buildMoviePlayerMobileControlsThemeData(
       theme: theme,
@@ -267,6 +280,7 @@ class _ThemedVideoPlayerState extends State<ThemedVideoPlayer> {
       bottomControls: fullscreenBottom,
       displaySeekBar: widget.displaySeekBar,
       seekEnabled: _seekEnabled,
+      showBufferingIndicator: showBufferingIndicator,
     );
     return MaterialVideoControlsTheme(
       normal: mobileThemeData,

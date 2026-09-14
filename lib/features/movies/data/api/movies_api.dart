@@ -1,9 +1,9 @@
 import 'package:sakuramedia/core/network/api_client.dart';
 import 'package:sakuramedia/core/network/api_sse_event.dart';
 import 'package:sakuramedia/core/network/paginated_response_dto.dart';
+import 'package:sakuramedia/features/activity/data/job_metadata_dto.dart';
 import 'package:sakuramedia/features/movies/data/dto/detail/movie_detail_dto.dart';
 import 'package:sakuramedia/features/movies/data/dto/listing/movie_list_item_dto.dart';
-import 'package:sakuramedia/features/movies/data/dto/thumbnails/movie_media_thumbnail_dto.dart';
 import 'package:sakuramedia/features/movies/data/dto/detail/movie_review_dto.dart';
 import 'package:sakuramedia/features/movies/data/dto/series_import/movie_search_stream_update.dart';
 import 'package:sakuramedia/features/movies/data/dto/player/movie_subtitle_dto.dart';
@@ -29,6 +29,8 @@ class MoviesApi {
     TagMatchMode? tagMatch,
     int? heatMin,
     int? heatMax,
+    String? resolution,
+    bool? blacklisted,
     int page = 1,
     int pageSize = 20,
   }) async {
@@ -57,8 +59,14 @@ class MoviesApi {
     if (heatMin != null) {
       queryParameters['heat_min'] = heatMin;
     }
+    if (resolution != null) {
+      queryParameters['resolution'] = resolution;
+    }
     if (heatMax != null) {
       queryParameters['heat_max'] = heatMax;
+    }
+    if (blacklisted != null) {
+      queryParameters['blacklisted'] = blacklisted;
     }
     if (tagIds != null && tagIds.isNotEmpty) {
       queryParameters['tag_ids'] = tagIds.join(',');
@@ -128,6 +136,17 @@ class MoviesApi {
     return MovieDetailDto.fromJson(response);
   }
 
+  Future<MovieMergedPlaybackDto> getMergedPlayback({
+    required String movieNumber,
+    required int libraryId,
+  }) async {
+    final response = await _apiClient.get(
+      '/movies/$movieNumber/merged-playback',
+      queryParameters: <String, dynamic>{'library_id': libraryId},
+    );
+    return MovieMergedPlaybackDto.fromJson(response);
+  }
+
   Future<MovieDetailDto> refreshMovieMetadata({
     required String movieNumber,
   }) async {
@@ -137,35 +156,13 @@ class MoviesApi {
     return MovieDetailDto.fromJson(response);
   }
 
-  /// 入队互动数同步任务（统一 action）：执行在后台 worker，`rerun` 是强制语义。
-  Future<void> syncMovieInteraction({required int movieId}) async {
-    await _applyMovieResourceTaskRerun(
-      taskKey: 'movie_interaction_sync',
-      movieId: movieId,
-    );
-  }
-
-  Future<void> _applyMovieResourceTaskRerun({
-    required String taskKey,
-    required int movieId,
-  }) async {
-    await _apiClient.post(
-      '/system/resource-task-actions',
-      data: <String, dynamic>{
-        'task_key': taskKey,
-        'action': 'rerun',
-        'resource_ids': <int>[movieId],
-      },
-    );
-  }
-
-  Future<MovieDetailDto> recomputeMovieHeat({
+  Future<ManualJobTriggerResponseDto> recomputeMovieHeat({
     required String movieNumber,
   }) async {
     final response = await _apiClient.post(
       '/movies/$movieNumber/heat-recompute',
     );
-    return MovieDetailDto.fromJson(response);
+    return ManualJobTriggerResponseDto.fromJson(response);
   }
 
   Future<List<MovieListItemDto>> getSimilarMovies({
@@ -203,26 +200,6 @@ class MoviesApi {
     return MovieSubtitleListDto.fromJson(response);
   }
 
-  Future<List<MovieMediaThumbnailDto>> getMediaThumbnails({
-    required int mediaId,
-  }) async {
-    final response = await _apiClient.getList('/media/$mediaId/thumbnails');
-    return response
-        .map(MovieMediaThumbnailDto.fromJson)
-        .toList(growable: false);
-  }
-
-  Future<MovieMediaProgressDto> updateMediaProgress({
-    required int mediaId,
-    required int positionSeconds,
-  }) async {
-    final response = await _apiClient.put(
-      '/media/$mediaId/progress',
-      data: <String, dynamic>{'position_seconds': positionSeconds},
-    );
-    return MovieMediaProgressDto.fromJson(response);
-  }
-
   Future<ParsedMovieNumberDto> parseMovieNumber({required String query}) async {
     final response = await _apiClient.post(
       '/movies/search/parse-number',
@@ -256,11 +233,10 @@ class MoviesApi {
   }) async {
     final response = await _apiClient.patch(
       '/movies/collection-type',
-      data:
-          UpdateMovieCollectionTypePayload(
-            movieNumbers: movieNumbers,
-            collectionType: collectionType,
-          ).toJson(),
+      data: UpdateMovieCollectionTypePayload(
+        movieNumbers: movieNumbers,
+        collectionType: collectionType,
+      ).toJson(),
     );
     return UpdateMovieCollectionTypeResultDto.fromJson(response);
   }
@@ -288,6 +264,17 @@ class MoviesApi {
       '/movies/$movieNumber/subscription',
       queryParameters: <String, dynamic>{'delete_media': deleteMedia},
     );
+  }
+
+  Future<void> setMoviesBlacklisted({
+    required List<String> movieNumbers,
+    required bool isBlacklisted,
+  }) {
+    const path = '/movies/blacklist';
+    final data = <String, dynamic>{'movie_numbers': movieNumbers};
+    return isBlacklisted
+        ? _apiClient.putNoContent(path, data: data)
+        : _apiClient.deleteNoContent(path, data: data);
   }
 
   Future<MovieSubscriptionBatchResultDto> batchSubscribeMovies({
@@ -418,10 +405,9 @@ class MoviesApi {
           results: _parseMovieResults(payload['movies']),
           success: payload['success'] as bool? ?? false,
           reason: payload['reason'] as String?,
-          stats:
-              payload.containsKey('stats') || payload.containsKey('total')
-                  ? CatalogSearchStreamStats.fromLooseJson(payload)
-                  : null,
+          stats: payload.containsKey('stats') || payload.containsKey('total')
+              ? CatalogSearchStreamStats.fromLooseJson(payload)
+              : null,
         );
       default:
         return MovieSearchStreamUpdate(

@@ -1,11 +1,13 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:oktoast/oktoast.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:sakuramedia/core/media/media_url_resolver.dart';
 import 'package:sakuramedia/core/network/providers/api_client_provider.dart';
 import 'package:sakuramedia/features/movies/presentation/controllers/player/movie_player_subtitle_state.dart';
 import 'package:sakuramedia/theme.dart';
@@ -77,6 +79,10 @@ class MoviePlayerSurface extends ConsumerStatefulWidget {
 }
 
 class _MoviePlayerSurfaceState extends ConsumerState<MoviePlayerSurface> {
+  // 让精确跳转在部分 demuxer 落到目标之后时，仍有向前解码到目标的空间。
+  static const double _hrSeekDemuxerOffsetSeconds = 10;
+  static final Random _playbackAttemptRandom = Random.secure();
+
   late final Player _player;
   late final VideoController _controller;
   late final MoviePlayerSurfaceReadiness _readiness;
@@ -117,7 +123,6 @@ class _MoviePlayerSurfaceState extends ConsumerState<MoviePlayerSurface> {
     _readiness = MoviePlayerSurfaceReadiness();
     _statsSampler = MoviePlayerNativeStatsSampler(
       readNativeProperty: createMediaKitNativePropertyReader(_player),
-      mediaOrigin: moviePlayerPlaybackMediaOriginFor(widget.mediaSourceKind),
       originalUrl: widget.resolvedUrl,
     );
     _resumePrompt = MoviePlayerResumePromptCoordinator(
@@ -144,9 +149,8 @@ class _MoviePlayerSurfaceState extends ConsumerState<MoviePlayerSurface> {
       setRate: _player.setRate,
       initialRate: _player.state.rate,
     )..addListener(_handlePlaybackRateChanged);
-    _mobileDrawer =
-        MoviePlayerMobileDrawerCoordinator()
-          ..addListener(_handleMobileDrawerChanged);
+    _mobileDrawer = MoviePlayerMobileDrawerCoordinator()
+      ..addListener(_handleMobileDrawerChanged);
     _seekSubscription = widget.surfaceController.seekStream.listen(
       _handleSurfaceSeekRequested,
     );
@@ -202,12 +206,8 @@ class _MoviePlayerSurfaceState extends ConsumerState<MoviePlayerSurface> {
         unawaited(_player.play());
       });
     }
-    if (oldWidget.resolvedUrl != widget.resolvedUrl ||
-        oldWidget.mediaSourceKind != widget.mediaSourceKind) {
-      _statsSampler.updateContext(
-        mediaOrigin: moviePlayerPlaybackMediaOriginFor(widget.mediaSourceKind),
-        originalUrl: widget.resolvedUrl,
-      );
+    if (oldWidget.resolvedUrl != widget.resolvedUrl) {
+      _statsSampler.updateContext(originalUrl: widget.resolvedUrl);
     }
     if (oldWidget.resolvedUrl != widget.resolvedUrl) {
       _playbackRate.resetMobileDisplayForNewMedia(_player.state.rate);
@@ -257,6 +257,11 @@ class _MoviePlayerSurfaceState extends ConsumerState<MoviePlayerSurface> {
 
   Future<void> _openMedia() async {
     final requestId = ++_openRequestId;
+    final playbackAttemptId = _createPlaybackAttemptId();
+    final playbackUrl = withPlaybackAttemptId(
+      widget.resolvedUrl,
+      playbackAttemptId,
+    );
     _statsSampler.reset();
     _startupSeek.begin(widget.initialPosition);
     _pendingInitialSeek = null;
@@ -267,30 +272,32 @@ class _MoviePlayerSurfaceState extends ConsumerState<MoviePlayerSurface> {
       '[player-debug] surface_state_open_media requestId=$requestId url=${widget.resolvedUrl} initialPositionSeconds=${widget.initialPosition?.inSeconds} startupTargetSeconds=${_startupSeek.target?.inSeconds}',
     );
     _readiness.reset();
+    await _configurePreciseSeek();
+    if (!mounted || requestId != _openRequestId) {
+      return;
+    }
     try {
       await _openCoordinator.open(
-        open:
-            (url, {required startPosition, required play}) => _player.open(
-              buildMoviePlayerMedia(url, startPosition: startPosition),
-              play: play,
-            ),
+        open: (url, {required startPosition, required play}) => _player.open(
+          buildMoviePlayerMedia(url, startPosition: startPosition),
+          play: play,
+        ),
         play: _player.play,
         seek: _player.seek,
-        waitUntilFirstFrameRendered:
-            () => _controller.waitUntilFirstFrameRendered,
-        resolvedUrl: widget.resolvedUrl,
+        waitUntilFirstFrameRendered: () =>
+            _controller.waitUntilFirstFrameRendered,
+        resolvedUrl: playbackUrl,
         initialPosition: widget.initialPosition,
         shouldContinue: () => mounted && requestId == _openRequestId,
-        waitUntilSeekReady:
-            _guardsInitialSeek
-                ? () => waitUntilInitialSeekReady(
-                  firstFrame: _controller.waitUntilFirstFrameRendered,
-                  positionStream: _player.stream.position,
-                  currentPosition: () => _player.state.position,
-                  isPlaying: () => _player.state.playing,
-                  isBuffering: () => _player.state.buffering,
-                )
-                : null,
+        waitUntilSeekReady: _guardsInitialSeek
+            ? () => waitUntilInitialSeekReady(
+                firstFrame: _controller.waitUntilFirstFrameRendered,
+                positionStream: _player.stream.position,
+                currentPosition: () => _player.state.position,
+                isPlaying: () => _player.state.playing,
+                isBuffering: () => _player.state.buffering,
+              )
+            : null,
         markReady: _markSurfaceReady,
       );
     } catch (error) {
@@ -299,11 +306,65 @@ class _MoviePlayerSurfaceState extends ConsumerState<MoviePlayerSurface> {
       }
       return;
     }
+    unawaited(
+      _refreshPlaybackMode(
+        requestId: requestId,
+        playbackAttemptId: playbackAttemptId,
+      ),
+    );
     unawaited(_statsSampler.refreshNative());
   }
 
-  bool get _guardsInitialSeek =>
-      widget.mediaSourceKind != MoviePlayerMediaSourceKind.local;
+  String _createPlaybackAttemptId() {
+    final bytes = List<int>.generate(
+      16,
+      (_) => _playbackAttemptRandom.nextInt(256),
+      growable: false,
+    );
+    return base64UrlEncode(bytes).replaceAll('=', '');
+  }
+
+  Future<void> _refreshPlaybackMode({
+    required int requestId,
+    required String playbackAttemptId,
+  }) async {
+    String modeLabel = '未确认';
+    try {
+      final response = await ref
+          .read(apiClientProvider)
+          .get(
+            '/media/playback-attempts/$playbackAttemptId',
+            receiveTimeout: const Duration(seconds: 5),
+          );
+      modeLabel = switch (response['mode']) {
+        'direct' => '直连',
+        'proxy' => '后端代理',
+        _ => '未确认',
+      };
+    } catch (_) {
+      // 播放已成功，模式查询失败不能影响播放器；如实显示未确认。
+    }
+    if (!mounted || requestId != _openRequestId) {
+      return;
+    }
+    _statsSampler.updatePlaybackModeLabel(modeLabel);
+  }
+
+  Future<void> _configurePreciseSeek() async {
+    final platformPlayer = _player.platform;
+    if (platformPlayer == null) {
+      return;
+    }
+    final dynamic nativePlayer = platformPlayer;
+    try {
+      await nativePlayer.setProperty(
+        'hr-seek-demuxer-offset',
+        _hrSeekDemuxerOffsetSeconds.toString(),
+      );
+    } catch (_) {}
+  }
+
+  bool get _guardsInitialSeek => true;
 
   void _handleSurfaceSeekRequested(Duration position) {
     _resumePrompt.resolve();
@@ -466,10 +527,10 @@ class _MoviePlayerSurfaceState extends ConsumerState<MoviePlayerSurface> {
     final mobileBottomControls = buildMoviePlayerMobileBottomControls(
       activeDrawer: _mobileDrawer.activeDrawer,
       speedDisplayListenable: _playbackRate.mobileSpeedDisplay,
-      onSpeedButtonPressed:
-          () => _mobileDrawer.toggle(MoviePlayerMobileDrawerType.speed),
-      onSubtitleButtonPressed:
-          () => _mobileDrawer.toggle(MoviePlayerMobileDrawerType.subtitle),
+      onSpeedButtonPressed: () =>
+          _mobileDrawer.toggle(MoviePlayerMobileDrawerType.speed),
+      onSubtitleButtonPressed: () =>
+          _mobileDrawer.toggle(MoviePlayerMobileDrawerType.subtitle),
     );
     final desktopBottomControls = buildMoviePlayerDesktopBottomControls(
       currentRate: _playbackRate.currentRate,

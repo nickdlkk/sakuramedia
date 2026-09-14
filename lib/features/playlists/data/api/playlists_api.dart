@@ -2,8 +2,6 @@ import 'package:sakuramedia/core/network/api_client.dart';
 import 'package:sakuramedia/core/network/paginated_response_dto.dart';
 import 'package:sakuramedia/features/movies/data/dto/listing/movie_list_item_dto.dart';
 import 'package:sakuramedia/features/playlists/data/dto/playlist_dto.dart';
-import 'package:sakuramedia/features/playlists/data/dto/playlist_resolution_option_dto.dart';
-import 'package:sakuramedia/features/playlists/data/playlist_resolution_filter.dart';
 
 class PlaylistsApi {
   const PlaylistsApi({required ApiClient apiClient}) : _apiClient = apiClient;
@@ -73,40 +71,6 @@ class PlaylistsApi {
       response,
       MovieListItemDto.fromJson,
     );
-  }
-
-  /// 聚合播放列表内影片覆盖的分辨率档位（从高到低，附命中影片数），
-  /// 供筛选下拉渲染。
-  ///
-  /// 前端按 [PlaylistResolutionFilter.values] 顺序做一次稳定排序，未在枚举
-  /// 里登记的档位（后端新增但前端尚未收录）排到最后，以固定档位取值顺序、
-  /// 屏蔽后端顺序抖动。
-  Future<List<PlaylistResolutionOptionDto>> getPlaylistResolutions({
-    required int playlistId,
-  }) async {
-    final response = await _apiClient.getList(
-      '/playlists/$playlistId/resolutions',
-    );
-    final options = response
-        .map(PlaylistResolutionOptionDto.fromJson)
-        .toList(growable: false);
-    return _sortResolutionOptions(options);
-  }
-
-  static List<PlaylistResolutionOptionDto> _sortResolutionOptions(
-    List<PlaylistResolutionOptionDto> options,
-  ) {
-    int rankOf(String apiValue) {
-      final filter = PlaylistResolutionFilterX.fromApiValue(apiValue);
-      // 未识别档位排到已知档位之后，仍互相保持原始出现顺序。
-      return filter == null
-          ? PlaylistResolutionFilter.values.length
-          : filter.index;
-    }
-
-    final sorted = [...options]
-      ..sort((a, b) => rankOf(a.resolution).compareTo(rankOf(b.resolution)));
-    return List.unmodifiable(sorted);
   }
 
   Future<void> addMovieToPlaylist({

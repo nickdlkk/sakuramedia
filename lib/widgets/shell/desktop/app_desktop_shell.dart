@@ -105,8 +105,10 @@ class _AppDesktopShellState extends State<AppDesktopShell> {
 
   @override
   Widget build(BuildContext context) {
-    final useMacSidebarGlass =
-        !kIsWeb && defaultTargetPlatform == TargetPlatform.macOS;
+    final useDesktopSidebarGlass =
+        !kIsWeb &&
+        (defaultTargetPlatform == TargetPlatform.macOS ||
+            defaultTargetPlatform == TargetPlatform.windows);
 
     final current = _current;
     return AppPageRefreshRegistrarScope(
@@ -119,10 +121,9 @@ class _AppDesktopShellState extends State<AppDesktopShell> {
               _triggerCurrentRefresh,
         },
         child: Scaffold(
-          backgroundColor:
-              useMacSidebarGlass
-                  ? Colors.transparent
-                  : context.appColors.surfacePage,
+          backgroundColor: useDesktopSidebarGlass
+              ? Colors.transparent
+              : context.appColors.surfacePage,
           body: SafeArea(
             child: Row(
               children: [
@@ -140,10 +141,9 @@ class _AppDesktopShellState extends State<AppDesktopShell> {
                           currentPath: widget.currentPath,
                           config: widget.topBarConfig,
                           shellNavigatorKey: widget.shellNavigatorKey,
-                          onRefresh:
-                              current == null
-                                  ? null
-                                  : () => _runRefresh(current),
+                          onRefresh: current == null
+                              ? null
+                              : () => _runRefresh(current),
                           isRefreshing: current != null && _isRefreshing,
                         ),
                         Expanded(

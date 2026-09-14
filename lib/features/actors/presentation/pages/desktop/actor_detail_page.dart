@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:sakuramedia/features/actors/data/dto/actor_list_item_dto.dart';
+import 'package:sakuramedia/features/actors/data/dto/actor_detail_dto.dart';
 import 'package:sakuramedia/features/actors/presentation/pages/shared/actor_detail_content.dart';
+import 'package:sakuramedia/features/actors/presentation/pages/shared/actor_profile_details.dart';
 import 'package:sakuramedia/features/movies/presentation/providers/movie_summary_state.dart';
 import 'package:sakuramedia/routes/app_navigation_actions.dart';
 import 'package:sakuramedia/theme.dart';
+import 'package:sakuramedia/widgets/base/actions/app_icon_button.dart';
 import 'package:sakuramedia/widgets/base/feedback/app_empty_state.dart';
 import 'package:sakuramedia/widgets/base/layout/scrolling/app_paged_load_more_footer.dart';
 import 'package:sakuramedia/widgets/domain/actors/actor_avatar.dart';
@@ -34,16 +36,16 @@ class _DesktopActorDetailPageState extends State<DesktopActorDetailPage> {
           (
             context,
             actor,
-            total,
             isSubscribed,
             isSubscriptionUpdating,
             onSubscriptionTap,
+            onEditTap,
           ) => _ActorDetailHeader(
             actor: actor,
-            total: total,
             isSubscribed: isSubscribed,
             isSubscriptionUpdating: isSubscriptionUpdating,
             onSubscriptionTap: onSubscriptionTap,
+            onEditTap: onEditTap,
           ),
       loadingBuilder: (_) => const _ActorDetailLoadingSkeleton(),
       errorBuilder: (context, message, onRetry) =>
@@ -75,17 +77,17 @@ class _DesktopActorDetailPageState extends State<DesktopActorDetailPage> {
 class _ActorDetailHeader extends StatelessWidget {
   const _ActorDetailHeader({
     required this.actor,
-    required this.total,
     required this.isSubscribed,
     required this.isSubscriptionUpdating,
     required this.onSubscriptionTap,
+    required this.onEditTap,
   });
 
-  final ActorListItemDto actor;
-  final int total;
+  final ActorDetailDto actor;
   final bool isSubscribed;
   final bool isSubscriptionUpdating;
   final VoidCallback? onSubscriptionTap;
+  final VoidCallback onEditTap;
 
   @override
   Widget build(BuildContext context) {
@@ -94,43 +96,51 @@ class _ActorDetailHeader extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         ActorAvatar(
-          imageUrl: actor.profileImage?.bestAvailableUrl,
+          imageUrl: actor.summary.profileImage?.bestAvailableUrl,
           size: context.appComponentTokens.movieDetailActorAvatarSize,
           placeholderKey: const Key('actor-detail-avatar-placeholder'),
         ),
         SizedBox(width: context.appSpacing.md),
         Expanded(
-          child: Text(
-            actor.displayName,
-            key: const Key('actor-detail-name'),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: resolveAppTextStyle(
-              context,
-              size: AppTextSize.s18,
-              weight: AppTextWeight.semibold,
-              tone: AppTextTone.primary,
-            ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SelectionArea(
+                child: Text(
+                  actor.summary.displayName,
+                  key: const Key('actor-detail-name'),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: resolveAppTextStyle(
+                    context,
+                    size: AppTextSize.s18,
+                    weight: AppTextWeight.semibold,
+                    tone: AppTextTone.primary,
+                  ),
+                ),
+              ),
+              ActorProfileDetails(actor: actor, compact: false),
+            ],
           ),
         ),
         SizedBox(width: context.appSpacing.lg),
+        AppIconButton(
+          key: const Key('actor-detail-edit-button'),
+          icon: const Icon(Icons.edit_outlined),
+          size: AppIconButtonSize.compact,
+          tooltip: '编辑女优资料',
+          semanticLabel: '编辑女优资料',
+          onPressed: onEditTap,
+        ),
+        SizedBox(width: context.appSpacing.sm),
         SubscriptionHeartBadge(
-          key: Key('actor-detail-subscription-${actor.id}'),
-          loadingKey: Key('actor-detail-subscription-loading-${actor.id}'),
+          key: Key('actor-detail-subscription-${actor.summary.id}'),
+          loadingKey: Key(
+            'actor-detail-subscription-loading-${actor.summary.id}',
+          ),
           isSubscribed: isSubscribed,
           isUpdating: isSubscriptionUpdating,
           onTap: onSubscriptionTap,
-        ),
-        SizedBox(width: context.appSpacing.sm),
-        Text(
-          '$total 部',
-          key: const Key('actor-detail-total'),
-          style: resolveAppTextStyle(
-            context,
-            size: AppTextSize.s12,
-            weight: AppTextWeight.regular,
-            tone: AppTextTone.secondary,
-          ),
         ),
       ],
     );

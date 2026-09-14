@@ -6,30 +6,34 @@ import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:oktoast/oktoast.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:sakuramedia/widgets/domain/media/media_playback_info_button.dart';
 import 'package:sakuramedia/features/shared/presentation/providers/collection_playback_handoff_provider.dart';
 import 'package:sakuramedia/features/videos/presentation/providers/videos_api_provider.dart';
-import 'package:sakuramedia/features/movies/presentation/providers/movies_api_provider.dart';
-import 'package:sakuramedia/core/session/providers/session_store_provider.dart';
 import 'package:sakuramedia/features/media/presentation/providers/media_api_provider.dart';
+import 'package:sakuramedia/core/session/providers/session_store_provider.dart';
 import 'package:sakuramedia/core/media/media_url_resolver.dart';
 import 'package:sakuramedia/core/network/api_error_message.dart';
-import 'package:sakuramedia/features/media/data/media_api.dart';
-import 'package:sakuramedia/features/media/data/media_point_dto.dart';
+import 'package:sakuramedia/core/network/providers/api_client_provider.dart';
 import 'package:sakuramedia/features/movies/data/dto/listing/movie_list_item_dto.dart';
 import 'package:sakuramedia/features/movies/data/dto/thumbnails/movie_media_thumbnail_dto.dart';
 import 'package:sakuramedia/features/videos/data/dto/video_item_list_item_dto.dart';
+import 'package:sakuramedia/features/image_search/presentation/actions/image_search_launcher.dart';
+import 'package:sakuramedia/routes/app_navigation.dart';
 import 'package:sakuramedia/widgets/base/feedback/app_empty_state.dart';
-import 'package:sakuramedia/widgets/base/media/video/throttling_player.dart';
+import 'package:sakuramedia/widgets/base/actions/app_button.dart';
+import 'package:sakuramedia/theme.dart';
+import 'package:sakuramedia/features/videos/presentation/widgets/video_collection_episode_actions.dart';
+import 'package:sakuramedia/features/videos/presentation/providers/video_mutation_events_provider.dart';
+import 'package:sakuramedia/features/videos/presentation/providers/video_collection_playback_factory_provider.dart';
 import 'package:sakuramedia/widgets/base/media/video/video_loading_indicator.dart';
 import 'package:sakuramedia/widgets/base/media/images/app_image_action_menu.dart';
-import 'package:sakuramedia/widgets/domain/collections/playback/collection_episode_queue_item.dart';
 import 'package:sakuramedia/widgets/domain/collections/playback/collection_filmstrip_controller.dart';
 import 'package:sakuramedia/widgets/domain/collections/playback/collection_play_split_layout.dart';
-import 'package:sakuramedia/widgets/domain/collections/playback/collection_playback_mode.dart';
 import 'package:sakuramedia/widgets/domain/collections/playback/collection_playback_page_mixin.dart';
 import 'package:sakuramedia/widgets/domain/collections/playback/episode_selector_overlay.dart';
-import 'package:sakuramedia/widgets/domain/movies/player/merged_position_indicator.dart';
+import 'package:sakuramedia/widgets/domain/media/media_thumbnail_action_support.dart';
 import 'package:sakuramedia/widgets/domain/media/movie_media_thumbnail_grid.dart';
+import 'package:sakuramedia/widgets/domain/movies/player/merged_position_indicator.dart';
 import 'package:sakuramedia/widgets/domain/movies/player/movie_player_back_overlay.dart';
 import 'package:sakuramedia/widgets/domain/movies/player/movie_player_controls.dart';
 import 'package:sakuramedia/widgets/base/media/video/themed_video_player.dart';
@@ -47,6 +51,7 @@ class VideoCollectionPlayContent extends ConsumerStatefulWidget {
     required this.collectionId,
     this.startIndex = 0,
     this.sort,
+    this.imageSearchRoutePath = desktopImageSearchPath,
     this.useTouchOptimizedControls = false,
   });
 
@@ -55,6 +60,7 @@ class VideoCollectionPlayContent extends ConsumerStatefulWidget {
 
   /// 详情页透传的排序表达式（`field:direction`）；手动顺序为 `null`（按 `position:asc`）。
   final String? sort;
+  final String imageSearchRoutePath;
 
   /// 触摸优化控件开关：移动壳传 `true`（点击唤出控制条），桌面默认 `false`（hover 唤出）。
   final bool useTouchOptimizedControls;
@@ -68,6 +74,14 @@ class _VideoCollectionPlayContentState
     extends ConsumerState<VideoCollectionPlayContent>
     with CollectionPlaybackPageMixin<VideoCollectionPlayContent> {
   List<VideoItemListItemDto> _videos = const <VideoItemListItemDto>[];
+  List<String> _playUrls = <String>[];
+  List<int> _collectionItemIds = <int>[];
+  final _queueRevision = ValueNotifier<int>(0);
+  final _videoKey = GlobalKey<VideoState>();
+  OverlayEntry? _playerOverlayEntry;
+  int? _mutatingVideoId;
+  bool _episodeActionsOpen = false;
+  MediaPlaybackInfoController? _playbackInfoController;
   bool _isLoading = true;
   String? _errorMessage;
 
@@ -80,6 +94,10 @@ class _VideoCollectionPlayContentState
 
   @override
   void dispose() {
+    _playerOverlayEntry?.remove();
+    _playerOverlayEntry?.dispose();
+    _queueRevision.dispose();
+    _playbackInfoController?.dispose();
     disposePlayback();
     super.dispose();
   }
@@ -87,7 +105,7 @@ class _VideoCollectionPlayContentState
   Future<void> _load() async {
     final handoff = ref.read(collectionPlaybackHandoffProvider);
     final collectionsApi = ref.read(videoCollectionsApiProvider);
-    final moviesApi = ref.read(moviesApiProvider);
+    final mediaApi = ref.read(mediaApiProvider);
     final baseUrl = ref.read(sessionStoreProvider).baseUrl;
     try {
       // 优先用详情页「交接」来的成员（已带播放地址）：常规的「详情页点某集进连播」
@@ -103,7 +121,8 @@ class _VideoCollectionPlayContentState
             sort: widget.sort,
             includePlayUrl: true,
           );
-      final medias = <Media>[];
+      final playUrls = <String>[];
+      final collectionItemIds = <int>[];
       final playableVideos = <VideoItemListItemDto>[];
       // 与 playableVideos 平行：每集「首个媒体」id（可空），供右侧关键帧面板逐集拉缩略图。
       final playableFirstMediaIds = <int?>[];
@@ -114,7 +133,7 @@ class _VideoCollectionPlayContentState
       var resolvedStartIndex = 0;
       for (var i = 0; i < items.length; i++) {
         if (i == widget.startIndex) {
-          resolvedStartIndex = medias.length;
+          resolvedStartIndex = playUrls.length;
         }
         final rawUrl = items[i].playUrl;
         if (rawUrl == null || rawUrl.isEmpty) {
@@ -125,27 +144,26 @@ class _VideoCollectionPlayContentState
         if (playUrl == null || playUrl.isEmpty) {
           continue;
         }
-        medias.add(Media(playUrl));
+        playUrls.add(playUrl);
         playableVideos.add(items[i].video);
+        collectionItemIds.add(items[i].itemId);
         playableFirstMediaIds.add(items[i].firstMediaId);
         playableDurations.add(items[i].video.durationSeconds);
       }
       if (!mounted) {
         return;
       }
-      if (medias.isEmpty) {
+      if (playUrls.isEmpty) {
         setState(() {
           _isLoading = false;
           _errorMessage = '合集内没有可播放的视频';
         });
         return;
       }
-      final startIndex = resolvedStartIndex.clamp(0, medias.length - 1);
-      final player = ThrottlingPlayer();
-      final videoController = VideoController(
-        player,
-        configuration: const VideoControllerConfiguration(hwdec: 'auto'),
-      );
+      final startIndex = resolvedStartIndex.clamp(0, playUrls.length - 1);
+      final playback = ref.read(videoCollectionPlaybackFactoryProvider)();
+      final player = playback.player;
+      final videoController = playback.videoController;
       // 「整部合集」关键帧面板：按可播成员顺序逐集拉「首个媒体」的缩略图（媒体自身时间轴
       // offset，整段从 0 起播）；无媒体的集（firstMediaId 为空）帧段为空、自然跳过。
       final firstMediaIds = List<int?>.unmodifiable(playableFirstMediaIds);
@@ -165,7 +183,7 @@ class _VideoCollectionPlayContentState
               })
             >[];
           }
-          final thumbnails = await moviesApi.getMediaThumbnails(
+          final thumbnails = await mediaApi.getMediaThumbnails(
             mediaId: mediaId,
           );
           return thumbnails
@@ -184,28 +202,28 @@ class _VideoCollectionPlayContentState
               .toList();
         },
       );
-      // 详情页弹窗确认的播放形态（一次性 take，深链/刷新无值则回退 playlist）。
-      // key 含 sort 以与 items 信箱一致，详情页同一合集换排序后选择不会串。
-      final mode =
-          handoff.takeMode(
-            key: 'video:${widget.collectionId}:${widget.sort ?? ''}',
-          ) ??
-          CollectionPlaybackMode.playlist;
+      final playbackInfoController = MediaPlaybackInfoController(
+        player: player,
+        readApiClient: () => ref.read(apiClientProvider),
+      );
       setState(() {
         _videos = playableVideos;
+        _playUrls = playUrls;
+        _collectionItemIds = collectionItemIds;
+        _playbackInfoController?.dispose();
+        _playbackInfoController = playbackInfoController;
         attachPlayback(
           player: player,
           videoController: videoController,
           filmstrip: filmstrip,
           startIndex: startIndex,
-          mode: mode,
           episodeDurationsSeconds: List<int>.unmodifiable(playableDurations),
         );
         _isLoading = false;
       });
       // 优先拉起播集的关键帧，当前集高亮立即可用。
       unawaited(filmstrip.start(priorityEpisode: startIndex));
-      await player.open(Playlist(medias, index: startIndex));
+      await _openPlaylist(player, startIndex);
     } catch (error) {
       if (!mounted) {
         return;
@@ -214,6 +232,205 @@ class _VideoCollectionPlayContentState
         _isLoading = false;
         _errorMessage = apiErrorMessage(error, fallback: '合集加载失败，请稍后重试');
       });
+    }
+  }
+
+  Future<void> _openPlaylist(Player activePlayer, int index) async {
+    if (index < 0 || index >= _playUrls.length) {
+      return;
+    }
+    final sourceUrl = _playUrls[index];
+    try {
+      await activePlayer.open(
+        Playlist(
+          _playUrls
+              .map((url) => Media(withPlaybackAttemptId(url)))
+              .toList(growable: false),
+          index: index,
+        ),
+      );
+    } catch (error) {
+      if (index >= _playUrls.length || _playUrls[index] != sourceUrl) {
+        return;
+      }
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _errorMessage = apiErrorMessage(error, fallback: '合集加载失败，请稍后重试');
+      });
+    }
+  }
+
+  Future<void> _showEpisodes() async {
+    if (isEpisodePanelOpen || _videos.isEmpty) return;
+    final fullscreen = _videoKey.currentState!.isFullscreen();
+    final overlayBox =
+        Navigator.of(
+              context,
+              rootNavigator: true,
+            ).overlay!.context.findRenderObject()!
+            as RenderBox;
+    isEpisodePanelOpen = true;
+    try {
+      // 根浮层兼容全屏路由；窗口态仍限制在播放器分栏内。
+      await showGeneralDialog<void>(
+        context: context,
+        barrierColor: Colors.transparent,
+        pageBuilder: (panelContext, _, _) => ValueListenableBuilder<int>(
+          valueListenable: _queueRevision,
+          builder: (_, revision, child) => StreamBuilder<Playlist>(
+            stream: player!.stream.playlist,
+            builder: (_, snapshot) => LayoutBuilder(
+              builder: (_, constraints) {
+                // 在布局阶段读取当前边界，窗口缩放后跟随播放器分栏。
+                final playerBox =
+                    _videoKey.currentContext!.findRenderObject()! as RenderBox;
+                final bounds = fullscreen
+                    ? Offset.zero & constraints.biggest
+                    : playerBox.localToGlobal(
+                            Offset.zero,
+                            ancestor: overlayBox,
+                          ) &
+                          playerBox.size;
+                return Stack(
+                  children: [
+                    Positioned.fromRect(
+                      rect: bounds,
+                      child: Stack(
+                        children: [
+                          EpisodeSelectorOverlay(
+                            isOpen: true,
+                            itemCount: _videos.length,
+                            currentIndex: currentIndex,
+                            title: '选集 · ${_videos.length}',
+                            onClose: () => Navigator.of(panelContext).pop(),
+                            itemBuilder: (_, index) =>
+                                _buildEpisodeItem(panelContext, index),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        ),
+      );
+    } finally {
+      isEpisodePanelOpen = false;
+    }
+  }
+
+  Widget _buildEpisodeItem(BuildContext panelContext, int index) {
+    final video = _videos[index];
+    return VideoEpisodeQueueItem(
+      key: ValueKey(video.id),
+      video: video,
+      index: index,
+      isCurrent: index == currentIndex,
+      isBusy: _mutatingVideoId == video.id,
+      onPlay: _mutatingVideoId != null
+          ? null
+          : () {
+              Navigator.of(panelContext).pop();
+              jumpTo(index);
+            },
+      onActions: _mutatingVideoId != null
+          ? null
+          : (position) => _showEpisodeActions(panelContext, video, position),
+    );
+  }
+
+  Future<void> _showEpisodeActions(
+    BuildContext panelContext,
+    VideoItemListItemDto video,
+    Offset position,
+  ) async {
+    if (_episodeActionsOpen || _mutatingVideoId != null) return;
+    _episodeActionsOpen = true;
+    try {
+      final action = await showVideoCollectionEpisodeActions(
+        context: panelContext,
+        title: video.preferredTitle,
+        position: position,
+        useTouchOptimizedControls: widget.useTouchOptimizedControls,
+      );
+      if (!mounted || !panelContext.mounted || action == null) return;
+      if (action == VideoCollectionEpisodeAction.delete) {
+        await showVideoEpisodeDeleteConfirmation(
+          context: panelContext,
+          title: video.preferredTitle,
+          onConfirm: () => _removeEpisode(video.id, deleteMedia: true),
+        );
+      } else {
+        try {
+          await _removeEpisode(video.id, deleteMedia: false);
+        } catch (error) {
+          if (mounted) showToast(apiErrorMessage(error, fallback: '移出失败，请重试'));
+        }
+      }
+    } finally {
+      _episodeActionsOpen = false;
+      if (mounted && _videos.isEmpty && panelContext.mounted) {
+        Navigator.of(panelContext).pop();
+        await _videoKey.currentState?.exitFullscreen();
+      }
+    }
+  }
+
+  Future<void> _removeEpisode(int videoId, {required bool deleteMedia}) async {
+    final index = _videos.indexWhere((video) => video.id == videoId);
+    if (index < 0 || _mutatingVideoId != null) return;
+    final itemId = _collectionItemIds[index];
+    final videosApi = ref.read(videosApiProvider);
+    final collectionsApi = ref.read(videoCollectionsApiProvider);
+    final broadcaster = ref.read(videoMutationEventsProvider.notifier);
+    var committed = false;
+    _mutatingVideoId = videoId;
+    _queueRevision.value++;
+    try {
+      await removePlaybackEpisode(
+        index,
+        deleteMedia: deleteMedia,
+        persist: () => deleteMedia
+            ? videosApi.deleteVideo(videoId)
+            : collectionsApi.removeCollectionItem(
+                collectionId: widget.collectionId,
+                itemId: itemId,
+              ),
+        onRemoved: () {
+          committed = true;
+          if (deleteMedia) {
+            broadcaster.reportDeleted(videoId);
+          } else {
+            broadcaster.reportCollectionMembershipChanged(
+              videoId: videoId,
+              collectionId: widget.collectionId,
+              removedFromCollection: true,
+            );
+          }
+          if (!mounted) return;
+          _videos.removeAt(index);
+          _playUrls.removeAt(index);
+          _collectionItemIds.removeAt(index);
+        },
+      );
+      if (mounted) showToast(deleteMedia ? '已删除选集及关联媒体' : '已移出合集，视频仍保留');
+    } catch (error) {
+      if (!committed) rethrow;
+      if (mounted) {
+        await player?.stop();
+        _errorMessage = '选集已更新，播放队列更新失败，请返回合集重新播放';
+        showToast(_errorMessage!);
+      }
+    } finally {
+      _mutatingVideoId = null;
+      if (mounted) {
+        setState(() {});
+        _queueRevision.value++;
+      }
     }
   }
 
@@ -230,8 +447,7 @@ class _VideoCollectionPlayContentState
     return _videos[currentIndex].preferredTitle;
   }
 
-  /// 右键/长按「整部合集」某帧 → 弹「添加/删除时刻」菜单（桌面定位弹窗、移动底部抽屉）。
-  /// 时刻即 MediaPoint，故仅 pornbox（每帧带真实 media/thumbnail id）支持；无媒体的帧静默忽略。
+  /// 右键/长按「整部合集」某帧 → 弹与 JAV 播放器一致的图片菜单。
   Future<void> _showThumbnailActions(int index, Offset globalPosition) async {
     final thumbnails =
         filmstrip?.thumbnails ?? const <MovieMediaThumbnailDto>[];
@@ -242,71 +458,53 @@ class _VideoCollectionPlayContentState
     if (thumbnail.mediaId <= 0 || thumbnail.thumbnailId <= 0) {
       return;
     }
-    final mediaApi = ref.read(mediaApiProvider);
-    // 先查该帧是否已是时刻，决定菜单展示「添加」还是「删除」。
-    final existingPoint = await _findMatchingPoint(mediaApi, thumbnail);
-    if (!mounted) {
+    final point = await tryFindMediaPointForThumbnail(
+      ref: ref,
+      thumbnail: thumbnail,
+    );
+    if (!mounted ||
+        _mutatingVideoId != null ||
+        !(filmstrip?.thumbnails.any(
+              (frame) =>
+                  frame.mediaId == thumbnail.mediaId &&
+                  frame.thumbnailId == thumbnail.thumbnailId,
+            ) ??
+            false)) {
       return;
     }
     final action = await showAppImageActionMenu(
       context: context,
-      actions: <AppImageActionDescriptor>[
-        AppImageActionDescriptor(
-          type: AppImageActionType.toggleMark,
-          label: existingPoint == null ? '添加时刻' : '删除时刻',
-          icon:
-              existingPoint == null
-                  ? Icons.bookmark_add_outlined
-                  : Icons.bookmark_remove_outlined,
-          destructive: existingPoint != null,
-        ),
-      ],
+      actions: buildMediaThumbnailActionDescriptors(
+        thumbnail: thumbnail,
+        point: point,
+      ),
       globalPosition: globalPosition,
-      // 触摸端用底部抽屉、桌面用定位弹窗，对齐图片菜单的两端范式。
-      presentation:
-          widget.useTouchOptimizedControls
-              ? AppImageActionMenuPresentation.bottomDrawer
-              : AppImageActionMenuPresentation.popup,
+      presentation: AppImageActionMenuPresentation.auto,
     );
-    if (!mounted || action != AppImageActionType.toggleMark) {
+    if (!mounted || action == null) {
       return;
     }
-    try {
-      if (existingPoint == null) {
-        await mediaApi.createMediaPoint(
-          mediaId: thumbnail.mediaId,
-          thumbnailId: thumbnail.thumbnailId,
-        );
-        if (mounted) showToast('已添加时刻');
-      } else {
-        await mediaApi.deleteMediaPoint(
-          mediaId: thumbnail.mediaId,
-          pointId: existingPoint.pointId,
-        );
-        if (mounted) showToast('已删除时刻');
-      }
-    } catch (_) {
-      if (mounted) showToast('更新时刻失败，请稍后重试');
-    }
-  }
-
-  /// 与 jav 播放器 `_loadMatchingPoint` 同构（有意各写一份：jav 菜单含
-  /// 相似图片/保存/播放 + 失败抛出，本页只 toggleMark + 失败静默）。
-  Future<MediaPointDto?> _findMatchingPoint(
-    MediaApi mediaApi,
-    MovieMediaThumbnailDto thumbnail,
-  ) async {
-    try {
-      final points = await mediaApi.getMediaPoints(mediaId: thumbnail.mediaId);
-      for (final point in points) {
-        if (point.thumbnailId == thumbnail.thumbnailId) {
-          return point;
-        }
-      }
-    } catch (_) {
-      // 查询失败按「未标记」处理：菜单仍可点「添加时刻」，由创建接口兜底报错。
-    }
-    return null;
+    final fileName =
+        'video_collection_${widget.collectionId}_${thumbnail.thumbnailId}.webp';
+    await handleMediaThumbnailAction(
+      context: context,
+      ref: ref,
+      thumbnail: thumbnail,
+      action: action,
+      point: point,
+      fileName: fileName,
+      onSearchSimilar: () => launchImageSearchFromUrl(
+        context,
+        imageUrl: thumbnail.image.resolvedUrl,
+        routePath: widget.imageSearchRoutePath,
+        fileName: fileName,
+        replaceRouteStack: true,
+      ),
+      onPlay: () async {
+        seekToFrame(index);
+        await player?.play();
+      },
+    );
   }
 
   @override
@@ -338,34 +536,34 @@ class _VideoCollectionPlayContentState
         child: const Center(child: VideoLoadingIndicator()),
       );
     }
-    // 左：原沉浸式播放器 + 「选集」浮层（原样保留）；右：「整部合集」关键帧面板。
+    // 保留局部 Overlay，让播放信息抽屉仍限制在播放器区域；显式刷新现有 entry。
+    _playerOverlayEntry ??= OverlayEntry(
+      builder: (overlayContext) => Positioned.fill(
+        child: _buildPlayerSurface(overlayContext, videoController),
+      ),
+    );
+    _playerOverlayEntry!.markNeedsBuild();
+    // 播放器保持挂载，最后一集移除后也能先关闭全屏路由，再展示空态。
     return CollectionPlaySplitLayout(
       keyPrefix: 'video-collection',
       left: Stack(
+        fit: StackFit.expand,
         children: [
-          Positioned.fill(child: _buildPlayerSurface(context, videoController)),
-          EpisodeSelectorOverlay(
-            isOpen: isEpisodePanelOpen,
-            itemCount: _videos.length,
-            currentIndex: currentIndex,
-            title: '选集 · ${_videos.length}',
-            onClose: closeEpisodePanel,
-            itemBuilder: (context, index) {
-              final video = _videos[index];
-              return CollectionEpisodeQueueItem(
-                itemKey: Key('video-collection-play-queue-item-$index'),
-                coverUrl: video.coverImage?.bestAvailableUrl,
-                coverStyle: CollectionQueueCoverStyle.containOnMuted,
-                title: video.preferredTitle,
-                subtitle: '第 ${index + 1} 集',
-                isCurrent: index == currentIndex,
-                onTap: () {
-                  closeEpisodePanel();
-                  jumpTo(index);
-                },
-              );
-            },
-          ),
+          Overlay(initialEntries: [_playerOverlayEntry!]),
+          if (_videos.isEmpty)
+            ColoredBox(
+              color: Colors.black,
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const AppEmptyState(message: '合集内暂无可播放视频'),
+                    SizedBox(height: context.appSpacing.lg),
+                    AppButton(label: '返回合集', onPressed: _handleBack),
+                  ],
+                ),
+              ),
+            ),
         ],
       ),
       right: buildFilmstripPanel(
@@ -380,39 +578,57 @@ class _VideoCollectionPlayContentState
     BuildContext context,
     VideoController videoController,
   ) {
-    // 合并模式：底栏 progressIndicator 接管整段进度条 + 时间显示，
-    // 并把 media_kit 自带的 seek bar 关掉（避免两条进度条同时显示）。
-    final useMerged =
-        playbackMode == CollectionPlaybackMode.merged && player != null;
-    final progressIndicator =
-        useMerged
-            ? MergedPositionIndicator(
-              player: player!,
-              episodeDurationsSeconds: episodeDurationsSeconds,
-              onSeekGlobalSeconds: seekToGlobalSeconds,
-            )
-            : null;
+    final playbackInfoController = _playbackInfoController!;
+    // 全屏会捕获 controls 主题，因此让控件自行订阅队列变更，避免持有旧时长和标题。
+    final progressIndicator = ValueListenableBuilder<int>(
+      valueListenable: _queueRevision,
+      builder: (_, revision, child) => MergedPositionIndicator(
+        player: player!,
+        episodeDurationsSeconds: episodeDurationsSeconds,
+        onSeekGlobalSeconds: seekToGlobalSeconds,
+      ),
+    );
     return ThemedVideoPlayer(
       videoController: videoController,
       useTouchOptimizedControls: widget.useTouchOptimizedControls,
       guardInitialSeek: true,
-      videoKey: const Key('video-collection-play-video'),
-      displaySeekBar: !useMerged,
-      topControls: buildMoviePlayerTopControls(
-        movieNumber: _currentVideoTitle(),
-        onBackPressed: _handleBack,
-      ),
+      playbackSessionKey: _videos.isEmpty
+          ? null
+          : _videos[currentIndex.clamp(0, _videos.length - 1)].id,
+      videoKey: _videoKey,
+      displaySeekBar: false,
+      topControls: [
+        ...buildMoviePlayerTopControls(
+          movieNumber: '',
+          onBackPressed: _handleBack,
+        ),
+        Expanded(
+          child: ValueListenableBuilder<int>(
+            valueListenable: _queueRevision,
+            builder: (_, revision, child) => StreamBuilder<Playlist>(
+              stream: player!.stream.playlist,
+              builder: (_, snapshot) => Text(
+                _currentVideoTitle(),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: resolveAppTextStyle(
+                  context,
+                  size: AppTextSize.s14,
+                  tone: AppTextTone.onMedia,
+                ),
+              ),
+            ),
+          ),
+        ),
+        Builder(
+          builder: (buttonContext) => MoviePlayerInfoButton(
+            onPressed: () => playbackInfoController.showLocal(buttonContext),
+          ),
+        ),
+      ],
       bottomControls: buildCollectionPlayBottomControls(
         useTouchOptimizedControls: widget.useTouchOptimizedControls,
-        onOpenEpisodes: openEpisodePanel,
-        progressIndicator: progressIndicator,
-      ),
-      // 全屏由 media_kit push 独立路由，页面级「选集」浮层不在其内，按钮点了
-      // 也看不到——全屏态去掉该按钮，避免死按钮。换集需先退出全屏。
-      fullscreenBottomControls: buildCollectionPlayBottomControls(
-        useTouchOptimizedControls: widget.useTouchOptimizedControls,
-        onOpenEpisodes: openEpisodePanel,
-        includeEpisodeButton: false,
+        onOpenEpisodes: _showEpisodes,
         progressIndicator: progressIndicator,
       ),
     );

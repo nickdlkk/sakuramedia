@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+import 'package:sakuramedia/features/external_player/data/external_playback_mode.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:sakuramedia/features/external_player/data/external_player_selection.dart';
 import 'package:sakuramedia/features/shared/presentation/providers/async_notifier_dispose_guard.dart';
@@ -5,7 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 part 'external_player_preference_provider.g.dart';
 
-/// 「默认外部播放器」偏好(仅 Android 使用,keepAlive AsyncNotifier)。
+/// 「默认外部播放器」偏好（keepAlive AsyncNotifier）。
 ///
 /// 迁移前形态:`ExternalPlayerStore extends ChangeNotifier` + legacy
 /// `ChangeNotifierProvider` 的 `..load()` 副作用——现由 `build()` 承载读盘,
@@ -16,22 +18,39 @@ part 'external_player_preference_provider.g.dart';
 @Riverpod(keepAlive: true, retry: kNoAsyncNotifierRetry)
 class ExternalPlayerPreference extends _$ExternalPlayerPreference
     with AsyncNotifierDisposeGuardMixin<ExternalPlayerSelection> {
-  static const String _packageKey = 'android.external_player.package_name';
-  static const String _labelKey = 'android.external_player.label';
+  static String get _playerIdKey => switch (defaultTargetPlatform) {
+    // 保留 Android 已发布版本的键，已有选择升级后无需重选。
+    TargetPlatform.android => 'android.external_player.package_name',
+    TargetPlatform.macOS => 'macos.external_player.application_path',
+    TargetPlatform.windows => 'windows.external_player.application_path',
+    _ => 'external_player.player_id',
+  };
+
+  static String get _labelKey => switch (defaultTargetPlatform) {
+    TargetPlatform.android => 'android.external_player.label',
+    TargetPlatform.macOS => 'macos.external_player.label',
+    TargetPlatform.windows => 'windows.external_player.label',
+    _ => 'external_player.label',
+  };
+
+  static const _playbackModeKey = 'external_player.playback_mode';
 
   @override
   Future<ExternalPlayerSelection> build() async {
     attachDisposeGuard();
     try {
       final preferences = await SharedPreferences.getInstance();
-      final storedPackage = preferences.getString(_packageKey);
-      final packageName =
-          storedPackage != null && storedPackage.isNotEmpty
-              ? storedPackage
-              : null;
+      final storedPlayerId = preferences.getString(_playerIdKey);
+      final playerId = storedPlayerId != null && storedPlayerId.isNotEmpty
+          ? storedPlayerId
+          : null;
       return ExternalPlayerSelection(
-        packageName: packageName,
-        label: packageName == null ? null : preferences.getString(_labelKey),
+        playerId: playerId,
+        label: playerId == null ? null : preferences.getString(_labelKey),
+        playbackMode: ExternalPlaybackMode.values.firstWhere(
+          (mode) => mode.name == preferences.getString(_playbackModeKey),
+          orElse: () => ExternalPlaybackMode.followBackend,
+        ),
       );
     } catch (_) {
       return const ExternalPlayerSelection();
@@ -39,22 +58,44 @@ class ExternalPlayerPreference extends _$ExternalPlayerPreference
   }
 
   Future<void> selectExternalPlayer({
-    required String packageName,
+    required String playerId,
     required String label,
   }) async {
     final current = state.value ?? const ExternalPlayerSelection();
-    if (current.packageName == packageName && current.label == label) {
+    if (current.playerId == playerId && current.label == label) {
       return;
     }
     state = AsyncData(
-      ExternalPlayerSelection(packageName: packageName, label: label),
+      ExternalPlayerSelection(
+        playerId: playerId,
+        label: label,
+        playbackMode: current.playbackMode,
+      ),
     );
     try {
       final preferences = await SharedPreferences.getInstance();
-      await preferences.setString(_packageKey, packageName);
+      await preferences.setString(_playerIdKey, playerId);
       await preferences.setString(_labelKey, label);
     } catch (_) {
       // 忽略持久化失败，保持内存态可用。
+    }
+  }
+
+  Future<void> selectPlaybackMode(ExternalPlaybackMode mode) async {
+    final current = state.value ?? const ExternalPlayerSelection();
+    if (current.playbackMode == mode) return;
+    state = AsyncData(
+      ExternalPlayerSelection(
+        playerId: current.playerId,
+        label: current.label,
+        playbackMode: mode,
+      ),
+    );
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      await preferences.setString(_playbackModeKey, mode.name);
+    } catch (_) {
+      // 与播放器选择一致，持久化失败时保留内存态。
     }
   }
 
@@ -63,10 +104,12 @@ class ExternalPlayerPreference extends _$ExternalPlayerPreference
     if (current == null || !current.hasExternalPlayer) {
       return;
     }
-    state = const AsyncData(ExternalPlayerSelection());
+    state = AsyncData(
+      ExternalPlayerSelection(playbackMode: current.playbackMode),
+    );
     try {
       final preferences = await SharedPreferences.getInstance();
-      await preferences.remove(_packageKey);
+      await preferences.remove(_playerIdKey);
       await preferences.remove(_labelKey);
     } catch (_) {
       // 忽略持久化失败，保持内存态可用。

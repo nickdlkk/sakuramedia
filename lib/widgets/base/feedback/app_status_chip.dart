@@ -148,9 +148,13 @@ class AppStatusChip extends StatelessWidget {
             SizedBox(
               width: iconSize,
               height: iconSize,
-              child: CircularProgressIndicator(
+              child: CircularProgressIndicator.adaptive(
+                backgroundColor: switch (Theme.of(context).platform) {
+                  TargetPlatform.iOS || TargetPlatform.macOS => palette.foreground,
+                  _ => null,
+                },
                 strokeWidth: 1.6,
-                color: palette.foreground,
+                valueColor: AlwaysStoppedAnimation<Color?>(palette.foreground),
               ),
             )
           else

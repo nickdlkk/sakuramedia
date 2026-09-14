@@ -3,7 +3,6 @@ import 'package:sakuramedia/core/network/api_client.dart';
 import 'package:sakuramedia/core/network/api_exception.dart';
 import 'package:sakuramedia/core/session/session_store.dart';
 import 'package:sakuramedia/features/status/data/status_api.dart';
-import 'package:sakuramedia/features/status/data/status_dto.dart';
 
 import '../../../support/fake_http_client_adapter.dart';
 
@@ -52,7 +51,12 @@ void main() {
           'total_size_bytes': 987654321,
         },
         'media_libraries': <String, dynamic>{'total': 3},
-        'thumbnails': <String, dynamic>{'pending_media': 24, 'total': 132},
+        'thumbnails': <String, dynamic>{
+          'pending_media': 24,
+          'retry_wait_media': 6,
+          'terminal_failed_media': 2,
+          'total': 132,
+        },
       },
     );
 
@@ -64,9 +68,13 @@ void main() {
     expect(status.mediaFiles.totalSizeBytes, 987654321);
     expect(status.mediaLibraries.total, 3);
     expect(status.thumbnails.pendingMedia, 24);
+    expect(status.thumbnails.retryWaitMedia, 6);
+    expect(status.thumbnails.terminalFailedMedia, 2);
     expect(status.thumbnails.total, 132);
     expect(status.toJson()['thumbnails'], <String, dynamic>{
       'pending_media': 24,
+      'retry_wait_media': 6,
+      'terminal_failed_media': 2,
       'total': 132,
     });
     expect(status.toJson()['backend_version'], 'v0.2.0');
@@ -96,6 +104,8 @@ void main() {
     final status = await statusApi.getStatus();
 
     expect(status.thumbnails.pendingMedia, 0);
+    expect(status.thumbnails.retryWaitMedia, 0);
+    expect(status.thumbnails.terminalFailedMedia, 0);
     expect(status.thumbnails.total, 0);
   });
 
@@ -151,46 +161,124 @@ void main() {
     );
   });
 
-  test('getImageSearchStatus parses joytag and indexing stats', () async {
-    adapter.enqueueJson(
-      method: 'GET',
-      path: '/status/image-search',
-      statusCode: 200,
-      body: <String, dynamic>{
-        'healthy': true,
-        'joytag': <String, dynamic>{
-          'healthy': true,
-          'used_device': 'GPU',
-          'endpoint': 'http://joytag:8000',
-        },
-        'indexing': <String, dynamic>{
-          'pending_thumbnails': 23,
-          'failed_thumbnails': 2,
-          'success_thumbnails': 15295,
-        },
-      },
-    );
+  test(
+    'checks the latest backend release without sending the login token',
+    () async {
+      const releaseUrl =
+          'https://api.github.com/repos/tinypinglite/sakuramediabe/releases/latest';
+      adapter.enqueueJson(
+        method: 'GET',
+        path: releaseUrl,
+        body: <String, dynamic>{'tag_name': 'v0.2.1'},
+      );
 
-    final status = await statusApi.getImageSearchStatus();
+      final updateVersion = await statusApi.checkBackendUpdate('v0.2.0');
 
-    expect(status.healthy, isTrue);
-    expect(status.joyTag.healthy, isTrue);
-    expect(status.joyTag.usedDevice, 'GPU');
-    expect(status.joyTag.endpoint, 'http://joytag:8000');
-    expect(status.indexing.pendingThumbnails, 23);
-    expect(status.indexing.failedThumbnails, 2);
+      expect(updateVersion, 'v0.2.1');
+      final request = adapter.requests.single;
+      expect(request.path, releaseUrl);
+      expect(request.headers.containsKey('Authorization'), isFalse);
+      expect(request.connectTimeout, const Duration(seconds: 10));
+      expect(request.receiveTimeout, const Duration(seconds: 10));
+    },
+  );
+
+  test(
+    'checks the latest frontend release without sending the login token',
+    () async {
+      const releaseUrl =
+          'https://api.github.com/repos/tinypinglite/sakuramedia/releases/latest';
+      adapter.enqueueJson(
+        method: 'GET',
+        path: releaseUrl,
+        body: <String, dynamic>{'tag_name': 'v0.2.4'},
+      );
+
+      final updateVersion = await statusApi.checkFrontendUpdate('0.2.3');
+
+      expect(updateVersion, 'v0.2.4');
+      final request = adapter.requests.single;
+      expect(request.path, releaseUrl);
+      expect(request.headers.containsKey('Authorization'), isFalse);
+    },
+  );
+
+  test('skips the release request for a local backend version', () async {
+    final updateVersion = await statusApi.checkBackendUpdate('dev-local');
+
+    expect(updateVersion, isNull);
+    expect(adapter.requests, isEmpty);
   });
 
-  test('getImageSearchStatus 保留 joytag 的失败原因', () async {
+  test('treats an invalid release tag as no update', () async {
+    const releaseUrl =
+        'https://api.github.com/repos/tinypinglite/sakuramediabe/releases/latest';
+    adapter.enqueueJson(
+      method: 'GET',
+      path: releaseUrl,
+      body: <String, dynamic>{'tag_name': 'nightly'},
+    );
+
+    final updateVersion = await statusApi.checkBackendUpdate('v0.2.0');
+
+    expect(updateVersion, isNull);
+  });
+
+  test(
+    'getImageSearchStatus parses embedding service and indexing stats',
+    () async {
+      adapter.enqueueJson(
+        method: 'GET',
+        path: '/status/image-search',
+        statusCode: 200,
+        body: <String, dynamic>{
+          'healthy': true,
+          'embedding_service': <String, dynamic>{
+            'healthy': true,
+            'endpoint': 'http://embedding:8000',
+            'space_id': 'clip-vit-l-14',
+            'dimension': 768,
+            'modalities': <String>['image', 'text'],
+          },
+          'indexing': <String, dynamic>{
+            'pending_thumbnails': 23,
+            'failed_thumbnails': 2,
+          },
+          'index_space': <String, dynamic>{
+            'state': 'ready',
+            'indexed_space_id': 'clip-vit-l-14',
+            'current_space_id': 'clip-vit-l-14',
+            'is_rebuilding': true,
+          },
+        },
+      );
+
+      final status = await statusApi.getImageSearchStatus();
+
+      expect(status.healthy, isTrue);
+      expect(status.embeddingService.healthy, isTrue);
+      expect(status.embeddingService.spaceId, 'clip-vit-l-14');
+      expect(status.embeddingService.dimension, 768);
+      expect(status.embeddingService.endpoint, 'http://embedding:8000');
+      expect(status.indexing.pendingThumbnails, 23);
+      expect(status.indexing.failedThumbnails, 2);
+      expect(status.indexSpace.state, 'ready');
+      expect(status.indexSpace.indexedSpaceId, 'clip-vit-l-14');
+      expect(status.indexSpace.currentSpaceId, 'clip-vit-l-14');
+      expect(status.indexSpace.isRebuilding, isTrue);
+    },
+  );
+
+  test('getImageSearchStatus 保留嵌入服务的失败原因', () async {
     adapter.enqueueJson(
       method: 'GET',
       path: '/status/image-search',
       statusCode: 200,
       body: <String, dynamic>{
         'healthy': false,
-        'joytag': <String, dynamic>{
+        'embedding_service': <String, dynamic>{
           'healthy': false,
-          'endpoint': 'http://joytag:8000',
+          'endpoint': 'http://embedding:8000',
           'error': 'model file not found',
         },
         'indexing': <String, dynamic>{
@@ -203,7 +291,20 @@ void main() {
     final status = await statusApi.getImageSearchStatus();
 
     // 诊断页要拿它当状态短句，比前端硬编码的"模型未就绪"有用。
-    expect(status.joyTag.error, 'model file not found');
+    expect(status.embeddingService.error, 'model file not found');
+  });
+
+  test('resetImageSearch posts reset request', () async {
+    adapter.enqueueJson(
+      method: 'POST',
+      path: '/image-search/reset',
+      body: <String, dynamic>{'status': 'accepted'},
+    );
+
+    await statusApi.resetImageSearch();
+
+    expect(adapter.requests.single.method, 'POST');
+    expect(adapter.requests.single.path, '/image-search/reset');
   });
 
   test(
@@ -266,149 +367,6 @@ void main() {
       ),
     );
   });
-
-  test(
-    'getCloud115CookiesStatus parses summary and library statuses',
-    () async {
-      adapter.enqueueJson(
-        method: 'GET',
-        path: '/status/media-libraries/cloud115',
-        statusCode: 200,
-        body: <String, dynamic>{
-          'checked_at': '2026-07-14T10:00:00Z',
-          'summary': <String, dynamic>{
-            'total': 3,
-            'alive': 1,
-            'expired': 1,
-            'unavailable': 1,
-          },
-          'libraries': <Map<String, dynamic>>[
-            <String, dynamic>{
-              'library_id': 1,
-              'name': '115 主库',
-              'cookie_status': 'alive',
-            },
-            <String, dynamic>{
-              'library_id': 2,
-              'name': '115 备用库',
-              'cookie_status': 'expired',
-            },
-            <String, dynamic>{
-              'library_id': 3,
-              'name': '115 暂不可用库',
-              'cookie_status': 'unavailable',
-            },
-          ],
-        },
-      );
-
-      final result = await statusApi.getCloud115CookiesStatus();
-
-      expect(result.checkedAt, DateTime.parse('2026-07-14T10:00:00Z'));
-      expect(result.summary.total, 3);
-      expect(result.summary.alive, 1);
-      expect(result.summary.expired, 1);
-      expect(result.summary.unavailable, 1);
-      expect(
-        result.libraries.map((item) => item.cookieStatus),
-        <Cloud115CookieStatus>[
-          Cloud115CookieStatus.alive,
-          Cloud115CookieStatus.expired,
-          Cloud115CookieStatus.unavailable,
-        ],
-      );
-      expect(result.libraries.first.libraryId, 1);
-      expect(result.libraries.first.name, '115 主库');
-      expect(result.toJson()['summary'], <String, dynamic>{
-        'total': 3,
-        'alive': 1,
-        'expired': 1,
-        'unavailable': 1,
-      });
-    },
-  );
-
-  test('getCloud115CookiesStatus handles empty libraries', () async {
-    adapter.enqueueJson(
-      method: 'GET',
-      path: '/status/media-libraries/cloud115',
-      statusCode: 200,
-      body: <String, dynamic>{
-        'checked_at': '2026-07-14T10:00:00Z',
-        'summary': <String, dynamic>{
-          'total': 0,
-          'alive': 0,
-          'expired': 0,
-          'unavailable': 0,
-        },
-        'libraries': <dynamic>[],
-      },
-    );
-
-    final result = await statusApi.getCloud115CookiesStatus();
-
-    expect(result.summary.total, 0);
-    expect(result.libraries, isEmpty);
-  });
-
-  test('unknown cloud115 cookie status is treated as unavailable', () async {
-    adapter.enqueueJson(
-      method: 'GET',
-      path: '/status/media-libraries/cloud115',
-      statusCode: 200,
-      body: <String, dynamic>{
-        'checked_at': '2026-07-14T10:00:00Z',
-        'summary': <String, dynamic>{
-          'total': 1,
-          'alive': 0,
-          'expired': 0,
-          'unavailable': 1,
-        },
-        'libraries': <Map<String, dynamic>>[
-          <String, dynamic>{
-            'library_id': 1,
-            'name': '115 主库',
-            'cookie_status': 'future-status',
-          },
-        ],
-      },
-    );
-
-    final result = await statusApi.getCloud115CookiesStatus();
-
-    expect(
-      result.libraries.single.cookieStatus,
-      Cloud115CookieStatus.unavailable,
-    );
-  });
-
-  test(
-    'getCloud115CookiesStatus converts backend error to ApiException',
-    () async {
-      adapter.enqueueJson(
-        method: 'GET',
-        path: '/status/media-libraries/cloud115',
-        statusCode: 500,
-        body: <String, dynamic>{
-          'error': <String, dynamic>{
-            'code': 'server_error',
-            'message': 'server error',
-          },
-        },
-      );
-
-      expect(
-        () => statusApi.getCloud115CookiesStatus(),
-        throwsA(
-          isA<ApiException>().having(
-            (ApiException error) => error.error?.code,
-            'error.code',
-            'server_error',
-          ),
-        ),
-      );
-    },
-  );
 
   test('testMetadataProvider parses healthy result', () async {
     adapter.enqueueJson(

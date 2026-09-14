@@ -74,9 +74,13 @@ class CollectionFilmstripController extends ChangeNotifier {
       growable: false,
     );
     _episodeStartIndex = List<int>.filled(_episodeCount, 0, growable: false);
+    _episodeOrder = List<int>.generate(_episodeCount, (index) => index);
   }
 
   final int _episodeCount;
+
+  // 保留加载器的原始索引，移出成员只改映射，不重拉或复制剩余帧。
+  late final List<int> _episodeOrder;
   final CollectionEpisodeFrameLoader _frameLoader;
 
   /// 每集帧桶；`null` = 尚未加载完成，加载完成（含失败/空）后为不可空列表。
@@ -122,11 +126,11 @@ class CollectionFilmstripController extends ChangeNotifier {
             ),
           )
           .toList(growable: false);
-  int get episodeCount => _episodeCount;
+  int get episodeCount => _episodeOrder.length;
   int get loadedEpisodeCount => _attemptedCount;
 
   /// 首集帧到达前显示骨架；全部集已尝试仍无帧时转空态（由网格四态处理）。
-  bool get isLoading => _frames.isEmpty && _attemptedCount < _episodeCount;
+  bool get isLoading => _frames.isEmpty && _attemptedCount < episodeCount;
 
   int? get columns => _columns;
   bool get usesAutoColumns => _usesAutoColumns;
@@ -151,7 +155,7 @@ class CollectionFilmstripController extends ChangeNotifier {
       if (_isDisposed) {
         return;
       }
-      await _loadEpisode(ep);
+      if (_episodeOrder.contains(ep)) await _loadEpisode(ep);
     }
   }
 
@@ -173,7 +177,7 @@ class CollectionFilmstripController extends ChangeNotifier {
             })
           >[];
     }
-    if (_isDisposed) {
+    if (_isDisposed || !_episodeOrder.contains(episodeIndex)) {
       return;
     }
     final frames = raw
@@ -199,7 +203,7 @@ class CollectionFilmstripController extends ChangeNotifier {
 
   void _rebuild() {
     final flat = <CollectionFrame>[];
-    for (var ep = 0; ep < _episodeCount; ep++) {
+    for (final ep in _episodeOrder) {
       _episodeStartIndex[ep] = flat.length;
       final bucket = _episodeFrames[ep];
       if (bucket != null) {
@@ -217,7 +221,9 @@ class CollectionFilmstripController extends ChangeNotifier {
     if (_isDisposed) {
       return;
     }
-    _currentEpisode = episodeIndex;
+    _currentEpisode = episodeIndex >= 0 && episodeIndex < episodeCount
+        ? _episodeOrder[episodeIndex]
+        : null;
     _currentPositionSeconds = positionSeconds;
     _recomputeActive();
   }
@@ -252,9 +258,20 @@ class CollectionFilmstripController extends ChangeNotifier {
     }
     final frame = _frames[globalIndex];
     return (
-      episodeIndex: frame.episodeIndex,
+      episodeIndex: _episodeOrder.indexOf(frame.episodeIndex),
       offsetSeconds: frame.offsetInEpisodeSeconds,
     );
+  }
+
+  /// 删除当前队列中的一集；未完成请求仍用原始索引，返回后会被丢弃。
+  void removeEpisode(int index) {
+    if (_isDisposed || index < 0 || index >= episodeCount) return;
+    final originalIndex = _episodeOrder.removeAt(index);
+    if (_episodeFrames[originalIndex] != null) _attemptedCount--;
+    _episodeFrames[originalIndex] = null;
+    if (_currentEpisode == originalIndex) _currentEpisode = null;
+    _rebuild();
+    _notifySafely();
   }
 
   void applyAutoColumns(int columns) {

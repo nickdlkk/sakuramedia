@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sakuramedia/features/discovery/data/daily_recommendation_movie_dto.dart';
+import 'package:sakuramedia/features/discovery/data/hot_actress_release_movie_dto.dart';
 import 'package:sakuramedia/features/discovery/data/moment_recommendation_dto.dart';
 import 'package:sakuramedia/features/discovery/presentation/moment_recommendation_mapping.dart';
 import 'package:sakuramedia/features/discovery/presentation/providers/discovery_preview_providers.dart';
@@ -11,6 +12,7 @@ import 'package:sakuramedia/features/discovery/presentation/providers/discovery_
 import 'package:sakuramedia/features/image_search/presentation/actions/image_search_launcher.dart';
 import 'package:sakuramedia/features/moments/presentation/moment_listing_models.dart';
 import 'package:sakuramedia/features/movies/presentation/actions/movie_collection_feature_actions.dart';
+import 'package:sakuramedia/features/movies/presentation/actions/movie_playback_launcher.dart';
 import 'package:sakuramedia/features/movies/presentation/providers/movie_summary_provider.dart';
 import 'package:sakuramedia/features/movies/presentation/providers/movie_summary_scope.dart';
 import 'package:sakuramedia/features/movies/presentation/providers/movie_summary_state.dart';
@@ -38,29 +40,24 @@ class DesktopDiscoverPage extends ConsumerStatefulWidget {
 }
 
 class _DesktopDiscoverPageState extends ConsumerState<DesktopDiscoverPage> {
-  // discovery 三腿均由 provider 驱动；本 State 只保留页面交互与导航职责。
+  // 推荐三腿与关注女优上新均由 provider 驱动；本 State 只保留页面交互与导航职责。
   // 桌面发现页保留两行预览的缓冲数据，窗口变化只重排，不重新请求。
   static const int _previewPageSize = 24;
-
   static const _followScope = MovieSummaryScope.subscribedActorsLatest(
     pageSize: _previewPageSize,
     initialLoadErrorText: '女优上新加载失败，请稍后重试',
   );
 
-  Future<void> _toggleFollowSubscription(String movieNumber) async {
-    final result = await ref
-        .read(movieSummaryProvider(_followScope).notifier)
-        .toggleSubscription(movieNumber);
-    if (!mounted) {
-      return;
-    }
-    showMovieSubscriptionFeedback(result);
-  }
-
-  /// discovery 双腿并行刷新;各腿失败自行静默/置错(见 provider),不 toast——
-  /// 对齐迁移前 `DiscoveryController.refresh()` 吞异常的行为。
+  /// 三个预览独立刷新，单侧失败不影响其余区块。
   Future<void> _refreshDiscovery() async {
     await Future.wait(<Future<void>>[
+      ref
+          .read(
+            discoveryHotActressReleasePreviewProvider(
+              _previewPageSize,
+            ).notifier,
+          )
+          .refresh(),
       ref
           .read(discoveryDailyPreviewProvider(_previewPageSize).notifier)
           .refresh(),
@@ -70,15 +67,26 @@ class _DesktopDiscoverPageState extends ConsumerState<DesktopDiscoverPage> {
     ]);
   }
 
-  Future<void> _handleRefresh() async {
-    await Future.wait<void>([
+  Future<void> _handleRefresh() {
+    return Future.wait<void>([
       _refreshDiscovery(),
       ref.read(movieSummaryProvider(_followScope).notifier).refresh(),
     ]);
   }
 
+  Future<void> _toggleFollowSubscription(String movieNumber) async {
+    final result = await ref
+        .read(movieSummaryProvider(_followScope).notifier)
+        .toggleSubscription(movieNumber);
+    if (!mounted) return;
+    showMovieSubscriptionFeedback(result);
+  }
+
   @override
   Widget build(BuildContext context) {
+    final hotActress = ref.watch(
+      discoveryHotActressReleasePreviewProvider(_previewPageSize),
+    );
     final daily = ref.watch(discoveryDailyPreviewProvider(_previewPageSize));
     final moment = ref.watch(discoveryMomentPreviewProvider(_previewPageSize));
     final follow = ref.watch(movieSummaryProvider(_followScope));
@@ -93,6 +101,8 @@ class _DesktopDiscoverPageState extends ConsumerState<DesktopDiscoverPage> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _buildFollowSection(context, follow),
+              SizedBox(height: context.appSpacing.xl),
+              _buildHotActressSection(context, hotActress),
               SizedBox(height: context.appSpacing.xl),
               _buildDailySection(context, daily),
               SizedBox(height: context.appSpacing.xl),
@@ -140,6 +150,51 @@ class _DesktopDiscoverPageState extends ConsumerState<DesktopDiscoverPage> {
           isMovieSubscriptionUpdating: (movie) =>
               follow?.isSubscriptionUpdating(movie.movieNumber) ?? false,
           emptyMessage: '暂无女优上新，先订阅感兴趣的女优，等定时任务同步后展示',
+          placeholderCount: _previewPageSize,
+          maxRows: 2,
+          maxColumns: 10,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildHotActressSection(
+    BuildContext context,
+    DiscoveryPreviewState<HotActressReleaseMovieDto> hotActress,
+  ) {
+    final actressNames = <String, String>{
+      for (final item in hotActress.items)
+        if (item.hotActressName.trim().isNotEmpty)
+          item.movie.movieNumber: '热门：${item.hotActressName.trim()}',
+    };
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _DiscoverSectionTitle(
+          title: '热门新片',
+          totalText: '${hotActress.total} 部',
+          actionKey: const Key('desktop-discover-load-more-hot-actress'),
+          actionLabel: '更多',
+          onActionTap: () => context.push(desktopHotActressReleasesPath),
+        ),
+        SizedBox(height: context.appSpacing.md),
+        MovieSummaryGrid(
+          items: hotActress.items
+              .map((item) => item.movie)
+              .toList(growable: false),
+          isLoading: hotActress.isLoading,
+          errorMessage: hotActress.errorMessage,
+          onMovieTap: (movie) => _openMovieDetail(movie.movieNumber),
+          onMovieMenuRequest: (movie, globalPosition) =>
+              requestMovieCollectionMenu(
+                context,
+                movie.movieNumber,
+                globalPosition,
+                isSubscribed: movie.isSubscribed,
+              ),
+          secondaryLabelForMovie: (movie) => actressNames[movie.movieNumber],
+          useDefaultSubscriptionActions: true,
+          emptyMessage: '暂无热门新片，待更多影片积累热度后展示',
           placeholderCount: _previewPageSize,
           maxRows: 2,
           maxColumns: 10,
@@ -219,14 +274,14 @@ class _DesktopDiscoverPageState extends ConsumerState<DesktopDiscoverPage> {
     BuildContext context,
     DiscoveryPreviewState<MomentRecommendationDto> moment,
   ) {
-    if (moment.isLoading) {
-      return Center(
-        child: Padding(
-          padding: EdgeInsets.symmetric(
-            vertical: context.appLayoutTokens.emptySectionVerticalPadding,
-          ),
-          child: const CircularProgressIndicator(),
-        ),
+    if (moment.isLoading && moment.items.isEmpty) {
+      return MomentGrid(
+        items: const <MomentListItem>[],
+        isLoading: true,
+        placeholderCount: _previewPageSize,
+        maxRows: 2,
+        maxColumns: 6,
+        onItemTap: _ignoreMomentTap,
       );
     }
     if (moment.errorMessage != null) {
@@ -267,6 +322,8 @@ class _DesktopDiscoverPageState extends ConsumerState<DesktopDiscoverPage> {
     switch (action) {
       case MediaPreviewAction.searchSimilar:
         await _searchSimilarFromMoment(item);
+      case MediaPreviewAction.addToCollection:
+        return;
       case MediaPreviewAction.play:
         _openPlayerForMoment(item);
       case MediaPreviewAction.openMovieDetail:
@@ -294,11 +351,14 @@ class _DesktopDiscoverPageState extends ConsumerState<DesktopDiscoverPage> {
       // discovery 推荐时刻当前后端只返 JAV，理论上 movieNumber 必然存在；兜底防御。
       return;
     }
-    context.pushDesktopMoviePlayer(
-      movieNumber: movieNumber,
-      fallbackPath: desktopDiscoverPath,
-      mediaId: item.mediaId > 0 ? item.mediaId : null,
-      positionSeconds: item.offsetSeconds,
+    unawaited(
+      launchMoviePlayback(
+        context,
+        movieNumber: movieNumber,
+        mediaId: item.mediaId > 0 ? item.mediaId : null,
+        positionSeconds: item.offsetSeconds,
+        inAppFallbackPath: desktopDiscoverPath,
+      ),
     );
   }
 
@@ -313,6 +373,8 @@ class _DesktopDiscoverPageState extends ConsumerState<DesktopDiscoverPage> {
     );
   }
 }
+
+void _ignoreMomentTap(MomentListItem _) {}
 
 class _DiscoverSectionTitle extends StatelessWidget {
   const _DiscoverSectionTitle({
@@ -338,7 +400,7 @@ class _DiscoverSectionTitle extends StatelessWidget {
           title,
           style: resolveAppTextStyle(
             context,
-            size: AppTextSize.s18,
+            size: AppTextSize.s14,
             weight: AppTextWeight.semibold,
             tone: AppTextTone.primary,
           ),

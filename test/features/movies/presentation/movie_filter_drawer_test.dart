@@ -42,12 +42,23 @@ void main() {
     expect(find.text('确定'), findsNothing);
     expect(find.text('完成'), findsNothing);
 
+    await tester.tap(find.text('4K'));
+    await tester.pumpAndSettle();
+    expect(applied, isEmpty);
+    await tester.tap(find.text('可播放'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('4K'));
+    await tester.pumpAndSettle();
+    expect(applied.last.resolution, PlaylistResolutionFilter.k4k);
+    expect(applied.last.triggerLabel, contains('4K'));
+    applied.clear();
     await tester.tap(find.text('已订阅'));
     await tester.pumpAndSettle();
 
     // 点完立刻生效，抽屉不关。
     expect(applied, hasLength(1));
     expect(applied.single.status, MovieStatusFilter.subscribed);
+    expect(applied.single.resolution, isNull);
     expect(find.text('状态筛选'), findsOneWidget);
 
     // 未订阅与已订阅互补相邻，同样是即时生效。
@@ -59,6 +70,8 @@ void main() {
 
     // 热度双滑块：拖右 thumb 松手才应用，且滑到顶之前传具体上限。
     final slider = find.byKey(const Key('movie-filter-heat-slider'));
+    await tester.ensureVisible(slider);
+    await tester.pumpAndSettle();
     final rect = tester.getRect(slider);
     await tester.dragFrom(
       Offset(rect.right - 12, rect.center.dy),

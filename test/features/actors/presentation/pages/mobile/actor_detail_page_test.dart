@@ -30,7 +30,7 @@ void main() {
     bundle.dispose();
   });
 
-  void enqueueInitialLoad() {
+  void enqueueInitialLoad({int total = 2}) {
     bundle.adapter.enqueueJson(
       method: 'GET',
       path: '/actors/1',
@@ -39,7 +39,7 @@ void main() {
     bundle.adapter.enqueueJson(
       method: 'GET',
       path: '/movies',
-      body: _moviesJson(),
+      body: _moviesJson(total: total),
     );
   }
 
@@ -47,10 +47,53 @@ void main() {
     return ProviderScope(
       overrides: bundle.riverpodOverrides(),
       child: OKToast(
-        child: MaterialApp(theme: sakuraThemeData, home: Scaffold(body: child)),
+        child: MaterialApp(
+          theme: sakuraThemeData,
+          home: Scaffold(body: child),
+        ),
       ),
     );
   }
+
+  testWidgets('资料滚走后筛选栏吸顶，切筛选回到影片起点', (tester) async {
+    enqueueInitialLoad(total: 40);
+    await tester.pumpWidget(wrap(const MobileActorDetailPage(actorId: 1)));
+    await tester.pumpAndSettle();
+    final header = find.byKey(const Key('actor-detail-filter-trigger'));
+    final initialTop = tester.getTopLeft(header).dy;
+    final scroll = tester
+        .widget<CustomScrollView>(find.byType(CustomScrollView))
+        .controller!;
+    scroll.jumpTo(500);
+    await tester.pump();
+    final pinnedTop = tester.getTopLeft(header).dy;
+    expect(pinnedTop, lessThan(initialTop));
+    scroll.jumpTo(800);
+    await tester.pump();
+    expect(tester.getTopLeft(header).dy, pinnedTop);
+    bundle.adapter.enqueueJson(
+      method: 'GET',
+      path: '/actors/1/years',
+      body: [],
+    );
+    await tester.tap(header);
+    await tester.pumpAndSettle();
+    bundle.adapter.enqueueJson(
+      method: 'GET',
+      path: '/movies',
+      body: _moviesJson(total: 40),
+    );
+    await tester.tap(find.text('未订阅'));
+    await tester.pumpAndSettle();
+    expect(scroll.offset, greaterThan(0));
+    expect(scroll.offset, lessThan(500));
+    Navigator.of(
+      tester.element(find.byKey(const Key('mobile-movies-filter-drawer'))),
+    ).pop();
+    await tester.pumpAndSettle();
+    expect(tester.getTopLeft(header).dy, pinnedTop);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('影片筛选走底部抽屉，而不是桌面就地浮层', (WidgetTester tester) async {
     enqueueInitialLoad();
@@ -116,6 +159,57 @@ void main() {
       find.byKey(const Key('actor-detail-batch-bottom-bar')),
       findsOneWidget,
     );
+    expect(
+      find.byKey(const Key('actor-detail-batch-blacklist-button')),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+
+    bundle.adapter.enqueueJson(
+      method: 'PUT',
+      path: '/movies/blacklist',
+      statusCode: 204,
+    );
+    await tester.tap(
+      find.byKey(const Key('actor-detail-batch-blacklist-button')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const Key('actor-detail-batch-blacklist-confirm')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('movie-summary-card-ABC-001')), findsNothing);
+    expect(find.byKey(const Key('movie-summary-card-ABC-002')), findsOneWidget);
+    expect(
+      find.byKey(const Key('actor-detail-batch-bottom-bar')),
+      findsNothing,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('长按菜单屏蔽单片后立即移除影片并更新总数', (tester) async {
+    enqueueInitialLoad();
+    bundle.adapter.enqueueJson(
+      method: 'PUT',
+      path: '/movies/blacklist',
+      statusCode: 204,
+    );
+    await tester.pumpWidget(wrap(const MobileActorDetailPage(actorId: 1)));
+    await tester.pumpAndSettle();
+    await tester.longPress(find.byKey(const Key('movie-summary-card-ABC-001')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('屏蔽影片'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('屏蔽'));
+    await tester.pumpAndSettle();
+    expect(bundle.adapter.requests.singleWhere((r) => r.method == 'PUT').body, {
+      'movie_numbers': ['ABC-001'],
+    });
+    expect(find.byKey(const Key('movie-summary-card-ABC-001')), findsNothing);
+    expect(find.byKey(const Key('movie-summary-card-ABC-002')), findsOneWidget);
+    expect(find.text('作品 · 1 部'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
   });
 }

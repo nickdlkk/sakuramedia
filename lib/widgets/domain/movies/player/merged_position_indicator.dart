@@ -84,7 +84,9 @@ class _MergedPositionIndicatorState extends State<MergedPositionIndicator> {
       widget.episodeDurationsSeconds,
     )) {
       _recomputeCumulative();
-      _episode = _clampEpisode(_episode);
+      _dragValue = null;
+      _episode = _clampEpisode(widget.player.state.playlist.index);
+      _position = widget.player.state.position;
     }
   }
 

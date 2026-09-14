@@ -4,10 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:oktoast/oktoast.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sakuramedia/core/network/api_error_message.dart';
-import 'package:sakuramedia/features/actors/data/dto/actor_list_item_dto.dart';
+import 'package:sakuramedia/features/actors/data/dto/actor_detail_dto.dart';
 import 'package:sakuramedia/features/actors/data/dto/actor_movie_year_dto.dart';
 import 'package:sakuramedia/features/actors/presentation/actor_subscription_toggle_result.dart';
 import 'package:sakuramedia/features/actors/presentation/providers/actor_detail_provider.dart';
+import 'package:sakuramedia/features/actors/presentation/providers/actor_mutation_events_provider.dart';
+import 'package:sakuramedia/features/actors/presentation/widgets/actor_profile_editor.dart';
 import 'package:sakuramedia/features/movies/data/dto/detail/movie_collection_type_dto.dart';
 import 'package:sakuramedia/features/movies/data/dto/listing/movie_list_item_dto.dart';
 import 'package:sakuramedia/features/movies/presentation/actions/movie_collection_feature_actions.dart';
@@ -19,6 +21,8 @@ import 'package:sakuramedia/features/movies/presentation/providers/movie_summary
 import 'package:sakuramedia/features/shared/presentation/providers/paged_async_notifier.dart';
 import 'package:sakuramedia/features/subscriptions/presentation/subscription_feedback.dart';
 import 'package:sakuramedia/theme.dart';
+import 'package:sakuramedia/widgets/base/layout/scrolling/app_pinned_list_header.dart';
+import 'package:sakuramedia/widgets/base/feedback/app_filter_result_loading_overlay.dart';
 import 'package:sakuramedia/widgets/base/interaction/refresh/app_page_refresh_scope.dart';
 import 'package:sakuramedia/widgets/base/interaction/selection/multi_select_state_mixin.dart';
 import 'package:sakuramedia/widgets/base/navigation/app_list_header.dart';
@@ -41,11 +45,11 @@ typedef ActorDetailBodyBuilder =
 typedef ActorDetailHeaderBuilder =
     Widget Function(
       BuildContext context,
-      ActorListItemDto actor,
-      int total,
+      ActorDetailDto actor,
       bool isSubscribed,
       bool isSubscriptionUpdating,
       VoidCallback? onSubscriptionTap,
+      VoidCallback onEditTap,
     );
 
 typedef ActorDetailErrorBuilder =
@@ -108,6 +112,7 @@ class _ActorDetailContentState extends ConsumerState<ActorDetailContent>
         MultiSelectStateMixin<ActorDetailContent, String>,
         MovieBatchSelectionMixin<ActorDetailContent> {
   late final ScrollController _scrollController;
+  final _listHeaderKey = GlobalKey();
 
   List<MovieFilterYearOption> _movieYearOptions =
       const <MovieFilterYearOption>[];
@@ -130,6 +135,10 @@ class _ActorDetailContentState extends ConsumerState<ActorDetailContent>
   @override
   MovieBatchToggleExecutor get batchSubscriptionExecutor =>
       ref.read(movieSummaryProvider(_scope).notifier).batchToggleSubscription;
+
+  @override
+  MovieBlacklistBatchExecutor get batchBlacklistExecutor =>
+      ref.read(movieSummaryProvider(_scope).notifier).blacklistMovies;
 
   @override
   List<String> get batchSelectableNumbers =>
@@ -178,9 +187,7 @@ class _ActorDetailContentState extends ConsumerState<ActorDetailContent>
     if (selectionMode) {
       exitSelection();
     }
-    if (_scrollController.hasClients) {
-      _scrollController.jumpTo(0);
-    }
+    AppPinnedListHeader.scrollToStart(_listHeaderKey, _scrollController);
     unawaited(
       ref
           .read(movieSummaryProvider(_scope).notifier)
@@ -291,10 +298,27 @@ class _ActorDetailContentState extends ConsumerState<ActorDetailContent>
     showActorSubscriptionFeedback(result);
   }
 
+  Future<void> _openActorEditor(ActorDetailDto actor) async {
+    final updated = await showActorProfileEditor(
+      context,
+      actor: actor,
+      api: ref.read(actorsApiProvider),
+    );
+    if (!mounted || updated == null) {
+      return;
+    }
+    ref
+        .read(actorDetailProvider(widget.actorId).notifier)
+        .replaceActor(updated);
+    ref
+        .read(actorMutationEventsProvider.notifier)
+        .reportUpdated(updated.summary);
+  }
+
   /// 影片区顶栏：与影片 / 女优列表页共用同一条 `AppListHeader`。
   /// 差别只在筛选面板的容器——桌面就地浮层，移动底部抽屉。
   ///
-  /// 总数不进信息槽：女优信息头里已经有「N 部」，再放一遍是重复。
+  /// 数量属于当前作品筛选结果，随作品列表一起展示。
   Widget _buildFilterHeader(
     BuildContext context,
     PagedListState<MovieListItemDto>? paged,
@@ -328,6 +352,9 @@ class _ActorDetailContentState extends ConsumerState<ActorDetailContent>
         isDefault: _filterState.isDefault,
         onReset: _resetFilters,
       ),
+      informationSlots: [
+        if (paged != null) AppListHeaderInfo(label: '作品 · ${paged.total} 部'),
+      ],
       actionSlots: [
         // 移动端多选入口挂在卡片长按菜单里，顶栏不常驻「选择」。
         if (!widget.useMobileSelectionLayout) buildEnterSelectionButton(),
@@ -421,7 +448,7 @@ class _ActorDetailContentState extends ConsumerState<ActorDetailContent>
 
             final actor = actorState!.actor!;
             final isActorSubscribed =
-                _isActorSubscribedOverride ?? actor.isSubscribed;
+                _isActorSubscribedOverride ?? actor.summary.isSubscribed;
             final footer = movies == null
                 ? null
                 : widget.footerBuilder(
@@ -432,88 +459,100 @@ class _ActorDetailContentState extends ConsumerState<ActorDetailContent>
                         .loadMore(),
                   );
 
-            return widget.bodyBuilder(
-              context,
-              _scrollController,
-              SliverMainAxisGroup(
-                slivers: [
-                  SliverToBoxAdapter(
-                    child: KeyedSubtree(
-                      key: widget.contentKey,
-                      child: widget.headerBuilder(
-                        context,
-                        actor,
-                        movies?.paged.total ?? 0,
-                        isActorSubscribed,
-                        _isActorSubscriptionUpdating,
-                        _isActorSubscriptionUpdating
-                            ? null
-                            : () => _toggleActorSubscription(
-                                isSubscribed: isActorSubscribed,
-                              ),
-                      ),
-                    ),
-                  ),
-                  SliverToBoxAdapter(
-                    child: SizedBox(height: widget.sectionSpacing),
-                  ),
-                  SliverToBoxAdapter(
-                    child: selectionMode
-                        ? (widget.useMobileSelectionLayout
-                              ? buildMobileBatchSelectionHeader()
-                              : buildBatchSelectionToolbar())
-                        : _buildFilterHeader(context, movies?.paged),
-                  ),
-                  SliverToBoxAdapter(
-                    child: SizedBox(height: widget.sectionSpacing),
-                  ),
-                  if (!(movies?.paged.filterUpdate.hasFailed ?? false) ||
-                      (movies?.paged.items.isNotEmpty ?? false))
-                    MovieSummarySliver(
-                      items: movies?.paged.items ?? const [],
-                      isLoading: moviesAsync.isLoading && movies == null,
-                      errorMessage: moviesAsync.hasError && movies == null
-                          ? _scope.initialLoadErrorText
-                          : null,
-                      onMovieTap: (movie) =>
-                          widget.onMovieTap(context, movie.movieNumber),
-                      onMovieMenuRequest: (movie, globalPosition) {
-                        unawaited(
-                          showMovieCollectionFeatureActionMenu(
-                            context: context,
-                            movieNumber: movie.movieNumber,
-                            globalPosition: globalPosition,
-                            isSubscribed: movie.isSubscribed,
-                            onEnterSelection: widget.useMobileSelectionLayout
-                                ? () {
-                                    enterSelection();
-                                    toggleSelect(movie.movieNumber);
-                                  }
-                                : null,
-                          ),
-                        );
-                      },
-                      onMovieSubscriptionTap: (movie) =>
-                          _toggleMovieSubscription(movie.movieNumber),
-                      isMovieSubscriptionUpdating: (movie) =>
-                          movies?.isSubscriptionUpdating(movie.movieNumber) ??
-                          false,
-                      emptyMessage: '暂无影片数据',
-                      selectionMode: selectionMode,
-                      isMovieSelected: (movie) => isSelected(movie.movieNumber),
-                      onMovieSelectedChanged: (movie, _) =>
-                          toggleSelect(movie.movieNumber),
-                    ),
-                  if (footer != null)
+            return AppFilterResultLoadingOverlay(
+              protectedHeaderKey: _listHeaderKey,
+              scrollController: _scrollController,
+              isLoading: movies?.paged.filterUpdate.isLoading ?? false,
+              hasPreviousItems: movies?.paged.items.isNotEmpty ?? false,
+              child: widget.bodyBuilder(
+                context,
+                _scrollController,
+                SliverMainAxisGroup(
+                  slivers: [
                     SliverToBoxAdapter(
-                      child: Padding(
-                        padding: EdgeInsets.only(top: context.appSpacing.md),
-                        child: footer,
+                      child: KeyedSubtree(
+                        key: widget.contentKey,
+                        child: widget.headerBuilder(
+                          context,
+                          actor,
+                          isActorSubscribed,
+                          _isActorSubscriptionUpdating,
+                          _isActorSubscriptionUpdating
+                              ? null
+                              : () => _toggleActorSubscription(
+                                  isSubscribed: isActorSubscribed,
+                                ),
+                          () => unawaited(_openActorEditor(actor)),
+                        ),
                       ),
                     ),
-                ],
+                    SliverToBoxAdapter(
+                      child: SizedBox(height: widget.sectionSpacing),
+                    ),
+                    AppPinnedListHeader(
+                      key: _listHeaderKey,
+                      color: widget.surfaceColor,
+                      child: selectionMode
+                          ? (widget.useMobileSelectionLayout
+                                ? buildMobileBatchSelectionHeader()
+                                : buildBatchSelectionToolbar())
+                          : _buildFilterHeader(context, movies?.paged),
+                    ),
+                    SliverToBoxAdapter(
+                      child: SizedBox(height: widget.sectionSpacing),
+                    ),
+                    if (!(movies?.paged.filterUpdate.hasFailed ?? false) ||
+                        (movies?.paged.items.isNotEmpty ?? false))
+                      MovieSummarySliver(
+                        items: movies?.paged.items ?? const [],
+                        isLoading: moviesAsync.isLoading && movies == null,
+                        errorMessage: moviesAsync.hasError && movies == null
+                            ? _scope.initialLoadErrorText
+                            : null,
+                        onMovieTap: (movie) =>
+                            widget.onMovieTap(context, movie.movieNumber),
+                        onMovieMenuRequest: (movie, globalPosition) {
+                          unawaited(
+                            showMovieCollectionFeatureActionMenu(
+                              context: context,
+                              movieNumber: movie.movieNumber,
+                              globalPosition: globalPosition,
+                              isSubscribed: movie.isSubscribed,
+                              onBlacklisted: () => ref
+                                  .read(movieSummaryProvider(_scope).notifier)
+                                  .removeMovies(<String>[movie.movieNumber]),
+                              onEnterSelection: widget.useMobileSelectionLayout
+                                  ? () {
+                                      enterSelection();
+                                      toggleSelect(movie.movieNumber);
+                                    }
+                                  : null,
+                            ),
+                          );
+                        },
+                        onMovieSubscriptionTap: (movie) =>
+                            _toggleMovieSubscription(movie.movieNumber),
+                        isMovieSubscriptionUpdating: (movie) =>
+                            movies?.isSubscriptionUpdating(movie.movieNumber) ??
+                            false,
+                        emptyMessage: '暂无影片数据',
+                        selectionMode: selectionMode,
+                        isMovieSelected: (movie) =>
+                            isSelected(movie.movieNumber),
+                        onMovieSelectedChanged: (movie, _) =>
+                            toggleSelect(movie.movieNumber),
+                      ),
+                    if (footer != null)
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: EdgeInsets.only(top: context.appSpacing.md),
+                          child: footer,
+                        ),
+                      ),
+                  ],
+                ),
+                widget.enableRefresh ? _handleRefresh : null,
               ),
-              widget.enableRefresh ? _handleRefresh : null,
             );
           },
         ),

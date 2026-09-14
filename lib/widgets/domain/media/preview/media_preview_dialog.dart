@@ -14,9 +14,11 @@ import 'package:sakuramedia/features/movies/data/dto/detail/movie_detail_dto.dar
 import 'package:sakuramedia/features/movies/presentation/providers/movies_api_provider.dart';
 import 'package:sakuramedia/theme.dart';
 import 'package:sakuramedia/widgets/base/feedback/app_empty_state.dart';
+import 'package:sakuramedia/widgets/base/feedback/app_mobile_skeleton.dart';
 import 'package:sakuramedia/widgets/base/overlays/app_bottom_drawer.dart';
 import 'package:sakuramedia/widgets/base/overlays/app_desktop_dialog.dart';
 import 'package:sakuramedia/widgets/domain/actors/actor_avatar.dart';
+import 'package:sakuramedia/widgets/domain/media/media_center_play_button.dart';
 import 'package:sakuramedia/widgets/domain/media/preview/media_preview_action_grid.dart';
 import 'package:sakuramedia/widgets/domain/media/preview/preview_image_stage.dart';
 import 'package:sakuramedia/features/movies/presentation/widgets/detail/movie_plot_thumbnail.dart';
@@ -48,7 +50,7 @@ class MediaPreviewItem {
 
 enum MediaPreviewPresentation {
   /// 读 `AppPlatformScope.maybeOf`：`mobile` → 底部抽屉，其余（`desktop` /
-  /// `web` / null）→ 桌面对话框。与 `AppConfirmVariant.auto` 同范式。
+  /// null）→ 桌面对话框。与 `AppConfirmVariant.auto` 同范式。
   auto,
   dialog,
   bottomDrawer,
@@ -69,9 +71,14 @@ MediaPreviewPresentation resolveMediaPreviewPresentation(
 
 /// 预览层关闭后，由调用页面执行的外部跳转动作。
 ///
-/// 保存与标记由预览层自身处理；相似图、播放与影片详情必须先关闭当前 Dialog/
-/// Drawer，避免新路由或新的 root 弹层被旧预览的 pop 一并关闭。
-enum MediaPreviewAction { searchSimilar, play, openMovieDetail }
+/// 保存与标记由预览层自身处理；相似图、播放、影片详情与加入合集必须先关闭
+/// 当前 Dialog/Drawer，避免新路由或新的 root 弹层被旧预览的 pop 一并关闭。
+enum MediaPreviewAction {
+  searchSimilar,
+  addToCollection,
+  play,
+  openMovieDetail,
+}
 
 Future<MediaPreviewAction?> showMediaPreviewOverlay({
   required BuildContext context,
@@ -100,6 +107,8 @@ class MediaPreviewDialog extends ConsumerStatefulWidget {
     this.onPointRemoved,
     this.closeOnPointRemoved = false,
     this.presentation = MediaPreviewPresentation.dialog,
+    this.useInlineNavigation = false,
+    this.onActorSelected,
   });
 
   final MediaPreviewItem item;
@@ -107,6 +116,11 @@ class MediaPreviewDialog extends ConsumerStatefulWidget {
   final VoidCallback? onPointRemoved;
   final bool closeOnPointRemoved;
   final MediaPreviewPresentation presentation;
+  final bool useInlineNavigation;
+
+  /// Records the selected actor before the overlay closes; navigation belongs
+  /// to the caller after awaiting the overlay.
+  final ValueChanged<int>? onActorSelected;
 
   @override
   ConsumerState<MediaPreviewDialog> createState() => _MediaPreviewDialogState();
@@ -236,6 +250,11 @@ class _MediaPreviewDialogState extends ConsumerState<MediaPreviewDialog> {
   bool get _canSearchSimilar =>
       widget.availableActions.contains(MediaPreviewAction.searchSimilar);
 
+  bool get _canAddToCollection =>
+      widget.availableActions.contains(MediaPreviewAction.addToCollection) &&
+      widget.item.mediaId > 0 &&
+      widget.item.thumbnailId > 0;
+
   bool get _canPlay =>
       widget.item.mediaId > 0 &&
       widget.availableActions.contains(MediaPreviewAction.play);
@@ -243,6 +262,23 @@ class _MediaPreviewDialogState extends ConsumerState<MediaPreviewDialog> {
   bool get _canOpenMovieDetail =>
       !widget.item.isVideo &&
       widget.availableActions.contains(MediaPreviewAction.openMovieDetail);
+
+  bool get _isLoadingPreviewData =>
+      _isLoadingMovieDetail || _isLoadingMediaPoints;
+
+  int get _loadingActionCount {
+    var count = 3; // 相似图片、保存、标记
+    if (_canAddToCollection) {
+      count++;
+    }
+    if (_canPlay && !widget.useInlineNavigation) {
+      count++;
+    }
+    if (_canOpenMovieDetail && !widget.useInlineNavigation) {
+      count++;
+    }
+    return count;
+  }
 
   bool _isBottomDrawer(BuildContext context) =>
       resolveMediaPreviewPresentation(context, widget.presentation) ==
@@ -291,6 +327,8 @@ class _MediaPreviewDialogState extends ConsumerState<MediaPreviewDialog> {
       layout: MediaPreviewActionGridLayout.horizontalScroll,
       spacing: spacing.xs,
       tileWidth: 64,
+      isLoading: _isLoadingPreviewData,
+      loadingItemCount: _loadingActionCount,
       actions: [
         MediaPreviewActionItem(
           label: '相似图片',
@@ -313,15 +351,24 @@ class _MediaPreviewDialogState extends ConsumerState<MediaPreviewDialog> {
           onTap: _canTogglePoint ? _handleTogglePoint : null,
         ),
         MediaPreviewActionItem(
+          label: '加入合集',
+          icon: Icons.collections_bookmark_outlined,
+          visible: _canAddToCollection,
+          onTap: _handleAddToCollection,
+        ),
+        MediaPreviewActionItem(
           label: '播放',
           icon: Icons.play_circle_outline_rounded,
-          visible: _canPlay,
+          visible: _canPlay && !widget.useInlineNavigation,
           onTap: _canPlay ? _handlePlay : null,
         ),
         MediaPreviewActionItem(
           label: '影片详情',
           icon: Icons.info_outline_rounded,
-          visible: _canOpenMovieDetail,
+          visible:
+              _canOpenMovieDetail &&
+              (!widget.useInlineNavigation ||
+                  (!_isLoadingMovieDetail && _movieDetailErrorMessage != null)),
           onTap: _canOpenMovieDetail ? _handleOpenMovieDetail : null,
         ),
       ],
@@ -352,8 +399,12 @@ class _MediaPreviewDialogState extends ConsumerState<MediaPreviewDialog> {
                   fullscreenImageKey: const Key(
                     'image-search-result-preview-fullscreen-image',
                   ),
-                  overlayChild:
-                      _canPlay ? _CenterPlayButton(onTap: _handlePlay) : null,
+                  overlayChild: _canPlay
+                      ? MediaCenterPlayButton(
+                          buttonKey: const Key('media-preview-center-play'),
+                          onTap: _handlePlay,
+                        )
+                      : null,
                 ),
                 Container(
                   key: const Key('image-search-result-preview-summary'),
@@ -395,7 +446,12 @@ class _MediaPreviewDialogState extends ConsumerState<MediaPreviewDialog> {
           onClose: () => Navigator.of(context).pop(),
           showCloseButton: false,
           enablePinchToFullscreen: false,
-          overlayChild: _canPlay ? _CenterPlayButton(onTap: _handlePlay) : null,
+          overlayChild: _canPlay
+              ? MediaCenterPlayButton(
+                  buttonKey: const Key('media-preview-center-play'),
+                  onTap: _handlePlay,
+                )
+              : null,
         ),
         Container(
           key: const Key('image-search-result-preview-summary'),
@@ -440,12 +496,8 @@ class _MediaPreviewDialogState extends ConsumerState<MediaPreviewDialog> {
   }
 
   Widget _buildMovieInfoSection(BuildContext context) {
-    final spacing = context.appSpacing;
     if (_isLoadingMovieDetail) {
-      return const SizedBox(
-        height: 132,
-        child: Center(child: CircularProgressIndicator()),
-      );
+      return const _MediaPreviewMovieInfoSkeleton();
     }
     if (_movieDetailErrorMessage != null) {
       return AppEmptyState(
@@ -458,6 +510,7 @@ class _MediaPreviewDialogState extends ConsumerState<MediaPreviewDialog> {
     if (movie == null) {
       return const SizedBox.shrink();
     }
+    final spacing = context.appSpacing;
     return Column(
       key: const Key('image-search-result-preview-movie-info-section'),
       mainAxisSize: MainAxisSize.min,
@@ -470,8 +523,12 @@ class _MediaPreviewDialogState extends ConsumerState<MediaPreviewDialog> {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              SizedBox(
+              InkWell(
                 key: const Key('image-search-result-preview-movie-cover'),
+                borderRadius: context.appRadius.mdBorder,
+                onTap: widget.useInlineNavigation && _canOpenMovieDetail
+                    ? _handleOpenMovieDetail
+                    : null,
                 child:
                     movie.coverImage == null
                         ? ClipRRect(
@@ -513,6 +570,12 @@ class _MediaPreviewDialogState extends ConsumerState<MediaPreviewDialog> {
                         : _MovieActorStrip(
                           actors: movie.actors,
                           controller: _actorScrollController,
+                          onActorTap: widget.onActorSelected == null
+                              ? null
+                              : (actorId) {
+                                  widget.onActorSelected!(actorId);
+                                  Navigator.of(context).pop();
+                                },
                         ),
               ),
             ],
@@ -624,6 +687,13 @@ class _MediaPreviewDialogState extends ConsumerState<MediaPreviewDialog> {
     Navigator.of(context).pop(MediaPreviewAction.play);
   }
 
+  void _handleAddToCollection() {
+    if (!_canAddToCollection) {
+      return;
+    }
+    Navigator.of(context).pop(MediaPreviewAction.addToCollection);
+  }
+
   void _handleOpenMovieDetail() {
     Navigator.of(context).pop(MediaPreviewAction.openMovieDetail);
   }
@@ -642,51 +712,105 @@ class _MediaPreviewSectionDivider extends StatelessWidget {
   }
 }
 
-class _CenterPlayButton extends StatelessWidget {
-  const _CenterPlayButton({required this.onTap});
-
-  final VoidCallback onTap;
+class _MediaPreviewMovieInfoSkeleton extends StatelessWidget {
+  const _MediaPreviewMovieInfoSkeleton();
 
   @override
   Widget build(BuildContext context) {
-    final iconSize = context.appComponentTokens.iconSize4xl;
-    final padding = context.appSpacing.xs;
-    // Icon + padding 组成的正方形直径,ClipOval 保证 InkWell 的 hitTest
-    // 严格按圆形裁,四角 tap 穿透到底层的 AppPinchToFullscreenImage,
-    // 不抢移动端 drawer 分支的"点图放大"手势。
-    final diameter = iconSize + padding * 2;
-    return Positioned.fill(
-      child: Center(
-        child: SizedBox.square(
-          dimension: diameter,
-          child: ClipOval(
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                key: const Key('media-preview-center-play'),
-                onTap: onTap,
-                child: Padding(
-                  padding: EdgeInsets.all(padding),
-                  child: Icon(
-                    Icons.play_circle_outline_rounded,
-                    size: iconSize,
-                    color: Colors.white.withValues(alpha: 0.92),
+    final spacing = context.appSpacing;
+    final tokens = context.appComponentTokens;
+    final actorItemHeight =
+        tokens.movieDetailActorAvatarSize +
+        spacing.xs +
+        spacing.lg +
+        spacing.sm;
+
+    return Column(
+      key: const Key('image-search-result-preview-movie-info-skeleton'),
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _MediaPreviewSectionDivider(
+          key: const Key('image-search-result-preview-movie-info-divider-top'),
+        ),
+        Padding(
+          padding: EdgeInsets.symmetric(vertical: spacing.md),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              AppSkeletonBlock(
+                key: const Key(
+                  'image-search-result-preview-movie-cover-skeleton',
+                ),
+                width: 88,
+                height: 80,
+                radius: context.appRadius.mdBorder,
+              ),
+              SizedBox(width: spacing.sm),
+              Expanded(
+                child: SizedBox(
+                  height: actorItemHeight,
+                  child: ScrollConfiguration(
+                    behavior: ScrollConfiguration.of(
+                      context,
+                    ).copyWith(scrollbars: false),
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: [
+                          for (var index = 0; index < 3; index++) ...[
+                            if (index > 0) SizedBox(width: spacing.sm),
+                            SizedBox(
+                              width: tokens.movieDetailActorCardWidth,
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  AppSkeletonBlock(
+                                    key: Key(
+                                      'image-search-result-preview-actor-skeleton-$index',
+                                    ),
+                                    width: tokens.movieDetailActorAvatarSize,
+                                    height: tokens.movieDetailActorAvatarSize,
+                                    radius: context.appRadius.pillBorder,
+                                  ),
+                                  SizedBox(height: spacing.sm),
+                                  AppSkeletonBlock(
+                                    width:
+                                        tokens.movieDetailActorCardWidth * 0.65,
+                                    height: context.appTextScale.s12,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
                   ),
                 ),
               ),
-            ),
+            ],
           ),
         ),
-      ),
+        _MediaPreviewSectionDivider(
+          key: const Key(
+            'image-search-result-preview-movie-info-divider-bottom',
+          ),
+        ),
+      ],
     );
   }
 }
 
 class _MovieActorStrip extends StatelessWidget {
-  const _MovieActorStrip({required this.actors, required this.controller});
+  const _MovieActorStrip({
+    required this.actors,
+    required this.controller,
+    this.onActorTap,
+  });
 
   final List<MovieActorDto> actors;
   final ScrollController controller;
+  final ValueChanged<int>? onActorTap;
 
   @override
   Widget build(BuildContext context) {
@@ -712,8 +836,7 @@ class _MovieActorStrip extends StatelessWidget {
           separatorBuilder: (_, __) => SizedBox(width: spacing.sm),
           itemBuilder: (context, index) {
             final actor = actors[index];
-            final tooltip =
-                actor.aliasName.isEmpty ? actor.name : actor.aliasName;
+            final tooltip = actor.displayName;
             final itemKey =
                 actor.id > 0
                     ? Key('image-search-result-preview-actor-${actor.id}')
@@ -721,8 +844,12 @@ class _MovieActorStrip extends StatelessWidget {
 
             return Tooltip(
               message: tooltip,
-              child: KeyedSubtree(
+              child: InkWell(
                 key: itemKey,
+                borderRadius: context.appRadius.smBorder,
+                onTap: actor.id > 0 && onActorTap != null
+                    ? () => onActorTap!(actor.id)
+                    : null,
                 child: SizedBox(
                   // width: tokens.movieDetailActorCardWidth,
                   child: Column(
@@ -738,7 +865,7 @@ class _MovieActorStrip extends StatelessWidget {
                           maxWidth: tokens.movieDetailActorCardWidth,
                         ),
                         child: Text(
-                          actor.name,
+                          actor.displayName,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           textAlign: TextAlign.center,

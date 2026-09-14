@@ -26,9 +26,18 @@ body:
   - type: input
     id: version
     attributes:
-      label: 后端版本
-      description: 在「总览」页底部或容器日志开头可以看到
-      placeholder: "例如: v0.4.8"
+      label: 后端版本 以及 所使用的各个插件版本
+      description: 后端版本在APP侧边栏可以看到，插件版本在系统设置 -> 插件中 可以看到
+      placeholder: "例如: 后端 v0.4.8; 插件: 插件A v1.2.3, 插件B v4.5.6"
+    validations:
+      required: true
+
+  - type: input
+    id: app_version
+    attributes:
+      label: APP版本
+      description: APP版本在APP侧边栏可以看到，插件版本在系统设置 -> 插件中 可以看到
+      placeholder: "v0.4.8"
     validations:
       required: true
 
@@ -41,7 +50,6 @@ body:
         - 桌面端 (Windows)
         - 移动端 (iOS)
         - 移动端 (Android)
-        - Web
     validations:
       required: true
 
@@ -61,7 +69,19 @@ body:
     id: logs
     attributes:
       label: 相关日志或截图
-      description: 如有报错日志、截图或录屏，请贴在这里
+      description: 如有报错日志、截图或录屏，请贴在这里。 注意给图片打码
       render: text
+    validations:
+      required: false
+
+  - type: textarea
+    id: reproduction_steps
+    attributes:
+      label: 问题复现步骤（可选）
+      description: 如果问题可以复现，请按实际操作顺序填写步骤，方便定位问题
+      placeholder: |
+        1. 进入 XX 页面
+        2. 点击 XX 按钮
+        3. 出现 XX 错误 / 没有任何反应
     validations:
       required: false

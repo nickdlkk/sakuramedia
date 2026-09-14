@@ -4,11 +4,12 @@ import 'package:sakuramedia/features/clip_collections/presentation/widgets/add_c
 import 'package:sakuramedia/features/clip_collections/presentation/widgets/create_clip_collection_dialog.dart';
 import 'package:sakuramedia/features/clips/data/dto/media_clip_dto.dart';
 import 'package:sakuramedia/features/clips/presentation/pages/mobile/clip_actions_sheet.dart';
-import 'package:sakuramedia/features/clips/presentation/pages/mobile/clip_confirm_drawer.dart';
 import 'package:sakuramedia/features/clips/presentation/pages/mobile/clip_player_page.dart';
+import 'package:sakuramedia/features/clips/presentation/actions/clip_playback_launcher.dart';
 import 'package:sakuramedia/routes/mobile_routes.dart';
 import 'package:sakuramedia/theme.dart';
 import 'package:sakuramedia/widgets/base/actions/app_text_button.dart';
+import 'package:sakuramedia/widgets/base/feedback/app_confirm_dialog.dart';
 import 'package:sakuramedia/widgets/base/feedback/app_mobile_skeleton.dart';
 
 export 'package:sakuramedia/features/clip_collections/presentation/pages/shared/clip_collection_detail_content.dart'
@@ -56,6 +57,16 @@ class MobileClipCollectionDetailPage extends StatelessWidget {
         );
       },
       playSingle: (context, clip) async {
+        if (await tryLaunchExternalClipPlayback(
+          context,
+          streamUrl: clip.streamUrl,
+          title: clip.title,
+        )) {
+          return;
+        }
+        if (!context.mounted) {
+          return;
+        }
         // 用根 Navigator 推全屏页，覆盖底部导航；切片自带 streamUrl 直接传入。
         Navigator.of(context, rootNavigator: true).push(
           MaterialPageRoute<void>(
@@ -81,17 +92,19 @@ class MobileClipCollectionDetailPage extends StatelessWidget {
         required confirmLabel,
         required confirmKey,
         drawerKey,
-      }) async {
-        final confirmed = await showMobileClipConfirmDrawer(
-          context,
-          title: title,
-          message: message,
-          confirmLabel: confirmLabel,
-          drawerKey: drawerKey,
-          confirmButtonKey: confirmKey,
-        );
-        return confirmed == true;
-      },
+        onConfirm,
+      }) =>
+          showAppConfirmDialog(
+            context,
+            title: title,
+            message: message,
+            danger: true,
+            confirmLabel: confirmLabel,
+            dialogKey: drawerKey,
+            confirmKey: confirmKey,
+            onConfirm: onConfirm,
+            failureFallback: '删除失败，请重试',
+          ),
       onEditCollection: (context, collection) async {
         return showEditClipCollectionDialog(
           context,

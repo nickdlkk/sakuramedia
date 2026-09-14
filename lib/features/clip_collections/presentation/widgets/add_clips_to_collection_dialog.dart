@@ -200,7 +200,7 @@ class _AddClipsToCollectionDialogState
   Widget _buildBody(BuildContext context) {
     if (_isLoading) {
       return _bodyPlaceholder(
-        const Center(child: CircularProgressIndicator()),
+        const Center(child: CircularProgressIndicator.adaptive()),
         key: const Key('add-clips-loading'),
       );
     }
@@ -227,7 +227,7 @@ class _AddClipsToCollectionDialogState
               child: SizedBox(
                 width: 20,
                 height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
+                child: CircularProgressIndicator.adaptive(strokeWidth: 2),
               ),
             ),
           );

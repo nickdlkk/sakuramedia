@@ -8,7 +8,7 @@ part of 'external_player_preference_provider.dart';
 
 // GENERATED CODE - DO NOT MODIFY BY HAND
 // ignore_for_file: type=lint, type=warning
-/// 「默认外部播放器」偏好(仅 Android 使用,keepAlive AsyncNotifier)。
+/// 「默认外部播放器」偏好（keepAlive AsyncNotifier）。
 ///
 /// 迁移前形态:`ExternalPlayerStore extends ChangeNotifier` + legacy
 /// `ChangeNotifierProvider` 的 `..load()` 副作用——现由 `build()` 承载读盘,
@@ -20,7 +20,7 @@ part of 'external_player_preference_provider.dart';
 @ProviderFor(ExternalPlayerPreference)
 final externalPlayerPreferenceProvider = ExternalPlayerPreferenceProvider._();
 
-/// 「默认外部播放器」偏好(仅 Android 使用,keepAlive AsyncNotifier)。
+/// 「默认外部播放器」偏好（keepAlive AsyncNotifier）。
 ///
 /// 迁移前形态:`ExternalPlayerStore extends ChangeNotifier` + legacy
 /// `ChangeNotifierProvider` 的 `..load()` 副作用——现由 `build()` 承载读盘,
@@ -34,7 +34,7 @@ final class ExternalPlayerPreferenceProvider
           ExternalPlayerPreference,
           ExternalPlayerSelection
         > {
-  /// 「默认外部播放器」偏好(仅 Android 使用,keepAlive AsyncNotifier)。
+  /// 「默认外部播放器」偏好（keepAlive AsyncNotifier）。
   ///
   /// 迁移前形态:`ExternalPlayerStore extends ChangeNotifier` + legacy
   /// `ChangeNotifierProvider` 的 `..load()` 副作用——现由 `build()` 承载读盘,
@@ -62,9 +62,9 @@ final class ExternalPlayerPreferenceProvider
 }
 
 String _$externalPlayerPreferenceHash() =>
-    r'8c5fd06e265c3c8674d340cd0a053aefab78246a';
+    r'7a19b1c36c984ac7d92f172312af672aba31c709';
 
-/// 「默认外部播放器」偏好(仅 Android 使用,keepAlive AsyncNotifier)。
+/// 「默认外部播放器」偏好（keepAlive AsyncNotifier）。
 ///
 /// 迁移前形态:`ExternalPlayerStore extends ChangeNotifier` + legacy
 /// `ChangeNotifierProvider` 的 `..load()` 副作用——现由 `build()` 承载读盘,

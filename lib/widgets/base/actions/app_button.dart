@@ -145,7 +145,11 @@ class AppButton extends StatelessWidget {
                     SizedBox(
                       width: iconSize,
                       height: iconSize,
-                      child: CircularProgressIndicator(
+                      child: CircularProgressIndicator.adaptive(
+                        backgroundColor: switch (Theme.of(context).platform) {
+                          TargetPlatform.iOS || TargetPlatform.macOS => foregroundColor,
+                          _ => null,
+                        },
                         strokeWidth: 2,
                         valueColor: AlwaysStoppedAnimation<Color>(
                           foregroundColor,

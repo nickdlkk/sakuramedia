@@ -3,9 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart' show ProviderScope;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:oktoast/oktoast.dart';
 import 'package:sakuramedia/core/session/session_store.dart';
-import 'package:sakuramedia/features/configuration/data/dto/config_dto.dart';
 import 'package:sakuramedia/features/configuration/presentation/pages/desktop/advanced_settings_section.dart';
 import 'package:sakuramedia/theme.dart';
+import 'package:sakuramedia/widgets/base/interaction/refresh/app_page_refresh_scope.dart';
 
 import '../../../../../support/test_api_bundle.dart';
 
@@ -36,32 +36,111 @@ void main() {
         find.byKey(const Key('configuration-advanced-media-card')),
         findsOneWidget,
       );
+      expect(
+        find.byKey(
+          const Key('configuration-advanced-others-number-features-field'),
+        ),
+        findsNothing,
+      );
+      expect(
+        find.byKey(
+          const Key('configuration-advanced-cron-movie_collection_sync-field'),
+        ),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const Key('configuration-advanced-metadata-card')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const Key('configuration-advanced-javdb-host-field')),
+        findsNothing,
+      );
 
       await _pumpSection(tester, bundle, active: true);
 
       expect(bundle.adapter.hitCount('GET', '/config'), 1);
     });
 
-    testWidgets('shows normalized preview and saves media as partial patch', (
+    testWidgets('renders aligned scheduler cron labels', (
       WidgetTester tester,
     ) async {
       _enqueueAdvancedConfig(bundle);
-      _enqueueAdvancedConfigPatch(
-        bundle,
-        applied: const <String>['media.others_number_features'],
+      await _pumpSection(tester, bundle, active: true);
+
+      for (final label in <String>[
+        '订阅演员影片同步',
+        '影片热度更新',
+        '媒体缩略图生成',
+        '图像搜索索引构建',
+        '影片相似度重算',
+        '任务记录清理',
+        '媒体文件哈希补算',
+        '媒体文件巡检',
+        'GFriends 缓存刷新',
+      ]) {
+        expect(find.text(label), findsOneWidget, reason: label);
+      }
+    });
+
+    testWidgets('confirms before refreshing dirty settings', (
+      WidgetTester tester,
+    ) async {
+      _enqueueAdvancedConfig(bundle);
+      _enqueueAdvancedConfig(bundle);
+      AppPageRefreshCallback? refresh;
+      final registrar = AppPageRefreshRegistrar(
+        register: (callback) => refresh = callback,
+        unregister: (callback) {
+          if (identical(refresh, callback)) {
+            refresh = null;
+          }
+        },
       );
+
+      await _pumpSection(
+        tester,
+        bundle,
+        active: true,
+        refreshRegistrar: registrar,
+      );
+      await tester.enterText(
+        find.byKey(const Key('configuration-advanced-min-video-size-field')),
+        '257',
+      );
+
+      final cancelledRefresh = refresh!();
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const Key('configuration-advanced-refresh-confirm-dialog')),
+        findsOneWidget,
+      );
+      expect(bundle.adapter.hitCount('GET', '/config'), 1);
+
+      await tester.tap(
+        find.byKey(const Key('configuration-advanced-refresh-cancel-button')),
+      );
+      await tester.pumpAndSettle();
+      await cancelledRefresh;
+      expect(bundle.adapter.hitCount('GET', '/config'), 1);
+
+      final confirmedRefresh = refresh!();
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const Key('configuration-advanced-refresh-confirm-button')),
+      );
+      await tester.pumpAndSettle();
+      await confirmedRefresh;
+      expect(bundle.adapter.hitCount('GET', '/config'), 2);
+    });
+
+    testWidgets('saves media as partial patch', (
+      WidgetTester tester,
+    ) async {
+      _enqueueAdvancedConfig(bundle);
+      _enqueueAdvancedConfigPatch(bundle);
 
       await _pumpSection(tester, bundle, active: true);
-      await tester.enterText(
-        find.byKey(
-          const Key('configuration-advanced-others-number-features-field'),
-        ),
-        'ofje_test',
-      );
-      await tester.pump();
-
-      expect(find.textContaining('OFJE-TEST'), findsOneWidget);
-
       await tester.ensureVisible(
         find.byKey(const Key('configuration-advanced-media-save-button')),
       );
@@ -75,44 +154,7 @@ void main() {
       );
       expect(request.body.keys, contains('media'));
       expect(request.body.keys, isNot(contains('metadata')));
-      expect(request.body['media']['others_number_features'], <String>[
-        'ofje_test',
-      ]);
       expect(request.body['media']['allowed_min_video_file_size'], 268435456);
-      await tester.pump(const Duration(seconds: 3));
-    });
-
-    testWidgets('saves host in metadata config', (
-      WidgetTester tester,
-    ) async {
-      _enqueueAdvancedConfig(bundle);
-      _enqueueAdvancedConfigPatch(
-        bundle,
-        applied: const <String>['metadata.javdb_host'],
-      );
-
-      await _pumpSection(tester, bundle, active: true);
-      await tester.ensureVisible(
-        find.byKey(const Key('configuration-advanced-javdb-host-field')),
-      );
-      await tester.enterText(
-        find.byKey(const Key('configuration-advanced-javdb-host-field')),
-        'jdforrepam.com',
-      );
-      await tester.ensureVisible(
-        find.byKey(const Key('configuration-advanced-metadata-save-button')),
-      );
-      await tester.tap(
-        find.byKey(const Key('configuration-advanced-metadata-save-button')),
-      );
-      await tester.pumpAndSettle();
-
-      final request = bundle.adapter.requests.firstWhere(
-        (item) => item.method == 'PATCH' && item.path == '/config',
-      );
-      expect(request.body['metadata'], <String, dynamic>{
-        'javdb_host': 'jdforrepam.com',
-      });
       await tester.pump(const Duration(seconds: 3));
     });
 
@@ -122,16 +164,25 @@ void main() {
       _enqueueAdvancedConfig(bundle);
       _enqueueAdvancedConfigPatch(
         bundle,
-        applied: const <String>['scheduler.movie_heat_cron'],
-        pendingRestart: const <Map<String, dynamic>>[
-          <String, dynamic>{
-            'field': 'scheduler.movie_heat_cron',
-            'restart': 'scheduler',
-          },
-        ],
+        restartRequired: const <String>['aps'],
       );
 
       await _pumpSection(tester, bundle, active: true);
+      await tester.ensureVisible(
+        find.byKey(
+          const Key(
+            'configuration-advanced-worker-default-concurrency-field',
+          ),
+        ),
+      );
+      await tester.enterText(
+        find.byKey(
+          const Key(
+            'configuration-advanced-worker-default-concurrency-field',
+          ),
+        ),
+        '6',
+      );
       await tester.ensureVisible(
         find.byKey(const Key('configuration-advanced-cron-movie_heat-field')),
       );
@@ -139,9 +190,11 @@ void main() {
         find.byKey(const Key('configuration-advanced-cron-movie_heat-field')),
         '30 0 * * *',
       );
-      await tester.ensureVisible(
-        find.byKey(const Key('configuration-advanced-scheduler-save-button')),
+      await tester.drag(
+        find.byKey(const Key('configuration-advanced-settings-scroll-view')),
+        const Offset(0, -800),
       );
+      await tester.pumpAndSettle();
       await tester.tap(
         find.byKey(const Key('configuration-advanced-scheduler-save-button')),
       );
@@ -158,6 +211,10 @@ void main() {
         schedulerRequest.body['scheduler']['movie_heat_cron'],
         '30 0 * * *',
       );
+      expect(
+        schedulerRequest.body['scheduler']['worker_default_concurrency'],
+        6,
+      );
       await tester.pump(const Duration(seconds: 3));
     });
 
@@ -167,10 +224,7 @@ void main() {
       _enqueueAdvancedConfig(bundle);
       _enqueueAdvancedConfigPatch(
         bundle,
-        applied: const <String>['logging.level'],
-        pendingRestart: const <Map<String, dynamic>>[
-          <String, dynamic>{'field': 'logging.level', 'restart': 'api'},
-        ],
+        restartRequired: const <String>['api'],
       );
 
       await _pumpSection(tester, bundle, active: true);
@@ -206,17 +260,17 @@ void main() {
   });
 
   group('buildAdvancedConfigSaveSuccessMessage', () {
-    test('returns default message when pending_restart is empty', () {
+    test('returns default message when restart_required is empty', () {
       expect(
-        buildAdvancedConfigSaveSuccessMessage(const <PendingRestartFieldDto>[]),
+        buildAdvancedConfigSaveSuccessMessage(const <String>[]),
         '已保存',
       );
     });
 
     test('reports container restart when only api-scope fields pending', () {
       expect(
-        buildAdvancedConfigSaveSuccessMessage(const <PendingRestartFieldDto>[
-          PendingRestartFieldDto(field: 'logging.level', restart: 'api'),
+        buildAdvancedConfigSaveSuccessMessage(const <String>[
+          'logging.level',
         ]),
         '已保存，需重启容器才生效',
       );
@@ -226,15 +280,8 @@ void main() {
       'reports container restart when only scheduler-scope fields pending',
       () {
         expect(
-          buildAdvancedConfigSaveSuccessMessage(const <PendingRestartFieldDto>[
-            PendingRestartFieldDto(
-              field: 'scheduler.hot_review_sync_cron',
-              restart: 'scheduler',
-            ),
-            PendingRestartFieldDto(
-              field: 'scheduler.movie_heat_cron',
-              restart: 'scheduler',
-            ),
+          buildAdvancedConfigSaveSuccessMessage(const <String>[
+            'scheduler.movie_heat_cron',
           ]),
           '已保存，需重启容器才生效',
         );
@@ -244,16 +291,11 @@ void main() {
     test(
       'collapses both restart kinds into a single container-restart notice',
       () {
-        // 对用户而言 api / scheduler 都是同一个容器，同一次「其他」卡改动里出现
-        // logging(api) + downloads(scheduler) 两种 restart 时不需要区分，只提示
-        // 一次「重启容器」即可。
+        // 对用户而言多种重启范围都是同一个容器提示。
         expect(
-          buildAdvancedConfigSaveSuccessMessage(const <PendingRestartFieldDto>[
-            PendingRestartFieldDto(field: 'logging.level', restart: 'api'),
-            PendingRestartFieldDto(
-              field: 'downloads.small_file_cleanup_threshold_mb',
-              restart: 'scheduler',
-            ),
+          buildAdvancedConfigSaveSuccessMessage(const <String>[
+            'logging.level',
+            'downloads.subscription_search_fresh_days',
           ]),
           '已保存，需重启容器才生效',
         );
@@ -266,9 +308,14 @@ Future<void> _pumpSection(
   WidgetTester tester,
   TestApiBundle bundle, {
   required bool active,
+  AppPageRefreshRegistrar? refreshRegistrar,
 }) async {
   tester.view.physicalSize = const Size(1280, 900);
   tester.view.devicePixelRatio = 1;
+  final section = SingleChildScrollView(
+    key: const Key('configuration-advanced-settings-scroll-view'),
+    child: DesktopAdvancedSettingsSection(active: active),
+  );
   await tester.pumpWidget(
     ProviderScope(
       overrides: bundle.riverpodOverrides(),
@@ -276,9 +323,12 @@ Future<void> _pumpSection(
         child: MaterialApp(
           theme: sakuraThemeData,
           home: Scaffold(
-            body: SingleChildScrollView(
-              child: DesktopAdvancedSettingsSection(active: active),
-            ),
+            body: refreshRegistrar == null
+                ? section
+                : AppPageRefreshRegistrarScope(
+                    registrar: refreshRegistrar,
+                    child: section,
+                  ),
           ),
         ),
       ),
@@ -298,16 +348,14 @@ void _enqueueAdvancedConfig(TestApiBundle bundle) {
 
 void _enqueueAdvancedConfigPatch(
   TestApiBundle bundle, {
-  List<String> applied = const <String>[],
-  List<Map<String, dynamic>> pendingRestart = const <Map<String, dynamic>>[],
+  List<String> restartRequired = const <String>[],
 }) {
   bundle.adapter.enqueueJson(
     method: 'PATCH',
     path: '/config',
     body: _buildAdvancedConfigJson(
       extra: <String, dynamic>{
-        'applied': applied,
-        'pending_restart': pendingRestart,
+        'restart_required': restartRequired,
       },
     ),
   );
@@ -319,33 +367,34 @@ Map<String, dynamic> _buildAdvancedConfigJson({
   return <String, dynamic>{
     'values': <String, dynamic>{
       'media': <String, dynamic>{
-        'others_number_features': <String>['OFJE', 'CJOB'],
-        'inner_sub_tags': <String>['中字', '-C'],
-        'blueray_tags': <String>['蓝光', '4K'],
-        'uncensored_tags': <String>['uncensored', '-UC'],
-        'uncensored_prefix': <String>['PT-', 'S2M'],
         'allowed_min_video_file_size': 268435456,
       },
-      'metadata': <String, dynamic>{
-        'javdb_host': 'jdforrepam.com',
-      },
-      'scheduler': <String, dynamic>{
-        for (final key in AdvancedSchedulerConfigDto.cronKeys)
-          '${key}_cron': key == 'movie_heat' ? '15 0 * * *' : '0 2 * * *',
+      'scheduler': const <String, dynamic>{
+        'worker_default_concurrency': 4,
+        'actor_subscription_sync_cron': '0 2 * * *',
+        'subscribed_movie_auto_download_cron': '30 2 * * *',
+        'download_task_sync_cron': '* * * * *',
+        'download_task_auto_import_cron': '* * * * *',
+        'movie_heat_cron': '15 0 * * *',
+        'movie_interaction_sync_cron': '0 5 * * *',
+        'movie_javdb_backfill_cron': '30 5 * * *',
+        'media_file_hash_backfill_cron': '0 3 * * *',
+        'media_file_scan_cron': '0 4 * * *',
+        'media_thumbnail_cron': '*/30 * * * *',
+        'image_search_index_cron': '*/5 * * * *',
+        'movie_similarity_recompute_cron': '30 3 * * *',
+        'moment_recommendation_generate_cron': '0 4 * * *',
+        'daily_recommendation_generate_cron': '0 5 * * *',
+        'activity_cleanup_cron': '30 5 * * *',
+        'gfriends_filetree_refresh_cron': '0 4 * * 1',
       },
       'downloads': <String, dynamic>{
-        'small_file_cleanup_threshold_mb': 256,
-        'preferred_client_kinds': <String>['qbittorrent', 'cloud115'],
+        'subscription_search_fresh_days': 7,
+        'subscription_search_stale_attempt_limit': 3,
       },
       'logging': <String, dynamic>{'level': 'INFO'},
     },
-    'effects': <String, dynamic>{
-      'media': 'hot',
-      'metadata': 'hot',
-      'scheduler': 'restart_scheduler',
-      'downloads': 'restart_scheduler',
-      'logging': 'restart_api',
-    },
+    'restart_required': const <String>[],
     ...extra,
   };
 }

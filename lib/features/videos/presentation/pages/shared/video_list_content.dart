@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:sakuramedia/widgets/base/layout/scrolling/app_pinned_list_header.dart';
 import 'package:sakuramedia/features/videos/data/dto/video_item_list_item_dto.dart';
 import 'package:sakuramedia/features/videos/presentation/controllers/listing/video_filter_state.dart';
 import 'package:sakuramedia/features/shared/presentation/providers/paged_async_notifier.dart';
@@ -18,6 +19,7 @@ class VideoListContent extends StatelessWidget {
   const VideoListContent({
     super.key,
     required this.paged,
+    required this.headerKey,
     required this.isInitialLoading,
     required this.initialErrorMessage,
     required this.filterState,
@@ -37,6 +39,7 @@ class VideoListContent extends StatelessWidget {
   });
 
   final PagedListState<VideoItemListItemDto> paged;
+  final GlobalKey headerKey;
   final bool isInitialLoading;
   final String? initialErrorMessage;
   final VideoFilterState filterState;
@@ -84,7 +87,9 @@ class VideoListContent extends StatelessWidget {
     return SliverMainAxisGroup(
       key: contentKey,
       slivers: [
-        SliverToBoxAdapter(
+        AppPinnedListHeader(
+          key: headerKey,
+          color: context.appColors.surfaceElevated,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [

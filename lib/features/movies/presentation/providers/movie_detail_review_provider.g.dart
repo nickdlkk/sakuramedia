@@ -58,7 +58,7 @@ final class MovieDetailReviewProvider
   }
 }
 
-String _$movieDetailReviewHash() => r'69c02a10c0fc49621b4374231f0055b41b75d4b8';
+String _$movieDetailReviewHash() => r'7ef663efccaa95c1bca7c6c0da6b460272f6c3fa';
 
 final class MovieDetailReviewFamily extends $Family
     with

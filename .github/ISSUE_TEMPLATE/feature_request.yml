@@ -56,6 +56,6 @@ body:
     id: extra
     attributes:
       label: 补充说明
-      description: 如有截图、参考实现或其它信息，请贴在这里
+      description: 如有截图、参考实现或其它信息，请贴在这里，注意给图片打码
     validations:
       required: false

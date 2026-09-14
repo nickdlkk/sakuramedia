@@ -3,7 +3,7 @@ import 'package:sakuramedia/features/movies/presentation/controllers/listing/mov
 import 'package:sakuramedia/theme.dart';
 import 'package:sakuramedia/widgets/base/actions/app_text_button.dart';
 
-/// 影片筛选的所有 section（状态 / 合集类型 / 番号来源 / 热度范围 / 年份 / 排序）的纵向 Column。
+/// 影片筛选的所有 section（状态 / 分辨率 / 合集类型 / 番号来源 / 热度范围 / 年份 / 排序）的纵向 Column。
 ///
 /// 桌面 `AppListHeader` 的就地浮层 panel 和移动 `MobileMovieFilterDrawer` 都用它，
 /// 避免双份维护。底栏/重置按钮由调用方自己附加。
@@ -49,6 +49,16 @@ class MovieFilterSectionGroup extends StatelessWidget {
           selectedValue: filterState.status,
           labelBuilder: (value) => value.label,
           onSelected: (value) => onChanged(filterState.copyWith(status: value)),
+        ),
+        SizedBox(height: context.appSpacing.lg),
+        MovieFilterChoiceSection<PlaylistResolutionFilter?>(
+          title: '分辨率',
+          options: const [null, ...PlaylistResolutionFilter.values],
+          selectedValue: filterState.resolution,
+          labelBuilder: (value) => value?.label ?? '全部',
+          enabled: filterState.status == MovieStatusFilter.playable,
+          onSelected: (value) =>
+              onChanged(filterState.copyWith(resolution: value)),
         ),
         SizedBox(height: context.appSpacing.lg),
         MovieFilterChoiceSection<MovieCollectionTypeFilter>(
@@ -109,9 +119,11 @@ class MovieFilterChoiceSection<T> extends StatelessWidget {
     required this.labelBuilder,
     required this.onSelected,
     this.optionKeyBuilder,
+    this.enabled = true,
   });
 
   final String title;
+  final bool enabled;
   final List<T> options;
   final T selectedValue;
   final String Function(T value) labelBuilder;
@@ -132,7 +144,7 @@ class MovieFilterChoiceSection<T> extends StatelessWidget {
             context,
             size: AppTextSize.s14,
             weight: AppTextWeight.regular,
-            tone: AppTextTone.primary,
+            tone: enabled ? AppTextTone.primary : AppTextTone.muted,
           ),
         ),
         SizedBox(height: context.appSpacing.sm),
@@ -146,7 +158,7 @@ class MovieFilterChoiceSection<T> extends StatelessWidget {
                   label: labelBuilder(value),
                   size: AppTextButtonSize.xSmall,
                   isSelected: value == selectedValue,
-                  onPressed: () => onSelected(value),
+                  onPressed: enabled ? () => onSelected(value) : null,
                 ),
               )
               .toList(growable: false),
@@ -426,9 +438,13 @@ class _MovieYearFilterSectionState extends State<MovieYearFilterSection> {
               SizedBox(
                 width: 14,
                 height: 14,
-                child: CircularProgressIndicator(
+                child: CircularProgressIndicator.adaptive(
+                  backgroundColor: switch (Theme.of(context).platform) {
+                    TargetPlatform.iOS || TargetPlatform.macOS => Theme.of(context).colorScheme.primary,
+                    _ => null,
+                  },
                   strokeWidth: 2,
-                  color: Theme.of(context).colorScheme.primary,
+                  valueColor: AlwaysStoppedAnimation<Color?>(Theme.of(context).colorScheme.primary),
                 ),
               ),
               SizedBox(width: context.appSpacing.sm),

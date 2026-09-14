@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sakuramedia/core/network/api_client.dart';
 import 'package:sakuramedia/core/session/session_store.dart';
+import 'package:sakuramedia/features/media/data/media_api.dart';
 import 'package:sakuramedia/features/videos/data/dto/video_item_detail_dto.dart';
 import 'package:sakuramedia/features/videos/data/api/videos_api.dart';
 
@@ -12,6 +13,7 @@ void main() {
   late SessionStore sessionStore;
   late ApiClient apiClient;
   late VideosApi videosApi;
+  late MediaApi mediaApi;
   late FakeHttpClientAdapter adapter;
 
   setUp(() async {
@@ -24,6 +26,7 @@ void main() {
     );
     apiClient = ApiClient(sessionStore: sessionStore);
     videosApi = VideosApi(apiClient: apiClient);
+    mediaApi = MediaApi(apiClient: apiClient);
     adapter = FakeHttpClientAdapter();
     apiClient.rawDio.httpClientAdapter = adapter;
     apiClient.rawRefreshDio.httpClientAdapter = adapter;
@@ -94,13 +97,13 @@ void main() {
           <String, dynamic>{
             'media_id': 31,
             'library_id': 1,
+            'playback_deliveries': <String>['proxy'],
             'play_url': '/files/videos/7/clip.mp4?sig=abc',
             'path': '/data/videos/7/clip.mp4',
             'storage_mode': 'local',
             'resolution': '1080p',
             'file_size_bytes': 1048576,
             'duration_seconds': 600,
-            'special_tags': '',
             'valid': true,
             'progress': <String, dynamic>{
               'last_position_seconds': 120,
@@ -135,37 +138,6 @@ void main() {
     expect(media.points.single.offsetSeconds, 90);
   });
 
-  test('updateVideo 仅下发 payload 中非空字段', () async {
-    adapter.enqueueJson(
-      method: 'PATCH',
-      path: '/videos/9',
-      body: <String, dynamic>{
-        'id': 9,
-        'title': '改后标题',
-        'summary': '',
-        'media_count': 0,
-        'can_play': false,
-        'created_at': '2026-01-02T03:04:05',
-        'updated_at': '2026-01-02T03:04:05',
-        'media_items': <dynamic>[],
-      },
-    );
-
-    await videosApi.updateVideo(
-      videoId: 9,
-      payload: const VideoItemUpdatePayload(title: '改后标题'),
-    );
-
-    final body = adapter.requests.single.body as Map<String, dynamic>;
-    expect(body.containsKey('title'), isTrue);
-    expect(body['title'], '改后标题');
-    // 未传的字段不应出现，避免误清空。
-    expect(body.containsKey('summary'), isFalse);
-    expect(body.containsKey('release_date'), isFalse);
-    expect(body.containsKey('tag_ids'), isFalse);
-    expect(body.containsKey('person_ids'), isFalse);
-  });
-
   test('updateMediaProgress 写回普通视频媒体进度', () async {
     adapter.enqueueJson(
       method: 'PUT',
@@ -176,7 +148,7 @@ void main() {
       },
     );
 
-    final progress = await videosApi.updateMediaProgress(
+    final progress = await mediaApi.updateMediaProgress(
       mediaId: 31,
       positionSeconds: 125,
     );
@@ -186,4 +158,67 @@ void main() {
       'position_seconds': 125,
     });
   });
+
+  test('getMediaThumbnails parses PornBox thumbnail list', () async {
+    adapter.enqueueJson(
+      method: 'GET',
+      path: '/media/31/thumbnails',
+      body: <Map<String, dynamic>>[
+        <String, dynamic>{
+          'thumbnail_id': 51,
+          'media_id': 31,
+          'offset_seconds': 90,
+          'image': <String, dynamic>{
+            'id': 88,
+            'origin': 'thumb-origin.webp',
+            'small': 'thumb-small.webp',
+            'medium': 'thumb-medium.webp',
+            'large': 'thumb-large.webp',
+          },
+          'width': 1280,
+          'height': 720,
+        },
+      ],
+    );
+
+    final thumbnails = await mediaApi.getMediaThumbnails(mediaId: 31);
+
+    expect(thumbnails, hasLength(1));
+    expect(thumbnails.single.thumbnailId, 51);
+    expect(thumbnails.single.offsetSeconds, 90);
+    expect(thumbnails.single.image.bestAvailableUrl, 'thumb-large.webp');
+    expect(adapter.requests.single.path, '/media/31/thumbnails');
+  });
+
+  test(
+    'setVideoCover sends cover thumbnail id and parses updated detail',
+    () async {
+      adapter.enqueueJson(
+        method: 'PATCH',
+        path: '/videos/7',
+        body: <String, dynamic>{
+          'id': 7,
+          'title': '详情视频',
+          'cover_image': <String, dynamic>{
+            'id': 88,
+            'origin': 'cover.webp',
+            'small': 'cover.webp',
+            'medium': 'cover.webp',
+            'large': 'cover.webp',
+          },
+          'media_count': 1,
+          'can_play': true,
+          'media_items': const <dynamic>[],
+        },
+      );
+
+      final detail = await videosApi.setVideoCover(videoId: 7, thumbnailId: 51);
+
+      expect(detail.id, 7);
+      expect(detail.coverImage?.bestAvailableUrl, 'cover.webp');
+      expect(adapter.requests.single.body, <String, dynamic>{
+        'cover_thumbnail_id': 51,
+      });
+    },
+  );
 }

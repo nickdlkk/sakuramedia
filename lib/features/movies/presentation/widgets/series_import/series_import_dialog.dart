@@ -240,9 +240,13 @@ class _StatusRow extends StatelessWidget {
       icon = SizedBox(
         width: 20,
         height: 20,
-        child: CircularProgressIndicator(
+        child: CircularProgressIndicator.adaptive(
+          backgroundColor: switch (Theme.of(context).platform) {
+            TargetPlatform.iOS || TargetPlatform.macOS => _accentColor(context),
+            _ => null,
+          },
           strokeWidth: 2.5,
-          color: _accentColor(context),
+          valueColor: AlwaysStoppedAnimation<Color?>(_accentColor(context)),
         ),
       );
     }

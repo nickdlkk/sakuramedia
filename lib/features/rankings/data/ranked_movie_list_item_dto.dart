@@ -1,8 +1,11 @@
 import 'package:sakuramedia/features/movies/data/dto/listing/movie_list_item_dto.dart';
+import 'package:sakuramedia/features/movies/data/dto/listing/subscription_movie_list_item.dart';
 
-class RankedMovieListItemDto {
+class RankedMovieListItemDto
+    implements SubscriptionMovieListItem<RankedMovieListItemDto> {
   const RankedMovieListItemDto({
     required this.rank,
+    this.maxMediaWidth = 0,
     required this.javdbId,
     required this.movieNumber,
     required this.title,
@@ -16,7 +19,9 @@ class RankedMovieListItemDto {
   });
 
   final int rank;
+  final int maxMediaWidth;
   final String javdbId;
+  @override
   final String movieNumber;
   final String title;
   final MovieImageDto? coverImage;
@@ -24,6 +29,7 @@ class RankedMovieListItemDto {
   final DateTime? releaseDate;
   final int durationMinutes;
   final int heat;
+  @override
   final bool isSubscribed;
   final bool canPlay;
 
@@ -42,6 +48,7 @@ class RankedMovieListItemDto {
   }) {
     return RankedMovieListItemDto(
       rank: rank ?? this.rank,
+      maxMediaWidth: maxMediaWidth,
       javdbId: javdbId ?? this.javdbId,
       movieNumber: movieNumber ?? this.movieNumber,
       title: title ?? this.title,
@@ -55,6 +62,10 @@ class RankedMovieListItemDto {
     );
   }
 
+  @override
+  RankedMovieListItemDto copyWithSubscriptionStatus(bool isSubscribed) =>
+      copyWith(isSubscribed: isSubscribed);
+
   MovieListItemDto toMovieListItem() {
     return MovieListItemDto(
       javdbId: javdbId,
@@ -67,12 +78,14 @@ class RankedMovieListItemDto {
       heat: heat,
       isSubscribed: isSubscribed,
       canPlay: canPlay,
+      maxMediaWidth: maxMediaWidth,
     );
   }
 
   factory RankedMovieListItemDto.fromJson(Map<String, dynamic> json) {
     return RankedMovieListItemDto(
       rank: json['rank'] as int? ?? 0,
+      maxMediaWidth: MovieListItemDto.fromJson(json).maxMediaWidth,
       javdbId: json['javdb_id'] as String? ?? '',
       movieNumber: json['movie_number'] as String? ?? '',
       title: json['title'] as String? ?? '',

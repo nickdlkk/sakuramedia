@@ -9,7 +9,6 @@ import 'package:sakuramedia/features/clip_collections/presentation/providers/cli
 import 'package:sakuramedia/features/clip_collections/presentation/providers/clip_collections_overview_provider.dart';
 import 'package:sakuramedia/features/clip_collections/presentation/widgets/clip_collection_delete_dialog.dart';
 import 'package:sakuramedia/features/clip_collections/presentation/widgets/create_clip_collection_dialog.dart';
-import 'package:sakuramedia/features/clips/presentation/controllers/clip_mutation_change.dart';
 import 'package:sakuramedia/features/clips/presentation/providers/clip_mutation_events_provider.dart';
 import 'package:sakuramedia/routes/app_navigation_actions.dart';
 import 'package:sakuramedia/theme.dart';
@@ -104,13 +103,18 @@ class _DesktopClipCollectionsPageState
     AsyncValue<List<ClipCollectionDto>> async,
   ) {
     if (async.isLoading && async.value == null) {
-      return const Center(
-        child: SizedBox(
-          key: Key('clip-collections-loading'),
-          width: 40,
-          height: 40,
-          child: CircularProgressIndicator(),
+      final spacing = context.appSpacing;
+      return GridView.builder(
+        key: const Key('clip-collections-loading'),
+        padding: EdgeInsets.only(bottom: spacing.lg),
+        gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+          maxCrossAxisExtent: 240,
+          mainAxisSpacing: spacing.md,
+          crossAxisSpacing: spacing.md,
+          childAspectRatio: 1.2,
         ),
+        itemCount: 8,
+        itemBuilder: (_, _) => const CollectionCardSkeleton(),
       );
     }
     if (async.hasError && async.value == null) {

@@ -10,7 +10,7 @@ import 'package:sakuramedia/widgets/base/overlays/app_desktop_dialog.dart';
 /// 决定 [showAppConfirmDialog] 用哪种壳显示。
 enum AppConfirmVariant {
   /// 读 `AppPlatformScope.maybeOf`：`mobile` → 底部抽屉，其余（`desktop` /
-  /// `web` / null）→ 桌面对话框。参考 `AppTabBar._resolveVariant`。
+  /// null）→ 桌面对话框。参考 `AppTabBar._resolveVariant`。
   auto,
 
   /// 显式强制走桌面对话框（`AppDesktopDialog`）。
@@ -82,6 +82,7 @@ Future<bool> showAppConfirmDialog(
       return AppDesktopDialog(
         dialogKey: dialogKey,
         width: dialogContext.appLayoutTokens.dialogWidthSm,
+        onClose: () => Navigator.of(dialogContext).maybePop(),
         child: buildBody(dialogContext),
       );
     },
@@ -181,19 +182,30 @@ class _ConfirmBodyState extends State<_ConfirmBody> {
             ),
           ),
           SizedBox(height: spacing.lg),
-          Text(
-            widget.message,
-            style: resolveAppTextStyle(
-              context,
-              size: AppTextSize.s14,
-              weight: AppTextWeight.regular,
-              tone: AppTextTone.secondary,
+          Flexible(
+            fit: FlexFit.loose,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    widget.message,
+                    style: resolveAppTextStyle(
+                      context,
+                      size: AppTextSize.s14,
+                      weight: AppTextWeight.regular,
+                      tone: AppTextTone.secondary,
+                    ),
+                  ),
+                  if (widget.extraContent != null) ...[
+                    SizedBox(height: spacing.md),
+                    widget.extraContent!,
+                  ],
+                ],
+              ),
             ),
           ),
-          if (widget.extraContent != null) ...[
-            SizedBox(height: spacing.md),
-            widget.extraContent!,
-          ],
           SizedBox(height: spacing.xl),
           Row(
             children: [

@@ -4,6 +4,7 @@ import 'package:sakuramedia/features/activity/data/task_run_dto.dart';
 class JobMetadataDto {
   const JobMetadataDto({
     required this.taskKey,
+    this.pluginId,
     required this.logName,
     required this.cliName,
     required this.cliHelp,
@@ -15,6 +16,7 @@ class JobMetadataDto {
   });
 
   final String taskKey;
+  final String? pluginId;
   final String logName;
   final String cliName;
   final String cliHelp;
@@ -27,6 +29,7 @@ class JobMetadataDto {
   factory JobMetadataDto.fromJson(Map<String, dynamic> json) {
     return JobMetadataDto(
       taskKey: json['task_key'] as String? ?? '',
+      pluginId: json['plugin_id'] as String?,
       logName: json['log_name'] as String? ?? '',
       cliName: json['cli_name'] as String? ?? '',
       cliHelp: json['cli_help'] as String? ?? '',

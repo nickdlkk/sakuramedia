@@ -1,6 +1,5 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
+import 'package:sakuramedia/widgets/base/layout/scrolling/app_fixed_header_layout.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:oktoast/oktoast.dart';
 import 'package:sakuramedia/app/providers/riverpod_page_cache_provider.dart';
@@ -11,9 +10,8 @@ import 'package:sakuramedia/features/movies/presentation/providers/movie_summary
 import 'package:sakuramedia/features/movies/presentation/providers/movie_summary_scope.dart';
 import 'package:sakuramedia/features/tags/presentation/providers/tag_selection_provider.dart';
 import 'package:sakuramedia/features/tags/presentation/providers/tag_selection_scope.dart';
-import 'package:sakuramedia/features/tags/presentation/providers/tag_selection_state.dart';
 import 'package:sakuramedia/features/tags/presentation/tag_movie_summary_content.dart';
-import 'package:sakuramedia/features/tags/presentation/tag_selector_panel.dart';
+import 'package:sakuramedia/features/tags/presentation/tag_selection_header.dart';
 import 'package:sakuramedia/routes/mobile_routes.dart';
 import 'package:sakuramedia/theme.dart';
 import 'package:sakuramedia/widgets/base/feedback/app_empty_state.dart';
@@ -32,10 +30,10 @@ class MobileTagsPage extends ConsumerStatefulWidget {
 }
 
 class _MobileTagsPageState extends ConsumerState<MobileTagsPage> {
-  late final TagSelectionScope _selectionScope =
-      widget.initialTagId == null
-          ? const TagSelectionScope.mobileRoot()
-          : TagSelectionScope.mobileDetail(initialTagId: widget.initialTagId!);
+  final _tagHeaderKey = GlobalKey();
+  late final TagSelectionScope _selectionScope = widget.initialTagId == null
+      ? const TagSelectionScope.mobileRoot()
+      : TagSelectionScope.mobileDetail(initialTagId: widget.initialTagId!);
   late final MovieSummaryScope _movieScope = MovieSummaryScope.tags(
     instanceKey: _selectionScope.instanceKey,
     cacheKey: _selectionScope.cacheKey,
@@ -54,12 +52,12 @@ class _MobileTagsPageState extends ConsumerState<MobileTagsPage> {
         .obtain(
           key: cacheKey,
           resolveLinks: () {
-            final selectionLink =
-                ref
-                    .read(tagSelectionProvider(_selectionScope).notifier)
-                    .cacheLink;
-            final moviesLink =
-                ref.read(movieSummaryProvider(_movieScope).notifier).cacheLink;
+            final selectionLink = ref
+                .read(tagSelectionProvider(_selectionScope).notifier)
+                .cacheLink;
+            final moviesLink = ref
+                .read(movieSummaryProvider(_movieScope).notifier)
+                .cacheLink;
             return [
               if (selectionLink != null) selectionLink,
               if (moviesLink != null) moviesLink,
@@ -78,25 +76,17 @@ class _MobileTagsPageState extends ConsumerState<MobileTagsPage> {
   Widget build(BuildContext context) {
     final selection = ref.watch(tagSelectionProvider(_selectionScope));
     if (!selection.hasSelection) {
-      return SingleChildScrollView(
+      return AppFixedHeaderLayout(
         key: const Key('tags-page'),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildSelectorPanel(selection),
-            SizedBox(height: context.appSpacing.lg),
-            Padding(
-              padding: EdgeInsets.symmetric(vertical: context.appSpacing.xxl),
-              child: const AppEmptyState(message: '请选择标签查看影片'),
-            ),
-          ],
-        ),
+        header: _buildSelectorPanel(),
+        child: const Center(child: AppEmptyState(message: '请选择标签查看影片')),
       );
     }
 
     return TagMovieSummaryContent(
       key: const Key('tags-page'),
       selection: selection,
+      headerLeading: _buildSelectorPanel(),
       scope: _movieScope,
       surfaceColor: context.appColors.surfaceCard,
       contentKey: const Key('tags-page-movies'),
@@ -104,29 +94,20 @@ class _MobileTagsPageState extends ConsumerState<MobileTagsPage> {
       sectionSpacing: context.appSpacing.md,
       enableRefresh: true,
       onRefreshFailure: (_) => showToast('刷新失败'),
-      onMovieTap:
-          (context, movieNumber) => MobileMovieDetailRouteData(
-            movieNumber: movieNumber,
-          ).push(context),
+      onMovieTap: (context, movieNumber) =>
+          MobileMovieDetailRouteData(movieNumber: movieNumber).push(context),
       headerBuilder: _buildMobileHeader,
       useMobileSelectionLayout: true,
-      bodyBuilder:
-          (context, scrollController, sliver, onRefresh) =>
-              AppAdaptiveRefreshScrollView(
-                key: PageStorageKey<String>(
-                  '${_selectionScope.instanceKey}:movies',
-                ),
-                onRefresh: onRefresh!,
-                controller: scrollController,
-                physics: const AlwaysScrollableScrollPhysics(),
-                slivers: <Widget>[
-                  SliverToBoxAdapter(child: _buildSelectorPanel(selection)),
-                  SliverToBoxAdapter(
-                    child: SizedBox(height: context.appSpacing.lg),
-                  ),
-                  sliver,
-                ],
-              ),
+      bodyBuilder: (context, scrollController, sliver, onRefresh) =>
+          AppAdaptiveRefreshScrollView(
+            key: PageStorageKey<String>(
+              '${_selectionScope.instanceKey}:movies',
+            ),
+            onRefresh: onRefresh!,
+            controller: scrollController,
+            physics: const AlwaysScrollableScrollPhysics(),
+            slivers: <Widget>[sliver],
+          ),
     );
   }
 
@@ -159,17 +140,9 @@ class _MobileTagsPageState extends ConsumerState<MobileTagsPage> {
     );
   }
 
-  Widget _buildSelectorPanel(TagSelectionState selection) {
-    final notifier = ref.read(tagSelectionProvider(_selectionScope).notifier);
-    return TagSelectorPanel(
-      selection: selection,
-      onToggleTag: notifier.toggle,
-      onRemoveTag: notifier.remove,
-      onClear: notifier.clear,
-      onQueryChanged: notifier.setQuery,
-      onToggleExpanded: notifier.toggleExpanded,
-      onMatchModeChanged: notifier.setMatchMode,
-      onRetry: () => unawaited(notifier.retry()),
-    );
-  }
+  Widget _buildSelectorPanel() => TagSelectionHeader(
+    key: _tagHeaderKey,
+    scope: _selectionScope,
+    mobile: true,
+  );
 }

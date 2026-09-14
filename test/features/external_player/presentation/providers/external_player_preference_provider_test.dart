@@ -1,4 +1,6 @@
+import 'package:sakuramedia/features/external_player/data/external_playback_mode.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sakuramedia/features/external_player/presentation/providers/external_player_preference_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -9,10 +11,12 @@ void main() {
   late ProviderContainer container;
 
   setUp(() {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
     container = ProviderContainer(retry: (_, __) => null);
   });
 
   tearDown(() {
+    debugDefaultTargetPlatformOverride = null;
     container.dispose();
   });
 
@@ -24,11 +28,11 @@ void main() {
     );
 
     expect(selection.hasExternalPlayer, isFalse);
-    expect(selection.packageName, isNull);
+    expect(selection.playerId, isNull);
     expect(selection.label, isNull);
   });
 
-  test('选择外部播放器后持久化包名与名称', () async {
+  test('选择外部播放器后持久化标识与名称', () async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
     await container.read(externalPlayerPreferenceProvider.future);
 
@@ -43,12 +47,13 @@ void main() {
 
     await container
         .read(externalPlayerPreferenceProvider.notifier)
-        .selectExternalPlayer(packageName: 'org.videolan.vlc', label: 'VLC');
+        .selectExternalPlayer(playerId: 'org.videolan.vlc', label: 'VLC');
 
-    final selection =
-        container.read(externalPlayerPreferenceProvider).requireValue;
+    final selection = container
+        .read(externalPlayerPreferenceProvider)
+        .requireValue;
     expect(selection.hasExternalPlayer, isTrue);
-    expect(selection.packageName, 'org.videolan.vlc');
+    expect(selection.playerId, 'org.videolan.vlc');
     expect(selection.label, 'VLC');
     expect(notifiedCount, greaterThan(0));
 
@@ -58,7 +63,7 @@ void main() {
     final reloaded = await reloadedContainer.read(
       externalPlayerPreferenceProvider.future,
     );
-    expect(reloaded.packageName, 'org.videolan.vlc');
+    expect(reloaded.playerId, 'org.videolan.vlc');
     expect(reloaded.label, 'VLC');
   });
 
@@ -67,16 +72,17 @@ void main() {
     await container.read(externalPlayerPreferenceProvider.future);
     final notifier = container.read(externalPlayerPreferenceProvider.notifier);
     await notifier.selectExternalPlayer(
-      packageName: 'com.mxtech.videoplayer.ad',
+      playerId: 'com.mxtech.videoplayer.ad',
       label: 'MX Player',
     );
 
     await notifier.useInAppPlayer();
 
-    final selection =
-        container.read(externalPlayerPreferenceProvider).requireValue;
+    final selection = container
+        .read(externalPlayerPreferenceProvider)
+        .requireValue;
     expect(selection.hasExternalPlayer, isFalse);
-    expect(selection.packageName, isNull);
+    expect(selection.playerId, isNull);
 
     final reloadedContainer = ProviderContainer(retry: (_, __) => null);
     addTearDown(reloadedContainer.dispose);
@@ -84,5 +90,70 @@ void main() {
       externalPlayerPreferenceProvider.future,
     );
     expect(reloaded.hasExternalPlayer, isFalse);
+  });
+
+  test('macOS 使用独立的应用路径偏好', () async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    await container.read(externalPlayerPreferenceProvider.future);
+
+    await container
+        .read(externalPlayerPreferenceProvider.notifier)
+        .selectExternalPlayer(
+          playerId: '/Applications/IINA.app',
+          label: 'IINA',
+        );
+
+    final preferences = await SharedPreferences.getInstance();
+    expect(
+      preferences.getString('macos.external_player.application_path'),
+      '/Applications/IINA.app',
+    );
+    expect(preferences.getString('macos.external_player.label'), 'IINA');
+  });
+
+  test('旧偏好和未知模式保持跟随后端', () async {
+    SharedPreferences.setMockInitialValues({
+      'android.external_player.package_name': 'player',
+      'external_player.playback_mode': 'unknown',
+    });
+    final selection = await container.read(
+      externalPlayerPreferenceProvider.future,
+    );
+    expect(selection.playerId, 'player');
+    expect(selection.playbackMode, ExternalPlaybackMode.followBackend);
+  });
+
+  test('三种模式分别持久化，切换播放器及内置播放不重置模式', () async {
+    SharedPreferences.setMockInitialValues({});
+    await container.read(externalPlayerPreferenceProvider.future);
+    final notifier = container.read(externalPlayerPreferenceProvider.notifier);
+    for (final mode in [
+      ExternalPlaybackMode.proxy,
+      ExternalPlaybackMode.redirect,
+      ExternalPlaybackMode.followBackend,
+    ]) {
+      await notifier.selectPlaybackMode(mode);
+      await notifier.selectExternalPlayer(playerId: 'player-a', label: 'A');
+      await notifier.useInAppPlayer();
+      expect(
+        container
+            .read(externalPlayerPreferenceProvider)
+            .requireValue
+            .playbackMode,
+        mode,
+      );
+      await notifier.selectExternalPlayer(playerId: 'player-b', label: 'B');
+      final reloaded = ProviderContainer();
+      try {
+        final selection = await reloaded.read(
+          externalPlayerPreferenceProvider.future,
+        );
+        expect(selection.playbackMode, mode);
+        expect(selection.playerId, 'player-b');
+      } finally {
+        reloaded.dispose();
+      }
+    }
   });
 }

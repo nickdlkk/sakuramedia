@@ -14,8 +14,8 @@ part of 'video_collection_detail_provider.dart';
 /// reorder / removeItem / deleteVideo 三处都用 [withOptimisticPatch]，共用
 /// [_mutationKey] 让「同时只允许一个 mutation」（等价原 controller `_isMutating`
 /// bool）。reorder **返回 `Future<void>`**（原 controller 语义）——失败静默回滚，
-/// UI 无 toast；removeItem / deleteVideo **返回 `Future<String?>`** 兼容原 UI
-/// 调用点的 `if (error != null) showToast(error)` 模式。
+/// UI 无 toast；removeItem 返回 `Future<String?>` 供调用点直接展示失败文案；
+/// deleteVideo 则把异常交给确认弹层处理，以便请求中保持确认按钮的 loading 状态。
 ///
 /// [applySort] 走独立的「保留旧列表 → 拉新排序 → 覆盖」路径，不占 [_mutationKey]，
 /// 与批 2 的筛选切换视觉策略一致（现有 controller 也是这么做的：`applySort` 期间
@@ -32,8 +32,8 @@ final videoCollectionDetailProvider = VideoCollectionDetailFamily._();
 /// reorder / removeItem / deleteVideo 三处都用 [withOptimisticPatch]，共用
 /// [_mutationKey] 让「同时只允许一个 mutation」（等价原 controller `_isMutating`
 /// bool）。reorder **返回 `Future<void>`**（原 controller 语义）——失败静默回滚，
-/// UI 无 toast；removeItem / deleteVideo **返回 `Future<String?>`** 兼容原 UI
-/// 调用点的 `if (error != null) showToast(error)` 模式。
+/// UI 无 toast；removeItem 返回 `Future<String?>` 供调用点直接展示失败文案；
+/// deleteVideo 则把异常交给确认弹层处理，以便请求中保持确认按钮的 loading 状态。
 ///
 /// [applySort] 走独立的「保留旧列表 → 拉新排序 → 覆盖」路径，不占 [_mutationKey]，
 /// 与批 2 的筛选切换视觉策略一致（现有 controller 也是这么做的：`applySort` 期间
@@ -52,8 +52,8 @@ final class VideoCollectionDetailProvider
   /// reorder / removeItem / deleteVideo 三处都用 [withOptimisticPatch]，共用
   /// [_mutationKey] 让「同时只允许一个 mutation」（等价原 controller `_isMutating`
   /// bool）。reorder **返回 `Future<void>`**（原 controller 语义）——失败静默回滚，
-  /// UI 无 toast；removeItem / deleteVideo **返回 `Future<String?>`** 兼容原 UI
-  /// 调用点的 `if (error != null) showToast(error)` 模式。
+  /// UI 无 toast；removeItem 返回 `Future<String?>` 供调用点直接展示失败文案；
+  /// deleteVideo 则把异常交给确认弹层处理，以便请求中保持确认按钮的 loading 状态。
   ///
   /// [applySort] 走独立的「保留旧列表 → 拉新排序 → 覆盖」路径，不占 [_mutationKey]，
   /// 与批 2 的筛选切换视觉策略一致（现有 controller 也是这么做的：`applySort` 期间
@@ -97,7 +97,7 @@ final class VideoCollectionDetailProvider
 }
 
 String _$videoCollectionDetailHash() =>
-    r'552024687cb025c077a5d8a8e20b66f8c7b7a91a';
+    r'6a9e3f7c614e660446aaa0cc2ea06a863a937df2';
 
 /// 视频合集详情：加载合集元信息 + 全量有序成员，支持排序、乐观重排与移除。
 ///
@@ -105,8 +105,8 @@ String _$videoCollectionDetailHash() =>
 /// reorder / removeItem / deleteVideo 三处都用 [withOptimisticPatch]，共用
 /// [_mutationKey] 让「同时只允许一个 mutation」（等价原 controller `_isMutating`
 /// bool）。reorder **返回 `Future<void>`**（原 controller 语义）——失败静默回滚，
-/// UI 无 toast；removeItem / deleteVideo **返回 `Future<String?>`** 兼容原 UI
-/// 调用点的 `if (error != null) showToast(error)` 模式。
+/// UI 无 toast；removeItem 返回 `Future<String?>` 供调用点直接展示失败文案；
+/// deleteVideo 则把异常交给确认弹层处理，以便请求中保持确认按钮的 loading 状态。
 ///
 /// [applySort] 走独立的「保留旧列表 → 拉新排序 → 覆盖」路径，不占 [_mutationKey]，
 /// 与批 2 的筛选切换视觉策略一致（现有 controller 也是这么做的：`applySort` 期间
@@ -138,8 +138,8 @@ final class VideoCollectionDetailFamily extends $Family
   /// reorder / removeItem / deleteVideo 三处都用 [withOptimisticPatch]，共用
   /// [_mutationKey] 让「同时只允许一个 mutation」（等价原 controller `_isMutating`
   /// bool）。reorder **返回 `Future<void>`**（原 controller 语义）——失败静默回滚，
-  /// UI 无 toast；removeItem / deleteVideo **返回 `Future<String?>`** 兼容原 UI
-  /// 调用点的 `if (error != null) showToast(error)` 模式。
+  /// UI 无 toast；removeItem 返回 `Future<String?>` 供调用点直接展示失败文案；
+  /// deleteVideo 则把异常交给确认弹层处理，以便请求中保持确认按钮的 loading 状态。
   ///
   /// [applySort] 走独立的「保留旧列表 → 拉新排序 → 覆盖」路径，不占 [_mutationKey]，
   /// 与批 2 的筛选切换视觉策略一致（现有 controller 也是这么做的：`applySort` 期间
@@ -160,8 +160,8 @@ final class VideoCollectionDetailFamily extends $Family
 /// reorder / removeItem / deleteVideo 三处都用 [withOptimisticPatch]，共用
 /// [_mutationKey] 让「同时只允许一个 mutation」（等价原 controller `_isMutating`
 /// bool）。reorder **返回 `Future<void>`**（原 controller 语义）——失败静默回滚，
-/// UI 无 toast；removeItem / deleteVideo **返回 `Future<String?>`** 兼容原 UI
-/// 调用点的 `if (error != null) showToast(error)` 模式。
+/// UI 无 toast；removeItem 返回 `Future<String?>` 供调用点直接展示失败文案；
+/// deleteVideo 则把异常交给确认弹层处理，以便请求中保持确认按钮的 loading 状态。
 ///
 /// [applySort] 走独立的「保留旧列表 → 拉新排序 → 覆盖」路径，不占 [_mutationKey]，
 /// 与批 2 的筛选切换视觉策略一致（现有 controller 也是这么做的：`applySort` 期间

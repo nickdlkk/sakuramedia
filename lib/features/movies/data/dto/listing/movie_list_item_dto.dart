@@ -1,3 +1,5 @@
+import 'package:sakuramedia/features/movies/data/dto/listing/subscription_movie_list_item.dart';
+
 class MovieImageDto {
   const MovieImageDto({
     required this.id,
@@ -45,7 +47,7 @@ class MovieImageDto {
   }
 }
 
-class MovieListItemDto {
+class MovieListItemDto implements SubscriptionMovieListItem<MovieListItemDto> {
   const MovieListItemDto({
     this.id = 0,
     required this.javdbId,
@@ -61,13 +63,14 @@ class MovieListItemDto {
     required this.isSubscribed,
     required this.canPlay,
     this.similarityScore,
+    this.maxMediaWidth = 0,
   });
 
-  /// 影片整数主键（2026-07 起后端在所有影片卡片下发），统一资源任务操作
-  /// （`resource_ids`）的寻址键。老响应缺字段时为 0，调用方按 `> 0` 判可用。
+  /// 后端返回的影片整数主键，可用于与订阅等域数据关联。
   final int id;
 
-  final String javdbId;
+  final String? javdbId;
+  @override
   final String movieNumber;
   final String title;
   final int? seriesId;
@@ -77,9 +80,11 @@ class MovieListItemDto {
   final DateTime? releaseDate;
   final int durationMinutes;
   final int heat;
+  @override
   final bool isSubscribed;
   final bool canPlay;
   final double? similarityScore;
+  final int maxMediaWidth;
 
   /// DMM 中文标题字段已随后端下线（存量收拢进 [title]），这里保留 getter 只做 trim。
   String get preferredTitle => title.trim();
@@ -102,6 +107,7 @@ class MovieListItemDto {
     return MovieListItemDto(
       // id 是不可变主键，copyWith 不开放改写、只透传（漏传会被默认 0 抹掉）。
       id: id,
+      maxMediaWidth: maxMediaWidth,
       javdbId: javdbId ?? this.javdbId,
       movieNumber: movieNumber ?? this.movieNumber,
       title: title ?? this.title,
@@ -118,10 +124,15 @@ class MovieListItemDto {
     );
   }
 
+  @override
+  MovieListItemDto copyWithSubscriptionStatus(bool isSubscribed) =>
+      copyWith(isSubscribed: isSubscribed);
+
   factory MovieListItemDto.fromJson(Map<String, dynamic> json) {
     return MovieListItemDto(
       id: _intFromJson(json['id']) ?? 0,
-      javdbId: json['javdb_id'] as String? ?? '',
+      maxMediaWidth: _maxMediaWidthFromJson(json['media_items']),
+      javdbId: json['javdb_id'] as String?,
       movieNumber: json['movie_number'] as String? ?? '',
       title: json['title'] as String? ?? '',
       seriesId: _intFromJson(json['series_id']),
@@ -177,4 +188,27 @@ class MovieListItemDto {
     }
     return null;
   }
+}
+
+// 与后端播放列表分辨率筛选一致，按有效媒体的宽度划分 4K/8K 清晰度。
+int _maxMediaWidthFromJson(dynamic value) {
+  if (value is! List) return 0;
+  var maxWidth = 0;
+  for (final media in value) {
+    if (media is! Map || media['valid'] == false) continue;
+    final resolution = media['resolution'];
+    if (resolution is! String) continue;
+    final match = RegExp(r'^(\d+)x(\d+)$').firstMatch(resolution);
+    if (match == null) continue;
+    final width = int.tryParse(match[1]!);
+    final height = int.tryParse(match[2]!);
+    if (width != null &&
+        width > 0 &&
+        height != null &&
+        height > 0 &&
+        width > maxWidth) {
+      maxWidth = width;
+    }
+  }
+  return maxWidth;
 }

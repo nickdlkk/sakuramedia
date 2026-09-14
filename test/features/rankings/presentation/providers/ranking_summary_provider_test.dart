@@ -47,6 +47,7 @@ void main() {
       retry: (_, __) => null,
     );
     keepEventsProviderAlive(container, movieSubscriptionEventsProvider);
+    keepEventsProviderAlive(container, movieMediaEventsProvider);
   });
 
   tearDown(() {
@@ -98,6 +99,31 @@ void main() {
     container.listen(rankingSummaryProvider(scope), (_, __) {});
     return container.read(rankingSummaryProvider(scope).future);
   }
+
+  test('强制取消的媒体变更同步榜单可播放状态且保留条目', () async {
+    const scope = RankingSummaryScope.desktop();
+    await prime(scope);
+    container
+        .read(movieMediaEventsProvider.notifier)
+        .reportChange(
+          const MovieMediaChange(
+            movieNumber: 'ABC-001',
+            canPlay: false,
+            isSubscribed: true,
+          ),
+        );
+    await Future<void>.delayed(Duration.zero);
+    subscriptionBroadcaster().reportChange(
+      movieNumber: 'ABC-001',
+      isSubscribed: false,
+    );
+    await Future<void>.delayed(Duration.zero);
+    final state = container.read(rankingSummaryProvider(scope)).requireValue;
+    expect(state.paged.items.single.canPlay, isFalse);
+    expect(state.paged.items.single.isSubscribed, isFalse);
+    expect(state.paged.total, 1);
+    expect(adapter.requests.length, 3);
+  });
 
   test('初始按来源、榜单默认周期加载 24 条，未指定排序', () async {
     const scope = RankingSummaryScope.desktop();
@@ -160,7 +186,7 @@ void main() {
         .read(rankingSummaryProvider(scope))
         .requireValue;
     expect(pendingPeriod.filters.selectedPeriod, 'weekly');
-    expect(pendingPeriod.paged.filterUpdate.isLoading, isTrue);
+    expect(pendingPeriod.paged.filterUpdate.isWaiting, isTrue);
     expect(pendingPeriod.paged.items.single.movieNumber, 'ABC-001');
     expect(
       adapter.hitCount('GET', '/ranking-sources/javdb/boards/censored/items'),
@@ -182,7 +208,7 @@ void main() {
         .read(rankingSummaryProvider(scope))
         .requireValue;
     expect(pendingSort.filters.selectedSortField, RankingSortField.heat);
-    expect(pendingSort.paged.filterUpdate.isLoading, isTrue);
+    expect(pendingSort.paged.filterUpdate.isWaiting, isTrue);
     expect(pendingSort.paged.items.single.movieNumber, 'ABC-002');
 
     await sortUpdate;

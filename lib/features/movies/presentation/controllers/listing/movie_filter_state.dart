@@ -1,4 +1,7 @@
+import 'package:sakuramedia/features/playlists/data/playlist_resolution_filter.dart';
 import 'package:sakuramedia/features/shared/data/sort_direction.dart';
+
+export 'package:sakuramedia/features/playlists/data/playlist_resolution_filter.dart';
 
 // SortDirection 已抬到 lib/features/shared/data/sort_direction.dart，
 // 这里 re-export 保持 movies 域现有 import 路径不变。
@@ -166,6 +169,7 @@ class MovieFilterState {
     this.year,
     this.heatMin,
     this.heatMax,
+    this.resolution,
   });
 
   final MovieStatusFilter status;
@@ -180,6 +184,7 @@ class MovieFilterState {
 
   /// 热度上限（接口 `heat_max` 语义）：null 表示不限。
   final int? heatMax;
+  final PlaylistResolutionFilter? resolution;
 
   static const MovieFilterState initial = MovieFilterState();
 
@@ -191,21 +196,22 @@ class MovieFilterState {
       sortDirection == SortDirection.desc &&
       year == null &&
       heatMin == null &&
-      heatMax == null;
+      heatMax == null &&
+      resolution == null;
 
   bool get hasHeatRange => heatMin != null || heatMax != null;
 
   String get sortExpression =>
       '${sortField.apiValue}:${sortDirection.apiValue}';
 
-  /// 筛选入口上显示的当前筛选摘要。**只反映一个主维度**——筛了年份就报年份，
-  /// 否则报热度范围，再否则报状态；番号来源、排序等有独立分节，不堆在入口上
-  /// 避免文字变长。语义对齐 `MediaBrowseFilterState.triggerLabel`，桌面移动共用。
-  String get triggerLabel => switch ((year, hasHeatRange)) {
-    (final int y, _) => '$y',
-    (_, true) => movieHeatRangeLabel(heatMin, heatMax),
-    _ => status.label,
-  };
+  String get triggerLabel {
+    final label = switch ((year, hasHeatRange)) {
+      (final int y, _) => '$y',
+      (_, true) => movieHeatRangeLabel(heatMin, heatMax),
+      _ => status.label,
+    };
+    return resolution == null ? label : '$label · ${resolution!.label}';
+  }
 
   bool matches(MovieFilterState other) =>
       status == other.status &&
@@ -215,7 +221,8 @@ class MovieFilterState {
       sortDirection == other.sortDirection &&
       year == other.year &&
       heatMin == other.heatMin &&
-      heatMax == other.heatMax;
+      heatMax == other.heatMax &&
+      resolution == other.resolution;
 
   MovieFilterState copyWith({
     MovieStatusFilter? status,
@@ -226,9 +233,15 @@ class MovieFilterState {
     Object? year = _movieFilterUnset,
     Object? heatMin = _movieFilterUnset,
     Object? heatMax = _movieFilterUnset,
+    Object? resolution = _movieFilterUnset,
   }) {
     return MovieFilterState(
       status: status ?? this.status,
+      resolution: (status ?? this.status) != MovieStatusFilter.playable
+          ? null
+          : identical(resolution, _movieFilterUnset)
+          ? this.resolution
+          : resolution as PlaylistResolutionFilter?,
       collectionType: collectionType ?? this.collectionType,
       numberSource: numberSource ?? this.numberSource,
       sortField: sortField ?? this.sortField,

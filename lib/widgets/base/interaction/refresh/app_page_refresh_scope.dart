@@ -57,7 +57,8 @@ class _AppPageRefreshScopeState extends State<AppPageRefreshScope> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final registrar = AppPageRefreshRegistrarScope.maybeOf(context);
+    final host = AppPageRefreshRegistrarScope.maybeOf(context);
+    final registrar = TickerMode.of(context) ? host : null;
     if (identical(registrar, _registrar)) {
       return;
     }

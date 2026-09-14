@@ -5,9 +5,8 @@ import 'package:sakuramedia/features/activity/presentation/pages/desktop/activit
 import 'package:sakuramedia/features/actors/presentation/pages/mobile/actors_page.dart';
 import 'package:sakuramedia/features/configuration/presentation/pages/desktop/configuration_page.dart';
 import 'package:sakuramedia/features/discovery/presentation/desktop_discover_page.dart';
-import 'package:sakuramedia/features/hot_reviews/presentation/pages/desktop/hot_reviews_page.dart';
 import 'package:sakuramedia/features/media/presentation/pages/desktop/media_management_page.dart';
-import 'package:sakuramedia/features/media_import/presentation/pages/desktop/media_import_page.dart';
+import 'package:sakuramedia/features/media_import/presentation/pages/shared/media_import_page.dart';
 import 'package:sakuramedia/features/activity/presentation/pages/desktop/notifications_page.dart';
 import 'package:sakuramedia/features/moments/presentation/pages/desktop/moments_page.dart';
 import 'package:sakuramedia/features/tags/presentation/pages/desktop/tags_page.dart';
@@ -22,7 +21,6 @@ import 'package:sakuramedia/features/subscriptions/presentation/pages/desktop/mo
 import 'package:sakuramedia/features/rankings/presentation/pages/mobile/rankings_page.dart';
 import 'package:sakuramedia/features/videos/presentation/pages/desktop/video_list_page.dart';
 import 'package:sakuramedia/features/videos/presentation/pages/mobile/pornbox_page.dart';
-import 'package:sakuramedia/features/workbench/workbench_placeholder_page.dart';
 import 'package:sakuramedia/routes/app_route_paths.dart';
 import 'package:sakuramedia/routes/app_route_spec.dart';
 
@@ -237,20 +235,6 @@ const List<_NavSeed> _desktopNavSeeds = [
     ],
   ),
   _NavSeed(
-    id: 'hot-reviews',
-    label: '热评',
-    icon: Icons.rate_review_outlined,
-    section: '浏览',
-    items: [
-      _NavItemSeed(
-        slug: 'library/hot-reviews',
-        label: '热评',
-        icon: Icons.rate_review_outlined,
-        description: '本地热评快照浏览、周期切换与评论洞察入口。',
-      ),
-    ],
-  ),
-  _NavSeed(
     id: 'media',
     label: '媒体管理',
     icon: Icons.video_settings_outlined,
@@ -260,7 +244,7 @@ const List<_NavSeed> _desktopNavSeeds = [
         slug: 'system/media',
         label: '媒体管理',
         icon: Icons.video_settings_outlined,
-        description: '媒体文件浏览、失效巡检与秒传批次的统一入口。',
+        description: '媒体文件浏览、失效巡检与删除的统一入口。',
       ),
     ],
   ),
@@ -274,7 +258,7 @@ const List<_NavSeed> _desktopNavSeeds = [
         slug: 'system/media-import',
         label: '资源导入',
         icon: Icons.drive_folder_upload_outlined,
-        description: '导入 JAV、PornBox 影片与 JAV 字幕，并管理导入进度和失败文件。',
+        description: '导入 JAV 与普通视频，并在任务中心查看进度和结果。',
       ),
     ],
   ),
@@ -348,14 +332,13 @@ final Map<String, WidgetBuilder> _desktopRouteBuilders =
       desktopClipsPath: (_) => const DesktopClipsPage(),
       desktopVideosPath: (_) => const DesktopVideoListPage(),
       desktopRankingsPath: (_) => const DesktopRankingsPage(),
-      desktopHotReviewsPath: (_) => const DesktopHotReviewsPage(),
       desktopActivityPath: (_) => const DesktopActivityPage(),
       desktopMediaPath: (_) => const DesktopMediaManagementPage(),
       desktopNotificationsPath: (_) => const DesktopNotificationsPage(),
       desktopConfigurationPath: (_) => const DesktopConfigurationPage(),
-      desktopMediaImportPath: (_) => const DesktopMediaImportPage(),
-      desktopMovieSubscriptionsPath:
-          (_) => const DesktopMovieSubscriptionsPage(),
+      desktopMediaImportPath: (_) => const MediaImportPage(),
+      desktopMovieSubscriptionsPath: (_) =>
+          const DesktopMovieSubscriptionsPage(),
     };
 
 final Map<String, WidgetBuilder> _mobileRouteBuilders = <String, WidgetBuilder>{
@@ -370,7 +353,6 @@ List<AppNavGroup> navGroupsForPlatform(AppPlatform platform) {
   final prefix = switch (platform) {
     AppPlatform.desktop => '/desktop',
     AppPlatform.mobile => '/mobile',
-    AppPlatform.web => '/desktop',
   };
 
   AppNavItem item({
@@ -391,7 +373,6 @@ List<AppNavGroup> navGroupsForPlatform(AppPlatform platform) {
   final seeds = switch (platform) {
     AppPlatform.desktop => _desktopNavSeeds,
     AppPlatform.mobile => _mobileNavSeeds,
-    AppPlatform.web => _desktopNavSeeds,
   };
 
   return seeds
@@ -418,15 +399,9 @@ List<AppNavGroup> navGroupsForPlatform(AppPlatform platform) {
 }
 
 List<AppRouteSpec> routeSpecsForPlatform(AppPlatform platform) {
-  final platformLabel = switch (platform) {
-    AppPlatform.desktop => '桌面端',
-    AppPlatform.mobile => '移动端',
-    AppPlatform.web => 'Web 端',
-  };
   final routeBuilders = switch (platform) {
     AppPlatform.desktop => _desktopRouteBuilders,
     AppPlatform.mobile => _mobileRouteBuilders,
-    AppPlatform.web => _desktopRouteBuilders,
   };
 
   return navGroupsForPlatform(platform)
@@ -440,23 +415,7 @@ List<AppRouteSpec> routeSpecsForPlatform(AppPlatform platform) {
             description: item.description,
             groupId: group.id,
             layout: AppShellLayout.standard,
-            builder: (context) {
-              final builder = routeBuilders[item.path];
-              if (builder != null) {
-                return builder(context);
-              }
-              return WorkbenchPlaceholderPage(
-                platform: platform,
-                title: item.label,
-                description: item.description,
-                routePath: item.path,
-                eyebrow:
-                    item.path.endsWith('/overview')
-                        ? '$platformLabel工作台骨架'
-                        : platformLabel,
-                showUiKitShowcase: item.path.endsWith('/ui-kit'),
-              );
-            },
+            builder: (context) => routeBuilders[item.path]!(context),
           ),
         ),
       )
@@ -467,13 +426,11 @@ List<AppRouteSpec> get desktopRouteSpecs =>
     routeSpecsForPlatform(AppPlatform.desktop);
 List<AppRouteSpec> get mobileRouteSpecs =>
     routeSpecsForPlatform(AppPlatform.mobile);
-List<AppRouteSpec> get webRouteSpecs => routeSpecsForPlatform(AppPlatform.web);
 
 List<AppNavGroup> get desktopNavGroups =>
     navGroupsForPlatform(AppPlatform.desktop);
 List<AppNavGroup> get mobileNavGroups =>
     navGroupsForPlatform(AppPlatform.mobile);
-List<AppNavGroup> get webNavGroups => navGroupsForPlatform(AppPlatform.web);
 
 class _NavSeed {
   const _NavSeed({

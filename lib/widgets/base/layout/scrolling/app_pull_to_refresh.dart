@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:sakuramedia/widgets/base/interaction/refresh/app_pull_refresh_notification.dart';
 import 'package:sakuramedia/theme.dart';
 
 class AppPullToRefresh extends StatelessWidget {
@@ -16,7 +17,7 @@ class AppPullToRefresh extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return RefreshIndicator.adaptive(
-      onRefresh: onRefresh,
+      onRefresh: () => runAppPullRefresh(context, onRefresh),
       color: Theme.of(context).colorScheme.primary,
       backgroundColor: context.appColors.surfaceCard,
       notificationPredicate: notificationPredicate,

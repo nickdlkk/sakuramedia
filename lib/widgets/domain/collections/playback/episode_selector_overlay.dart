@@ -56,6 +56,14 @@ class _EpisodeSelectorOverlayState extends State<EpisodeSelectorOverlay> {
   double _effectiveItemExtent = 0;
 
   @override
+  void initState() {
+    super.initState();
+    if (widget.isOpen) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToCurrent());
+    }
+  }
+
+  @override
   void didUpdateWidget(covariant EpisodeSelectorOverlay oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!oldWidget.isOpen && widget.isOpen) {

@@ -4,7 +4,9 @@ import 'package:sakuramedia/app/riverpod_page_cache.dart';
 import 'package:sakuramedia/core/network/api_client.dart';
 import 'package:sakuramedia/core/session/session_store.dart';
 import 'package:sakuramedia/features/actors/data/api/actors_api.dart';
+import 'package:sakuramedia/features/actors/data/dto/actor_list_item_dto.dart';
 import 'package:sakuramedia/features/actors/presentation/controllers/listing/actor_filter_state.dart';
+import 'package:sakuramedia/features/actors/presentation/providers/actor_mutation_events_provider.dart';
 import 'package:sakuramedia/features/actors/presentation/providers/actor_summary_provider.dart';
 import 'package:sakuramedia/features/actors/presentation/providers/actor_summary_scope.dart';
 import 'package:sakuramedia/features/actors/presentation/providers/actors_api_provider.dart';
@@ -98,6 +100,35 @@ void main() {
     expect(request.uri.queryParameters['sort'], 'name:asc');
   });
 
+  test('资料筛选条件透传到演员列表接口', () async {
+    const scope = ActorSummaryScope.desktop();
+    await prime(scope, <Map<String, dynamic>>[_actor(1)]);
+    adapter.enqueueJson(
+      method: 'GET',
+      path: '/actors',
+      body: _page(items: <Map<String, dynamic>>[_actor(2)], total: 1),
+    );
+
+    await container
+        .read(actorSummaryProvider(scope).notifier)
+        .applyFilter(
+          const ActorFilterState(
+            ageMin: 20,
+            ageMax: 30,
+            heightMin: 155,
+            heightMax: 170,
+            cups: ['B', 'C'],
+          ),
+        );
+
+    final query = adapter.requests.last.uri.queryParameters;
+    expect(query['age_min'], '20');
+    expect(query['age_max'], '30');
+    expect(query['height_min'], '155');
+    expect(query['height_max'], '170');
+    expect(query['cups'], 'B,C');
+  });
+
   test('初始失败可显式重试，缓存 link 不随重试累加', () async {
     const scope = ActorSummaryScope.desktop();
     adapter.enqueueJson(method: 'GET', path: '/actors', statusCode: 500);
@@ -109,8 +140,9 @@ void main() {
       container.read(actorSummaryProvider(scope).future),
       throwsA(isA<Object>()),
     );
-    final firstLink =
-        container.read(actorSummaryProvider(scope).notifier).cacheLink;
+    final firstLink = container
+        .read(actorSummaryProvider(scope).notifier)
+        .cacheLink;
     expect(firstLink, isNotNull);
 
     adapter.enqueueJson(
@@ -207,6 +239,34 @@ void main() {
     );
   });
 
+  test('演员资料变更会就地更新缓存条目的显示名和头像', () async {
+    const scope = ActorSummaryScope.desktop();
+    await prime(scope, <Map<String, dynamic>>[_actor(1)]);
+
+    final updated = ActorListItemDto.fromJson(<String, dynamic>{
+      ..._actor(1),
+      'display_name': '新的显示名',
+      'profile_image': <String, dynamic>{
+        'id': 10,
+        'origin': 'origin.jpg',
+        'small': 'small.jpg',
+        'medium': 'medium.jpg',
+        'large': 'large.jpg',
+      },
+    });
+    container.read(actorMutationEventsProvider.notifier).reportUpdated(updated);
+    await _settle();
+
+    final actor = container
+        .read(actorSummaryProvider(scope))
+        .requireValue
+        .paged
+        .items
+        .single;
+    expect(actor.displayName, '新的显示名');
+    expect(actor.profileImage?.bestAvailableUrl, 'large.jpg');
+  });
+
   test('页面缓存 link 保活列表，驱逐后下一次读取重建 provider', () async {
     const scope = ActorSummaryScope.desktop();
     adapter.enqueueJson(
@@ -219,8 +279,9 @@ void main() {
       (_, __) {},
     );
     await container.read(actorSummaryProvider(scope).future);
-    final firstLink =
-        container.read(actorSummaryProvider(scope).notifier).cacheLink;
+    final firstLink = container
+        .read(actorSummaryProvider(scope).notifier)
+        .cacheLink;
     expect(firstLink, isNotNull);
 
     final cache = RiverpodPageCache();
@@ -246,8 +307,9 @@ void main() {
       path: '/actors',
       body: _page(items: <Map<String, dynamic>>[_actor(2)], total: 1),
     );
-    final rebuiltLink =
-        container.read(actorSummaryProvider(scope).notifier).cacheLink;
+    final rebuiltLink = container
+        .read(actorSummaryProvider(scope).notifier)
+        .cacheLink;
     expect(rebuiltLink, isNotNull);
     expect(identical(rebuiltLink, firstLink), isFalse);
     await container.read(actorSummaryProvider(scope).future);

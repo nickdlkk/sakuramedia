@@ -182,7 +182,7 @@ class _PickVideoCollectionDialogState
       return const Center(
         child: Padding(
           padding: EdgeInsets.all(16),
-          child: CircularProgressIndicator(),
+          child: CircularProgressIndicator.adaptive(),
         ),
       );
     }

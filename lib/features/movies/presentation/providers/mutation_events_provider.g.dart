@@ -191,3 +191,48 @@ abstract class _$MovieCollectionTypeEvents
     element.handleCreate(ref, build);
   }
 }
+
+@ProviderFor(MovieMediaEvents)
+final movieMediaEventsProvider = MovieMediaEventsProvider._();
+
+final class MovieMediaEventsProvider
+    extends $StreamNotifierProvider<MovieMediaEvents, MovieMediaChange> {
+  MovieMediaEventsProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'movieMediaEventsProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$movieMediaEventsHash();
+
+  @$internal
+  @override
+  MovieMediaEvents create() => MovieMediaEvents();
+}
+
+String _$movieMediaEventsHash() => r'2f1294e4a0eda7826d29c479afed5ef5a8374696';
+
+abstract class _$MovieMediaEvents extends $StreamNotifier<MovieMediaChange> {
+  Stream<MovieMediaChange> build();
+  @$mustCallSuper
+  @override
+  void runBuild() {
+    final ref =
+        this.ref as $Ref<AsyncValue<MovieMediaChange>, MovieMediaChange>;
+    final element =
+        ref.element
+            as $ClassProviderElement<
+              AnyNotifier<AsyncValue<MovieMediaChange>, MovieMediaChange>,
+              AsyncValue<MovieMediaChange>,
+              Object?,
+              Object?
+            >;
+    element.handleCreate(ref, build);
+  }
+}

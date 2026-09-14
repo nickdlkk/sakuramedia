@@ -192,7 +192,7 @@ class _AddToVideoCollectionDialogState
       return const Center(
         child: Padding(
           padding: EdgeInsets.all(16),
-          child: CircularProgressIndicator(),
+          child: CircularProgressIndicator.adaptive(),
         ),
       );
     }
@@ -218,7 +218,7 @@ class _AddToVideoCollectionDialogState
                   ? const SizedBox(
                     width: 18,
                     height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
+                    child: CircularProgressIndicator.adaptive(strokeWidth: 2),
                   )
                   : const Icon(Icons.add),
           onTap: isBusy ? null : () => _addTo(collection),

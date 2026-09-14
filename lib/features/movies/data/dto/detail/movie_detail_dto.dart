@@ -4,6 +4,7 @@ class MovieDetailDto {
   const MovieDetailDto({
     this.id = 0,
     required this.javdbId,
+    this.metadataSourceName,
     required this.movieNumber,
     required this.title,
     this.seriesId,
@@ -21,6 +22,7 @@ class MovieDetailDto {
     required this.scoreNumber,
     required this.isCollection,
     required this.isSubscribed,
+    this.isBlacklisted = false,
     required this.canPlay,
     required this.summary,
     required this.thinCoverImage,
@@ -28,15 +30,15 @@ class MovieDetailDto {
     required this.actors,
     required this.tags,
     required this.mediaItems,
+    this.mergePlaybackCandidates = const <MovieMergePlaybackCandidateDto>[],
     required this.playlists,
   });
 
-  /// 影片整数主键，统一资源任务操作（`resource_ids`）的寻址键。
-  ///
-  /// 老后端响应缺该字段时为 0，调用方按 `> 0` 判可用。
+  /// 后端返回的影片整数主键，可用于与订阅等域数据关联。
   final int id;
 
-  final String javdbId;
+  final String? javdbId;
+  final String? metadataSourceName;
   final String movieNumber;
   final String title;
   final int? seriesId;
@@ -54,6 +56,7 @@ class MovieDetailDto {
   final int scoreNumber;
   final bool isCollection;
   final bool isSubscribed;
+  final bool isBlacklisted;
   final bool canPlay;
   final String summary;
   final MovieImageDto? thinCoverImage;
@@ -61,6 +64,7 @@ class MovieDetailDto {
   final List<MovieActorDto> actors;
   final List<MovieTagDto> tags;
   final List<MovieMediaItemDto> mediaItems;
+  final List<MovieMergePlaybackCandidateDto> mergePlaybackCandidates;
   final List<MoviePlaylistSummaryDto> playlists;
 
   /// DMM 简介与翻译链路已下线，desc/desc_zh 随 API 移除（存量收拢进 [summary]），
@@ -72,9 +76,11 @@ class MovieDetailDto {
 
   factory MovieDetailDto.fromJson(Map<String, dynamic> json) {
     return MovieDetailDto(
-      // 兼容两种键名：详情资源用 `id`，若后端沿用订阅列表的 `movie_id` 也认。
-      id: _intFromJson(json['id']) ?? _intFromJson(json['movie_id']) ?? 0,
-      javdbId: json['javdb_id'] as String? ?? '',
+      id: _intFromJson(json['id']) ?? 0,
+      javdbId: json['javdb_id'] as String?,
+      metadataSourceName:
+          (json['metadata_source'] as Map<String, dynamic>?)?['display_name']
+              as String?,
       movieNumber: json['movie_number'] as String? ?? '',
       title: json['title'] as String? ?? '',
       seriesId: _intFromJson(json['series_id']),
@@ -92,6 +98,7 @@ class MovieDetailDto {
       scoreNumber: json['score_number'] as int? ?? 0,
       isCollection: json['is_collection'] as bool? ?? false,
       isSubscribed: json['is_subscribed'] as bool? ?? false,
+      isBlacklisted: json['is_blacklisted'] as bool? ?? false,
       canPlay: json['can_play'] as bool? ?? false,
       summary: json['summary'] as String? ?? '',
       thinCoverImage: _movieImageFromJson(json['thin_cover_image']),
@@ -108,11 +115,48 @@ class MovieDetailDto {
         json['media_items'],
         (item) => MovieMediaItemDto.fromJson(item),
       ),
+      mergePlaybackCandidates: _listFromJson(
+        json['merge_playback_candidates'],
+        (item) => MovieMergePlaybackCandidateDto.fromJson(item),
+      ),
       playlists: _listFromJson(
         json['playlists'],
         (item) => MoviePlaylistSummaryDto.fromJson(item),
       ),
     );
+  }
+}
+
+class MovieMergePlaybackCandidateDto {
+  const MovieMergePlaybackCandidateDto({
+    required this.libraryId,
+    required this.libraryName,
+    required this.providerKey,
+    required this.segmentCount,
+  });
+
+  final int libraryId;
+  final String libraryName;
+  final String providerKey;
+  final int segmentCount;
+
+  factory MovieMergePlaybackCandidateDto.fromJson(Map<String, dynamic> json) {
+    return MovieMergePlaybackCandidateDto(
+      libraryId: _intFromJson(json['library_id']) ?? 0,
+      libraryName: json['library_name'] as String? ?? '',
+      providerKey: json['provider_key'] as String? ?? '',
+      segmentCount: _intFromJson(json['segment_count']) ?? 0,
+    );
+  }
+}
+
+class MovieMergedPlaybackDto {
+  const MovieMergedPlaybackDto({required this.playUrl});
+
+  final String playUrl;
+
+  factory MovieMergedPlaybackDto.fromJson(Map<String, dynamic> json) {
+    return MovieMergedPlaybackDto(playUrl: json['play_url'] as String? ?? '');
   }
 }
 
@@ -148,6 +192,7 @@ class MovieActorDto {
     required this.gender,
     required this.isSubscribed,
     required this.profileImage,
+    this.apiDisplayName,
   });
 
   static const int femaleGender = 1;
@@ -159,6 +204,15 @@ class MovieActorDto {
   final int gender;
   final bool isSubscribed;
   final MovieImageDto? profileImage;
+  final String? apiDisplayName;
+  String get displayName {
+    final normalized = apiDisplayName?.trim();
+    if (normalized != null && normalized.isNotEmpty) {
+      return normalized;
+    }
+    return aliasName.isEmpty ? name : aliasName;
+  }
+
   bool get isFemale => gender == femaleGender;
 
   factory MovieActorDto.fromJson(Map<String, dynamic> json) {
@@ -170,6 +224,7 @@ class MovieActorDto {
       gender: (json['gender'] as num?)?.toInt() ?? 0,
       isSubscribed: json['is_subscribed'] as bool? ?? false,
       profileImage: _movieImageFromJson(json['profile_image']),
+      apiDisplayName: json['display_name'] as String?,
     );
   }
 }
@@ -192,13 +247,12 @@ class MovieMediaItemDto {
   const MovieMediaItemDto({
     required this.mediaId,
     required this.libraryId,
-    this.libraryBackend,
+    required this.providerKey,
     required this.playUrl,
-    required this.storageMode,
     required this.resolution,
+    required this.fileName,
     required this.fileSizeBytes,
     required this.durationSeconds,
-    required this.specialTags,
     required this.valid,
     required this.progress,
     required this.points,
@@ -207,16 +261,12 @@ class MovieMediaItemDto {
 
   final int mediaId;
   final int? libraryId;
-
-  /// 媒体所属库的 backend（`local` / `cloud115`）；孤儿媒体可能为 `null`。
-  final String? libraryBackend;
-
+  final String? providerKey;
   final String playUrl;
-  final String storageMode;
-  final String resolution;
+  final String fileName;
+  final String? resolution;
   final int fileSizeBytes;
   final int durationSeconds;
-  final String specialTags;
   final bool valid;
   final MovieMediaProgressDto? progress;
   final List<MovieMediaPointDto> points;
@@ -224,21 +274,17 @@ class MovieMediaItemDto {
 
   bool get hasPlayableUrl => playUrl.trim().isNotEmpty;
 
-  /// 是否 115 网盘媒体：外部播放器对 115 源要走后端 HLS 代理（.m3u8）。
-  bool get isCloud115 => libraryBackend == 'cloud115';
-
   factory MovieMediaItemDto.fromJson(Map<String, dynamic> json) {
     return MovieMediaItemDto(
-      mediaId: json['media_id'] as int? ?? 0,
+      mediaId: _intFromJson(json['media_id'] ?? json['id']) ?? 0,
       libraryId: json['library_id'] as int?,
-      libraryBackend: json['library_backend'] as String?,
+      providerKey: json['provider_key'] as String?,
       playUrl: json['play_url'] as String? ?? '',
-      storageMode: json['storage_mode'] as String? ?? '',
-      resolution: json['resolution'] as String? ?? '',
+      fileName: json['file_name'] as String? ?? '',
+      resolution: json['resolution'] as String?,
       fileSizeBytes: json['file_size_bytes'] as int? ?? 0,
       durationSeconds: json['duration_seconds'] as int? ?? 0,
-      specialTags: json['special_tags'] as String? ?? '',
-      valid: json['valid'] as bool? ?? false,
+      valid: json['valid'] as bool? ?? true,
       progress: _progressFromJson(json['progress']),
       points: _listFromJson(
         json['points'],
@@ -252,13 +298,12 @@ class MovieMediaItemDto {
   MovieMediaItemDto copyWith({
     int? mediaId,
     Object? libraryId = _sentinel,
-    Object? libraryBackend = _sentinel,
+    Object? providerKey = _sentinel,
     String? playUrl,
-    String? storageMode,
-    String? resolution,
+    String? fileName,
+    Object? resolution = _sentinel,
     int? fileSizeBytes,
     int? durationSeconds,
-    String? specialTags,
     bool? valid,
     Object? progress = _sentinel,
     List<MovieMediaPointDto>? points,
@@ -266,28 +311,27 @@ class MovieMediaItemDto {
   }) {
     return MovieMediaItemDto(
       mediaId: mediaId ?? this.mediaId,
-      libraryId:
-          identical(libraryId, _sentinel) ? this.libraryId : libraryId as int?,
-      libraryBackend:
-          identical(libraryBackend, _sentinel)
-              ? this.libraryBackend
-              : libraryBackend as String?,
+      libraryId: identical(libraryId, _sentinel)
+          ? this.libraryId
+          : libraryId as int?,
+      providerKey: identical(providerKey, _sentinel)
+          ? this.providerKey
+          : providerKey as String?,
       playUrl: playUrl ?? this.playUrl,
-      storageMode: storageMode ?? this.storageMode,
-      resolution: resolution ?? this.resolution,
+      fileName: fileName ?? this.fileName,
+      resolution: identical(resolution, _sentinel)
+          ? this.resolution
+          : resolution as String?,
       fileSizeBytes: fileSizeBytes ?? this.fileSizeBytes,
       durationSeconds: durationSeconds ?? this.durationSeconds,
-      specialTags: specialTags ?? this.specialTags,
       valid: valid ?? this.valid,
-      progress:
-          identical(progress, _sentinel)
-              ? this.progress
-              : progress as MovieMediaProgressDto?,
+      progress: identical(progress, _sentinel)
+          ? this.progress
+          : progress as MovieMediaProgressDto?,
       points: points ?? this.points,
-      videoInfo:
-          identical(videoInfo, _sentinel)
-              ? this.videoInfo
-              : videoInfo as MovieMediaVideoInfoDto?,
+      videoInfo: identical(videoInfo, _sentinel)
+          ? this.videoInfo
+          : videoInfo as MovieMediaVideoInfoDto?,
     );
   }
 }

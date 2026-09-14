@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart' show ProviderScope;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sakuramedia/core/session/session_store.dart';
+import 'package:sakuramedia/features/clips/presentation/providers/clips_overview_provider.dart';
+import 'package:sakuramedia/features/discovery/presentation/providers/discovery_preview_providers.dart';
+import 'package:sakuramedia/features/moments/presentation/providers/moments_provider.dart';
 import 'package:sakuramedia/features/overview/presentation/pages/mobile/overview_skeleton_page.dart';
 import 'package:sakuramedia/features/overview/presentation/providers/mobile_overview_tab_index_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -96,5 +99,69 @@ void main() {
     tabController.animateTo(3);
     await tester.pumpAndSettle();
     expect(notifications, notificationsAfterSwitch);
+  });
+
+  testWidgets('keeps the My tab input after visiting every overview tab', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    final sessionStore = await buildSessionStore();
+    final bundle = await createTestApiBundle(sessionStore);
+    addTearDown(bundle.dispose);
+
+    await pumpWithProviders(
+      tester,
+      home: const MobileOverviewSkeletonPage(),
+      bundle: bundle,
+    );
+    await tester.pumpAndSettle();
+
+    final input = find.byKey(const Key('mobile-overview-my-search-input'));
+    await tester.enterText(input, 'SSNI-888');
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pump();
+
+    final context = tester.element(
+      find.byKey(const Key('mobile-overview-tab-view')),
+    );
+    final tabController = DefaultTabController.of(context);
+    final container = ProviderScope.containerOf(context, listen: false);
+    final audits =
+        <({int index, bool Function() exists, Object Function() notifier})>[
+          (
+            index: 1,
+            exists: () => container.exists(clipsOverviewProvider),
+            notifier: () => container.read(clipsOverviewProvider.notifier),
+          ),
+          (
+            index: 2,
+            exists: () => container.exists(discoveryDailyPreviewProvider(10)),
+            notifier: () =>
+                container.read(discoveryDailyPreviewProvider(10).notifier),
+          ),
+          (
+            index: 3,
+            exists: () => container.exists(momentsProvider),
+            notifier: () => container.read(momentsProvider.notifier),
+          ),
+        ];
+    for (final audit in audits) {
+      tabController.animateTo(audit.index);
+      await tester.pumpAndSettle();
+      final notifierBefore = audit.notifier();
+      expect(audit.exists(), isTrue);
+
+      tabController.animateTo(0);
+      await tester.pumpAndSettle();
+      expect(audit.exists(), isTrue);
+
+      tabController.animateTo(audit.index);
+      await tester.pumpAndSettle();
+      expect(identical(audit.notifier(), notifierBefore), isTrue);
+    }
+    tabController.animateTo(0);
+    await tester.pumpAndSettle();
+
+    expect(tester.widget<TextFormField>(input).controller!.text, 'SSNI-888');
   });
 }

@@ -28,18 +28,18 @@ part 'playlists_overview_provider.g.dart';
 @Riverpod(retry: kNoAsyncNotifierRetry)
 class PlaylistsOverview extends _$PlaylistsOverview
     with AsyncNotifierDisposeGuardMixin<PlaylistsOverviewState> {
+  int _coverFetchGeneration = 0;
+
   @override
   Future<PlaylistsOverviewState> build(PlaylistsOverviewScope scope) async {
     attachDisposeGuard();
     final playlists = await _loadAndApplyPlaylists(scope);
-    // 先把 playlists 立即渲染（coverUrls 全为 null 占位），再后台逐个 fetch
-    // 首图，每张回来 patch 一次 state——渐进渲染，对齐原 controller `_loadCoverUrls`。
-    unawaited(_startCoverUrlFetches(playlists));
+    final coverFetchGeneration = ++_coverFetchGeneration;
+    // 首次加载没有旧封面；后续刷新会保留仍有效的旧封面，避免卡片回退到占位。
+    unawaited(_startCoverUrlFetches(playlists, coverFetchGeneration));
     return PlaylistsOverviewState(
       playlists: playlists,
-      coverUrls: <int, String?>{
-        for (final playlist in playlists) playlist.id: null,
-      },
+      coverUrls: _coverUrlsForPlaylists(playlists, const <int, String?>{}),
     );
   }
 
@@ -50,15 +50,20 @@ class PlaylistsOverview extends _$PlaylistsOverview
   Future<void> refresh() async {
     final playlists = await _loadAndApplyPlaylists(scope);
     if (isDisposed) return;
+    final current = state.value;
+    final coverFetchGeneration = ++_coverFetchGeneration;
     state = AsyncData(
       PlaylistsOverviewState(
         playlists: playlists,
-        coverUrls: <int, String?>{
-          for (final playlist in playlists) playlist.id: null,
-        },
+        // 仍存在且非空的列表先继续显示旧封面；后台仍会全部重取，确保首图
+        // 变更后不会永久保留旧图。新建、删除和变空的列表则立即反映为 null。
+        coverUrls: _coverUrlsForPlaylists(
+          playlists,
+          current?.coverUrls ?? const <int, String?>{},
+        ),
       ),
     );
-    unawaited(_startCoverUrlFetches(playlists));
+    unawaited(_startCoverUrlFetches(playlists, coverFetchGeneration));
   }
 
   /// 拖排序：本地立即改 + fire-and-forget 保存新顺序（与原 controller 一致，
@@ -122,9 +127,7 @@ class PlaylistsOverview extends _$PlaylistsOverview
     } else {
       updated.insert(0, playlist);
     }
-    final coverUrls = current.coverUrls.containsKey(playlist.id)
-        ? current.coverUrls
-        : <int, String?>{...current.coverUrls, playlist.id: null};
+    final coverUrls = _coverUrlsForPlaylists(updated, current.coverUrls);
     state = AsyncData(
       current.copyWith(playlists: updated, coverUrls: coverUrls),
     );
@@ -223,10 +226,23 @@ class PlaylistsOverview extends _$PlaylistsOverview
     return raw;
   }
 
-  Future<void> _startCoverUrlFetches(List<PlaylistDto> playlists) async {
+  Map<int, String?> _coverUrlsForPlaylists(
+    List<PlaylistDto> playlists,
+    Map<int, String?> previousCoverUrls,
+  ) => <int, String?>{
+    for (final playlist in playlists)
+      playlist.id: playlist.movieCount > 0
+          ? previousCoverUrls[playlist.id]
+          : null,
+  };
+
+  Future<void> _startCoverUrlFetches(
+    List<PlaylistDto> playlists,
+    int generation,
+  ) async {
     final api = ref.read(playlistsApiProvider);
     for (final playlist in playlists) {
-      if (isDisposed) return;
+      if (isDisposed || generation != _coverFetchGeneration) return;
       if (playlist.movieCount <= 0) continue;
       String? url;
       try {
@@ -236,11 +252,17 @@ class PlaylistsOverview extends _$PlaylistsOverview
         );
         url = page.items.firstOrNull?.coverImage?.bestAvailableUrl;
       } catch (_) {
-        url = null;
+        // 刷新请求失败时保留旧封面；成功但无首图仍会写入 null。
+        continue;
       }
-      if (isDisposed) return;
+      if (isDisposed || generation != _coverFetchGeneration) return;
       final current = state.value;
       if (current == null) return;
+      final isStillNonEmpty = current.playlists.any(
+        (currentPlaylist) =>
+            currentPlaylist.id == playlist.id && currentPlaylist.movieCount > 0,
+      );
+      if (!isStillNonEmpty) continue;
       state = AsyncData(
         current.copyWith(
           coverUrls: <int, String?>{...current.coverUrls, playlist.id: url},

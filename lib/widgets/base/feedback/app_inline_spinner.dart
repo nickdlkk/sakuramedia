@@ -12,7 +12,7 @@ import 'package:sakuramedia/theme.dart';
 class AppInlineSpinner extends StatelessWidget {
   const AppInlineSpinner({super.key, this.color});
 
-  /// 不传走 Material 默认（主题 primary）。订阅心形等有专属语义色的位置才传。
+  /// 不传走平台默认颜色。订阅心形等有专属语义色的位置才传。
   final Color? color;
 
   @override
@@ -21,9 +21,13 @@ class AppInlineSpinner extends StatelessWidget {
     return SizedBox(
       width: componentTokens.movieCardLoaderSize,
       height: componentTokens.movieCardLoaderSize,
-      child: CircularProgressIndicator(
+      child: CircularProgressIndicator.adaptive(
+        backgroundColor: switch (Theme.of(context).platform) {
+          TargetPlatform.iOS || TargetPlatform.macOS => color,
+          _ => null,
+        },
         strokeWidth: componentTokens.movieCardLoaderStrokeWidth,
-        color: color,
+        valueColor: AlwaysStoppedAnimation<Color?>(color),
       ),
     );
   }

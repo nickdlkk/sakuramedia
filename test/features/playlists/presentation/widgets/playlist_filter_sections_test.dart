@@ -1,35 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sakuramedia/features/playlists/data/dto/playlist_resolution_option_dto.dart';
 import 'package:sakuramedia/features/playlists/presentation/controllers/playlist_filter_state.dart';
-import 'package:sakuramedia/features/playlists/presentation/providers/playlist_resolution_options_state.dart';
 import 'package:sakuramedia/features/playlists/presentation/widgets/playlist_filter_sections.dart';
 import 'package:sakuramedia/theme.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  PlaylistResolutionOptionsState seed({
-    List<PlaylistResolutionOptionDto> options =
-        const <PlaylistResolutionOptionDto>[],
-    bool isLoading = false,
-    String? errorMessage,
-    bool hasLoaded = false,
-  }) {
-    return PlaylistResolutionOptionsState(
-      options: options,
-      isLoading: isLoading,
-      errorMessage: errorMessage,
-      hasLoaded: hasLoaded,
-    );
-  }
-
   Future<void> pumpSections(
     WidgetTester tester, {
     PlaylistFilterState filterState = PlaylistFilterState.initial,
-    required PlaylistResolutionOptionsState resolutionState,
     required ValueChanged<PlaylistFilterState> onChanged,
-    VoidCallback? onResolutionRetry,
   }) {
     return tester.pumpWidget(
       MaterialApp(
@@ -39,8 +20,6 @@ void main() {
             child: PlaylistFilterSectionGroup(
               filterState: filterState,
               onChanged: onChanged,
-              resolutionState: resolutionState,
-              onResolutionRetry: onResolutionRetry ?? () {},
             ),
           ),
         ),
@@ -48,99 +27,26 @@ void main() {
     );
   }
 
-  testWidgets('渲染分辨率分节：全部 + 后端档位（带命中数）', (tester) async {
-    await pumpSections(
-      tester,
-      resolutionState: seed(
-        options: const <PlaylistResolutionOptionDto>[
-          PlaylistResolutionOptionDto(resolution: '8K', count: 3),
-          PlaylistResolutionOptionDto(resolution: '4K', count: 42),
-          PlaylistResolutionOptionDto(resolution: '1080P', count: 120),
-        ],
-        hasLoaded: true,
-      ),
-      onChanged: (_) {},
-    );
-
-    expect(find.text('分辨率'), findsOneWidget);
-    expect(
-      find.byKey(const Key('playlist-filter-resolution-all')),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const Key('playlist-filter-resolution-8K')),
-      findsOneWidget,
-    );
-    expect(find.text('8K(3)'), findsOneWidget);
-    expect(find.text('4K(42)'), findsOneWidget);
-    expect(find.text('1080P(120)'), findsOneWidget);
-  });
-
-  testWidgets('分辨率加载中 / 失败态：无数据时独占内容区', (tester) async {
-    await pumpSections(
-      tester,
-      resolutionState: seed(isLoading: true),
-      onChanged: (_) {},
-    );
-    expect(find.text('分辨率加载中'), findsOneWidget);
-
-    await pumpSections(
-      tester,
-      resolutionState: seed(errorMessage: '分辨率加载失败'),
-      onChanged: (_) {},
-    );
-    expect(find.text('分辨率加载失败'), findsOneWidget);
-    expect(find.text('重试'), findsOneWidget);
-  });
-
-  testWidgets('已有 chips 时刷新失败：chips 保留，错误降级为行内提示 + 重试', (tester) async {
-    await pumpSections(
-      tester,
-      resolutionState: seed(
-        options: const <PlaylistResolutionOptionDto>[
-          PlaylistResolutionOptionDto(resolution: '4K', count: 42),
-        ],
-        hasLoaded: true,
-        errorMessage: '分辨率加载失败',
-      ),
-      onChanged: (_) {},
-    );
-
-    // 已有档位 chips 不被抹掉。
-    expect(
-      find.byKey(const Key('playlist-filter-resolution-4K')),
-      findsOneWidget,
-    );
-    // 错误行内展示，可重试。
-    expect(find.text('分辨率加载失败'), findsOneWidget);
-    expect(find.text('重试'), findsOneWidget);
-  });
-
-  testWidgets('已有 chips 时后台刷新：chips 保留 + 底部 spinner', (tester) async {
-    await pumpSections(
-      tester,
-      resolutionState: seed(
-        options: const <PlaylistResolutionOptionDto>[
-          PlaylistResolutionOptionDto(resolution: '4K', count: 42),
-        ],
-        hasLoaded: true,
-        isLoading: true,
-      ),
-      onChanged: (_) {},
-    );
-
-    expect(
-      find.byKey(const Key('playlist-filter-resolution-4K')),
-      findsOneWidget,
-    );
-    expect(find.text('分辨率刷新中'), findsOneWidget);
+  testWidgets('固定展示全部分辨率档位', (tester) async {
+    await pumpSections(tester, onChanged: (_) {});
+    for (final label in [
+      '全部',
+      '8K',
+      '4K',
+      '2K',
+      '1080P',
+      '720P',
+      '480P',
+      '360P',
+    ]) {
+      expect(find.text(label), findsOneWidget);
+    }
   });
 
   testWidgets('渲染全部排序字段 chip 且 sortField 为 null 时隐藏方向分节', (tester) async {
     await pumpSections(
       tester,
       filterState: PlaylistFilterState.initial,
-      resolutionState: seed(),
       onChanged: (_) {},
     );
 
@@ -163,7 +69,6 @@ void main() {
       filterState: PlaylistFilterState.initial.copyWith(
         sortField: PlaylistSortField.heat,
       ),
-      resolutionState: seed(),
       onChanged: (_) {},
     );
 
@@ -183,7 +88,6 @@ void main() {
     await pumpSections(
       tester,
       filterState: PlaylistFilterState.initial,
-      resolutionState: seed(),
       onChanged: (state) => sortFields.add(state.sortField),
     );
 
@@ -200,7 +104,6 @@ void main() {
       filterState: PlaylistFilterState.initial.copyWith(
         sortField: PlaylistSortField.addedAt,
       ),
-      resolutionState: seed(),
       onChanged: (state) => lastDirection = state.sortDirection,
     );
 
@@ -215,12 +118,6 @@ void main() {
     final resolutions = <PlaylistResolutionFilter?>[];
     await pumpSections(
       tester,
-      resolutionState: seed(
-        options: const <PlaylistResolutionOptionDto>[
-          PlaylistResolutionOptionDto(resolution: '4K', count: 42),
-        ],
-        hasLoaded: true,
-      ),
       onChanged: (state) => resolutions.add(state.resolution),
     );
 

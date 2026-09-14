@@ -1,3 +1,6 @@
+import 'dart:typed_data';
+
+import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sakuramedia/core/network/api_client.dart';
 import 'package:sakuramedia/core/network/api_exception.dart';
@@ -156,14 +159,30 @@ void main() {
           'large': 'large.jpg',
         },
         'is_subscribed': true,
+        'birthday': '1993-08-16',
+        'age': 33,
+        'height_cm': 159,
+        'bust_cm': 84,
+        'waist_cm': 58,
+        'hips_cm': 88,
+        'cup': ' F ',
+        'birthplace': '出生地',
+        'blood_type': 'O',
       },
     );
 
     final actor = await actorsApi.getActorDetail(actorId: 1);
 
-    expect(actor.id, 1);
-    expect(actor.displayName, '三上悠亚 / 鬼头桃菜');
-    expect(actor.profileImage?.bestAvailableUrl, 'large.jpg');
+    expect(actor.summary.id, 1);
+    expect(actor.summary.displayName, '三上悠亚 / 鬼头桃菜');
+    expect(actor.summary.profileImage?.bestAvailableUrl, 'large.jpg');
+    expect(actor.birthday, DateTime(1993, 8, 16));
+    expect(actor.age, 33);
+    expect(actor.heightCm, 159);
+    expect([actor.bustCm, actor.waistCm, actor.hipsCm], [84, 58, 88]);
+    expect(actor.cup, 'F');
+    expect(actor.birthplace, '出生地');
+    expect(actor.bloodType, 'O');
     expect(adapter.requests.single.path, '/actors/1');
   });
 
@@ -190,6 +209,75 @@ void main() {
         ),
       ),
     );
+  });
+
+  test('updateActor sends sparse PATCH with expected revision', () async {
+    adapter.enqueueJson(
+      method: 'PATCH',
+      path: '/actors/1',
+      statusCode: 200,
+      body: <String, dynamic>{
+        ..._actorDetailResponse(),
+        'display_name': '本地显示名',
+        'display_name_override': '本地显示名',
+        'mutation_revision': 1,
+      },
+    );
+
+    final actor = await actorsApi.updateActor(
+      actorId: 1,
+      expectedRevision: 0,
+      changes: <String, dynamic>{
+        'display_name_override': '本地显示名',
+        'height_cm': 160,
+      },
+    );
+
+    expect(actor.summary.displayName, '本地显示名');
+    expect(actor.mutationRevision, 1);
+    expect(adapter.requests.single.body, {
+      'expected_revision': 0,
+      'display_name_override': '本地显示名',
+      'height_cm': 160,
+    });
+  });
+
+  test('profile image APIs use revision query and multipart upload', () async {
+    final response = <String, dynamic>{
+      ..._actorDetailResponse(),
+      'has_profile_image_override': true,
+      'mutation_revision': 1,
+    };
+    adapter.enqueueJson(
+      method: 'PUT',
+      path: '/actors/1/profile-image',
+      body: response,
+    );
+    adapter.enqueueJson(
+      method: 'DELETE',
+      path: '/actors/1/profile-image',
+      body: <String, dynamic>{
+        ..._actorDetailResponse(),
+        'mutation_revision': 2,
+      },
+    );
+
+    final uploaded = await actorsApi.uploadActorProfileImage(
+      actorId: 1,
+      expectedRevision: 0,
+      bytes: Uint8List.fromList(<int>[1, 2, 3]),
+      fileName: 'avatar.png',
+    );
+    final cleared = await actorsApi.clearActorProfileImage(
+      actorId: 1,
+      expectedRevision: uploaded.mutationRevision,
+    );
+
+    expect(uploaded.hasProfileImageOverride, isTrue);
+    expect(cleared.hasProfileImageOverride, isFalse);
+    expect(adapter.requests[0].uri.queryParameters['expected_revision'], '0');
+    expect(adapter.requests[0].body, isA<FormData>());
+    expect(adapter.requests[1].uri.queryParameters['expected_revision'], '1');
   });
 
   test('getActorMovieIds parses movie id list', () async {
@@ -267,8 +355,9 @@ void main() {
         ],
       );
 
-      final updates =
-          await actorsApi.searchOnlineActorsStream(actorName: '三上悠亚').toList();
+      final updates = await actorsApi
+          .searchOnlineActorsStream(actorName: '三上悠亚')
+          .toList();
 
       final request = adapter.requests.single;
       expect(request.method, 'POST');
@@ -294,10 +383,9 @@ void main() {
         ],
       );
 
-      final updates =
-          await actorsApi
-              .searchOnlineActorsStream(actorName: 'mikami')
-              .toList();
+      final updates = await actorsApi
+          .searchOnlineActorsStream(actorName: 'mikami')
+          .toList();
 
       expect(updates.last.success, isFalse);
       expect(updates.last.reason, 'actor_not_found');
@@ -340,4 +428,18 @@ void main() {
       expect(request.uri.queryParameters, isEmpty);
     },
   );
+}
+
+Map<String, dynamic> _actorDetailResponse() {
+  return <String, dynamic>{
+    'id': 1,
+    'javdb_id': 'ActorA1',
+    'name': '来源名称',
+    'alias_name': '',
+    'display_name': '来源名称',
+    'profile_image': null,
+    'is_subscribed': false,
+    'gender': 1,
+    'mutation_revision': 0,
+  };
 }

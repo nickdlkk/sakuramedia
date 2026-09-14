@@ -5,17 +5,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sakuramedia/core/network/api_client.dart';
 import 'package:sakuramedia/core/session/providers/session_store_provider.dart';
 import 'package:sakuramedia/core/session/session_store.dart';
-import 'package:sakuramedia/features/configuration/data/api/config_api.dart';
 import 'package:sakuramedia/features/configuration/data/api/download_clients_api.dart';
 import 'package:sakuramedia/features/configuration/data/api/indexer_settings_api.dart';
 import 'package:sakuramedia/features/configuration/data/api/media_libraries_api.dart';
-import 'package:sakuramedia/features/configuration/data/dto/config_dto.dart';
 import 'package:sakuramedia/features/configuration/data/dto/download_client_dto.dart';
 import 'package:sakuramedia/features/configuration/data/dto/indexer_settings_dto.dart';
 import 'package:sakuramedia/features/configuration/data/dto/media_library_dto.dart';
-import 'package:sakuramedia/features/configuration/presentation/providers/config_api_provider.dart';
 import 'package:sakuramedia/features/configuration/presentation/providers/download_clients_provider.dart';
-import 'package:sakuramedia/features/configuration/presentation/providers/download_preference_provider.dart';
 import 'package:sakuramedia/features/configuration/presentation/providers/indexer_settings_api_provider.dart';
 import 'package:sakuramedia/features/configuration/presentation/providers/indexer_settings_provider.dart';
 import 'package:sakuramedia/features/configuration/presentation/providers/media_libraries_provider.dart';
@@ -67,7 +63,8 @@ void main() {
         .create(
           const CreateMediaLibraryPayload(
             name: 'Archive',
-            rootPath: '/archive',
+            providerKey: 'demo',
+            providerConfig: {'root': '/archive'},
           ),
         );
     expect(
@@ -83,7 +80,11 @@ void main() {
     final pending = container
         .read(mediaLibrariesProvider.notifier)
         .create(
-          const CreateMediaLibraryPayload(name: 'Late', rootPath: '/late'),
+          const CreateMediaLibraryPayload(
+            name: 'Late',
+            providerKey: 'demo',
+            providerConfig: {'root': '/late'},
+          ),
         );
     container.dispose();
     late.complete(_library(3, 'Late'));
@@ -109,8 +110,8 @@ void main() {
         .create(
           const CreateDownloadClientPayload(
             name: '115',
-            kind: DownloadClientKind.cloud115,
-            mediaLibraryId: 1,
+            libraryId: 1,
+            providerConfig: {'endpoint': 'cloud'},
           ),
         );
     expect(
@@ -143,7 +144,9 @@ void main() {
     await container.read(indexerSettingsProvider.future);
 
     final notifier = container.read(indexerSettingsProvider.notifier);
-    notifier.updateDraft(indexers: <IndexerEntryDto>[_indexer(apiKey: 'draft')]);
+    notifier.updateDraft(
+      indexers: <IndexerEntryDto>[_indexer(apiKey: 'draft')],
+    );
     expect(
       container.read(indexerSettingsProvider).requireValue.isDirty,
       isTrue,
@@ -176,46 +179,6 @@ void main() {
           .apiKey,
       'saved',
     );
-  });
-
-  test('下载偏好仅 patch preferred_client_kinds 并保留 pending restart', () async {
-    final api = _FakeConfigApi(apiClient: apiClient);
-    final container = ProviderContainer(
-      overrides: [
-        sessionStoreProvider.overrideWithValue(store),
-        configApiProvider.overrideWithValue(api),
-      ],
-      retry: (_, __) => null,
-    );
-    addTearDown(container.dispose);
-    api.getHandler = () async => _config([DownloadClientKind.qbittorrent]);
-    await container.read(downloadPreferenceProvider.future);
-
-    final notifier = container.read(downloadPreferenceProvider.notifier);
-    notifier.updateDraft(const [DownloadClientKind.cloud115]);
-    api.patchHandler = (partial) async {
-      expect(partial, {
-        'downloads': {
-          'preferred_client_kinds': ['cloud115'],
-        },
-      });
-      return ConfigUpdateResultDto(
-        values: _config(const [DownloadClientKind.cloud115]),
-        applied: const ['downloads.preferred_client_kinds'],
-        pendingRestart: const [
-          PendingRestartFieldDto(
-            field: 'downloads.preferred_client_kinds',
-            restart: 'scheduler',
-          ),
-        ],
-      );
-    };
-
-    final restart = await notifier.save();
-    expect(restart.single.restart, 'scheduler');
-    final state = container.read(downloadPreferenceProvider).requireValue;
-    expect(state.isDirty, isFalse);
-    expect(state.savedKinds, const [DownloadClientKind.cloud115]);
   });
 
   test('登出后配置型 keepAlive provider 失效，下次读拿的是新会话的数据', () async {
@@ -255,7 +218,7 @@ void main() {
     expect(fetches, 2);
   });
 
-  test('媒体库 CRUD 让 media 域那份副本失效（否则媒体管理页库筛选一直是旧的）', () async {
+  test('媒体库 CRUD 更新 media 域派生状态且只请求一次', () async {
     final api = _FakeMediaLibrariesApi(apiClient: apiClient);
     final container = ProviderContainer(
       overrides: [
@@ -273,7 +236,15 @@ void main() {
     };
     await container.read(mediaLibrariesProvider.future);
     await container.read(media.mediaLibrariesProvider.future);
-    expect(fetches, 2); // 两份副本各拉一次
+    expect(fetches, 1); // media 域从 configuration provider 派生
+    expect(
+      container
+          .read(media.mediaLibrariesProvider)
+          .requireValue
+          .libraries
+          .map((library) => library.id),
+      [1],
+    );
 
     api.createHandler = (_) async => _library(2, 'Archive');
     await container
@@ -281,14 +252,16 @@ void main() {
         .create(
           const CreateMediaLibraryPayload(
             name: 'Archive',
-            rootPath: '/archive',
+            providerKey: 'demo',
+            providerConfig: {'root': '/archive'},
           ),
         );
 
-    // media 域那份被 invalidate，下次读重新拉取。
+    // media 域实时派生 configuration provider 的更新，不再重新请求。
     final refreshed = await container.read(media.mediaLibrariesProvider.future);
-    expect(fetches, 3);
-    expect(refreshed.libraries, isNotEmpty);
+    expect(fetches, 1);
+    expect(refreshed.libraries.map((library) => library.id), [2, 1]);
+    expect(refreshed.librariesById.keys, containsAll([1, 2]));
   });
 }
 
@@ -343,24 +316,11 @@ class _FakeIndexerSettingsApi extends IndexerSettingsApi {
   ) => updateHandler!(payload);
 }
 
-class _FakeConfigApi extends ConfigApi {
-  _FakeConfigApi({required super.apiClient});
-
-  late Future<ConfigResourceDto> Function() getHandler;
-  Future<ConfigUpdateResultDto> Function(Map<String, dynamic>)? patchHandler;
-
-  @override
-  Future<ConfigResourceDto> get() => getHandler();
-
-  @override
-  Future<ConfigUpdateResultDto> patch(Map<String, dynamic> partial) =>
-      patchHandler!(partial);
-}
-
 MediaLibraryDto _library(int id, String name) => MediaLibraryDto(
   id: id,
   name: name,
-  rootPath: '/$name',
+  providerKey: 'demo',
+  providerConfig: {'root': '/$name'},
   createdAt: null,
   updatedAt: null,
 );
@@ -368,12 +328,8 @@ MediaLibraryDto _library(int id, String name) => MediaLibraryDto(
 DownloadClientDto _client(int id, String name) => DownloadClientDto(
   id: id,
   name: name,
-  baseUrl: '',
-  username: '',
-  clientSavePath: '',
-  localRootPath: '',
-  mediaLibraryId: 1,
-  hasPassword: false,
+  libraryId: 1,
+  providerConfig: {'endpoint': 'http://demo'},
   createdAt: null,
   updatedAt: null,
 );
@@ -390,22 +346,3 @@ IndexerEntryDto _indexer({String? apiKey}) => IndexerEntryDto(
 IndexerSettingsDto _settings({
   List<IndexerEntryDto> indexers = const <IndexerEntryDto>[],
 }) => IndexerSettingsDto(indexers: indexers);
-
-ConfigResourceDto _config(List<DownloadClientKind> kinds) => ConfigResourceDto(
-  media: const AdvancedMediaConfigDto(
-    othersNumberFeatures: [],
-    innerSubTags: [],
-    bluerayTags: [],
-    uncensoredTags: [],
-    uncensoredPrefix: [],
-    allowedMinVideoFileSize: 0,
-  ),
-  metadata: const AdvancedMetadataConfigDto(javdbHost: ''),
-  scheduler: const AdvancedSchedulerConfigDto(crons: {}),
-  downloads: AdvancedDownloadsConfigDto(
-    smallFileCleanupThresholdMb: 0,
-    preferredClientKinds: kinds,
-  ),
-  logging: const AdvancedLoggingConfigDto(level: 'INFO'),
-  effects: const {},
-);

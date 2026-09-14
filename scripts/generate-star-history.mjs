@@ -5,7 +5,7 @@
 // 不入库（见 .gitignore），也不会污染主分支。
 //
 // 环境变量：
-//   GH_TOKEN  必填。workflow 里传 secrets.GITHUB_TOKEN；本地跑传自己的 PAT。
+//   GH_TOKEN  必填。workflow 里传 secrets.GH_PAT；本地跑传自己的 PAT。
 //   REPO      必填。格式 owner/name，workflow 里传 github.repository。
 //   OUT_DIR   可选。默认 wiki/public。
 

@@ -12,8 +12,7 @@ part of 'movie_subscription_manager_provider.dart';
 ///
 /// 职责边界：
 /// - **读**订阅列表走 `MovieSubscriptionsApi`（本域）；
-/// - **重置**资源查询状态走统一 action（`ActivityApi.applyResourceTaskAction`，
-///   task_key `subscribed_movie_auto_download`、action `reset_retry_budget`）；
+/// - **重置**资源查询状态走本域 `/movie-subscriptions/search-resets`；
 /// - **取消订阅**走 `MoviesApi`——后端刻意没在 `/movie-subscriptions` 下平行造写
 ///   端点，这里也不绕过它。
 ///
@@ -23,14 +22,13 @@ part of 'movie_subscription_manager_provider.dart';
 /// 不整页重拉。
 
 @ProviderFor(MovieSubscriptionManager)
-final movieSubscriptionManagerProvider = MovieSubscriptionManagerProvider._();
+final movieSubscriptionManagerProvider = MovieSubscriptionManagerFamily._();
 
 /// 「订阅管理」页的列表控制器。
 ///
 /// 职责边界：
 /// - **读**订阅列表走 `MovieSubscriptionsApi`（本域）；
-/// - **重置**资源查询状态走统一 action（`ActivityApi.applyResourceTaskAction`，
-///   task_key `subscribed_movie_auto_download`、action `reset_retry_budget`）；
+/// - **重置**资源查询状态走本域 `/movie-subscriptions/search-resets`；
 /// - **取消订阅**走 `MoviesApi`——后端刻意没在 `/movie-subscriptions` 下平行造写
 ///   端点，这里也不绕过它。
 ///
@@ -48,8 +46,7 @@ final class MovieSubscriptionManagerProvider
   ///
   /// 职责边界：
   /// - **读**订阅列表走 `MovieSubscriptionsApi`（本域）；
-  /// - **重置**资源查询状态走统一 action（`ActivityApi.applyResourceTaskAction`，
-  ///   task_key `subscribed_movie_auto_download`、action `reset_retry_budget`）；
+  /// - **重置**资源查询状态走本域 `/movie-subscriptions/search-resets`；
   /// - **取消订阅**走 `MoviesApi`——后端刻意没在 `/movie-subscriptions` 下平行造写
   ///   端点，这里也不绕过它。
   ///
@@ -57,34 +54,102 @@ final class MovieSubscriptionManagerProvider
   /// [MovieSubscriptionEvents]；反过来别的页面改订阅时，本页通过
   /// [movieSubscriptionEventsProvider] 收到广播并**就地打补丁**（移除行 + 刷计数），
   /// 不整页重拉。
-  MovieSubscriptionManagerProvider._()
-    : super(
-        from: null,
-        argument: null,
-        retry: kNoAsyncNotifierRetry,
-        name: r'movieSubscriptionManagerProvider',
-        isAutoDispose: false,
-        dependencies: null,
-        $allTransitiveDependencies: null,
-      );
+  MovieSubscriptionManagerProvider._({
+    required MovieSubscriptionManagerFamily super.from,
+    required MovieSubscriptionStatus? super.argument,
+  }) : super(
+         retry: kNoAsyncNotifierRetry,
+         name: r'movieSubscriptionManagerProvider',
+         isAutoDispose: false,
+         dependencies: null,
+         $allTransitiveDependencies: null,
+       );
 
   @override
   String debugGetCreateSourceHash() => _$movieSubscriptionManagerHash();
 
+  @override
+  String toString() {
+    return r'movieSubscriptionManagerProvider'
+        ''
+        '($argument)';
+  }
+
   @$internal
   @override
   MovieSubscriptionManager create() => MovieSubscriptionManager();
+
+  @override
+  bool operator ==(Object other) {
+    return other is MovieSubscriptionManagerProvider &&
+        other.argument == argument;
+  }
+
+  @override
+  int get hashCode {
+    return argument.hashCode;
+  }
 }
 
 String _$movieSubscriptionManagerHash() =>
-    r'6ecae4df2cf226c39b40990f41e5667a9851bb5a';
+    r'303a30099541e0801dc8c93519e3f42a79f2f120';
 
 /// 「订阅管理」页的列表控制器。
 ///
 /// 职责边界：
 /// - **读**订阅列表走 `MovieSubscriptionsApi`（本域）；
-/// - **重置**资源查询状态走统一 action（`ActivityApi.applyResourceTaskAction`，
-///   task_key `subscribed_movie_auto_download`、action `reset_retry_budget`）；
+/// - **重置**资源查询状态走本域 `/movie-subscriptions/search-resets`；
+/// - **取消订阅**走 `MoviesApi`——后端刻意没在 `/movie-subscriptions` 下平行造写
+///   端点，这里也不绕过它。
+///
+/// 跨页一致性：本页取消订阅后 `reportChange` / `reportBatch` 到全局
+/// [MovieSubscriptionEvents]；反过来别的页面改订阅时，本页通过
+/// [movieSubscriptionEventsProvider] 收到广播并**就地打补丁**（移除行 + 刷计数），
+/// 不整页重拉。
+
+final class MovieSubscriptionManagerFamily extends $Family
+    with
+        $ClassFamilyOverride<
+          MovieSubscriptionManager,
+          AsyncValue<MovieSubscriptionManagerState>,
+          MovieSubscriptionManagerState,
+          FutureOr<MovieSubscriptionManagerState>,
+          MovieSubscriptionStatus?
+        > {
+  MovieSubscriptionManagerFamily._()
+    : super(
+        retry: kNoAsyncNotifierRetry,
+        name: r'movieSubscriptionManagerProvider',
+        dependencies: null,
+        $allTransitiveDependencies: null,
+        isAutoDispose: false,
+      );
+
+  /// 「订阅管理」页的列表控制器。
+  ///
+  /// 职责边界：
+  /// - **读**订阅列表走 `MovieSubscriptionsApi`（本域）；
+  /// - **重置**资源查询状态走本域 `/movie-subscriptions/search-resets`；
+  /// - **取消订阅**走 `MoviesApi`——后端刻意没在 `/movie-subscriptions` 下平行造写
+  ///   端点，这里也不绕过它。
+  ///
+  /// 跨页一致性：本页取消订阅后 `reportChange` / `reportBatch` 到全局
+  /// [MovieSubscriptionEvents]；反过来别的页面改订阅时，本页通过
+  /// [movieSubscriptionEventsProvider] 收到广播并**就地打补丁**（移除行 + 刷计数），
+  /// 不整页重拉。
+
+  MovieSubscriptionManagerProvider call(MovieSubscriptionStatus? status) =>
+      MovieSubscriptionManagerProvider._(argument: status, from: this);
+
+  @override
+  String toString() => r'movieSubscriptionManagerProvider';
+}
+
+/// 「订阅管理」页的列表控制器。
+///
+/// 职责边界：
+/// - **读**订阅列表走 `MovieSubscriptionsApi`（本域）；
+/// - **重置**资源查询状态走本域 `/movie-subscriptions/search-resets`；
 /// - **取消订阅**走 `MoviesApi`——后端刻意没在 `/movie-subscriptions` 下平行造写
 ///   端点，这里也不绕过它。
 ///
@@ -95,7 +160,12 @@ String _$movieSubscriptionManagerHash() =>
 
 abstract class _$MovieSubscriptionManager
     extends $AsyncNotifier<MovieSubscriptionManagerState> {
-  FutureOr<MovieSubscriptionManagerState> build();
+  late final _$args = ref.$arg as MovieSubscriptionStatus?;
+  MovieSubscriptionStatus? get status => _$args;
+
+  FutureOr<MovieSubscriptionManagerState> build(
+    MovieSubscriptionStatus? status,
+  );
   @$mustCallSuper
   @override
   void runBuild() {
@@ -113,6 +183,67 @@ abstract class _$MovieSubscriptionManager
                 MovieSubscriptionManagerState
               >,
               AsyncValue<MovieSubscriptionManagerState>,
+              Object?,
+              Object?
+            >;
+    element.handleCreate(ref, () => build(_$args));
+  }
+}
+
+@ProviderFor(MovieSubscriptionStatusSelection)
+final movieSubscriptionStatusSelectionProvider =
+    MovieSubscriptionStatusSelectionProvider._();
+
+final class MovieSubscriptionStatusSelectionProvider
+    extends
+        $NotifierProvider<
+          MovieSubscriptionStatusSelection,
+          MovieSubscriptionStatus?
+        > {
+  MovieSubscriptionStatusSelectionProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'movieSubscriptionStatusSelectionProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$movieSubscriptionStatusSelectionHash();
+
+  @$internal
+  @override
+  MovieSubscriptionStatusSelection create() =>
+      MovieSubscriptionStatusSelection();
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(MovieSubscriptionStatus? value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<MovieSubscriptionStatus?>(value),
+    );
+  }
+}
+
+String _$movieSubscriptionStatusSelectionHash() =>
+    r'41db4ad74ec54e1f4b046d075f6243a0d2329067';
+
+abstract class _$MovieSubscriptionStatusSelection
+    extends $Notifier<MovieSubscriptionStatus?> {
+  MovieSubscriptionStatus? build();
+  @$mustCallSuper
+  @override
+  void runBuild() {
+    final ref =
+        this.ref as $Ref<MovieSubscriptionStatus?, MovieSubscriptionStatus?>;
+    final element =
+        ref.element
+            as $ClassProviderElement<
+              AnyNotifier<MovieSubscriptionStatus?, MovieSubscriptionStatus?>,
+              MovieSubscriptionStatus?,
               Object?,
               Object?
             >;

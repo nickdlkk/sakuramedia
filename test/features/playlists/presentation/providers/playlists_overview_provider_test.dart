@@ -1,3 +1,7 @@
+import 'dart:async';
+import 'dart:convert';
+
+import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sakuramedia/core/network/api_client.dart';
@@ -226,32 +230,171 @@ void main() {
     expect(orderStore.snapshot, isEmpty);
   });
 
-  test('refresh reloads playlists and clears cover cache to null', () async {
-    adapter.enqueueJson(
-      method: 'GET',
-      path: '/playlists',
-      body: <Map<String, dynamic>>[_playlistJson(id: 10, name: 'A')],
-    );
-    adapter.enqueueJson(
-      method: 'GET',
-      path: '/playlists',
-      body: <Map<String, dynamic>>[
-        _playlistJson(id: 10, name: 'A'),
-        _playlistJson(id: 20, name: 'B'),
-      ],
-    );
+  test(
+    'refresh keeps valid covers while it rechecks every non-empty playlist',
+    () async {
+      adapter.enqueueJson(
+        method: 'GET',
+        path: '/playlists',
+        body: <Map<String, dynamic>>[
+          _playlistJson(id: 10, name: 'A', movieCount: 1),
+          _playlistJson(id: 11, name: 'Deleted', movieCount: 1),
+          _playlistJson(id: 12, name: 'Becomes empty', movieCount: 1),
+        ],
+      );
+      adapter.enqueueJson(
+        method: 'GET',
+        path: '/playlists/10/movies',
+        body: _moviesPage('/covers/old-10.jpg'),
+      );
+      adapter.enqueueJson(
+        method: 'GET',
+        path: '/playlists/11/movies',
+        body: _moviesPage('/covers/old-11.jpg'),
+      );
+      adapter.enqueueJson(
+        method: 'GET',
+        path: '/playlists/12/movies',
+        body: _moviesPage('/covers/old-12.jpg'),
+      );
+      adapter.enqueueJson(
+        method: 'GET',
+        path: '/playlists',
+        body: <Map<String, dynamic>>[
+          _playlistJson(id: 10, name: 'A', movieCount: 1),
+          _playlistJson(id: 12, name: 'Becomes empty', movieCount: 0),
+          _playlistJson(id: 20, name: 'New', movieCount: 1),
+        ],
+      );
+      final refreshedCover = Completer<ResponseBody>();
+      adapter.enqueueResponder(
+        method: 'GET',
+        path: '/playlists/10/movies',
+        responder: (_, __) => refreshedCover.future,
+      );
+      adapter.enqueueJson(
+        method: 'GET',
+        path: '/playlists/20/movies',
+        body: _moviesPage('/covers/new-20.jpg'),
+      );
 
-    keepAlive(_scopeNoOrder);
-    await container.read(playlistsOverviewProvider(_scopeNoOrder).future);
-    await container
-        .read(playlistsOverviewProvider(_scopeNoOrder).notifier)
-        .refresh();
+      keepAlive(_scopeNoOrder);
+      await container.read(playlistsOverviewProvider(_scopeNoOrder).future);
+      await pumpEventQueue();
+      expect(
+        container
+            .read(playlistsOverviewProvider(_scopeNoOrder))
+            .requireValue
+            .coverUrlFor(10),
+        '/covers/old-10.jpg',
+      );
 
-    final state = container
-        .read(playlistsOverviewProvider(_scopeNoOrder))
-        .requireValue;
-    expect(state.playlists.map((p) => p.id), <int>[10, 20]);
-  });
+      await container
+          .read(playlistsOverviewProvider(_scopeNoOrder).notifier)
+          .refresh();
+
+      final retainedState = container
+          .read(playlistsOverviewProvider(_scopeNoOrder))
+          .requireValue;
+      expect(retainedState.playlists.map((p) => p.id), <int>[10, 12, 20]);
+      expect(retainedState.coverUrlFor(10), '/covers/old-10.jpg');
+      expect(retainedState.coverUrlFor(20), isNull);
+      expect(retainedState.coverUrlFor(12), isNull);
+      expect(retainedState.coverUrls.containsKey(11), isFalse);
+
+      refreshedCover.complete(_jsonResponse(_moviesPage('/covers/new-10.jpg')));
+      await pumpEventQueue();
+
+      final refreshedState = container
+          .read(playlistsOverviewProvider(_scopeNoOrder))
+          .requireValue;
+      expect(refreshedState.coverUrlFor(10), '/covers/new-10.jpg');
+      expect(refreshedState.coverUrlFor(20), '/covers/new-20.jpg');
+      expect(refreshedState.coverUrlFor(12), isNull);
+      expect(refreshedState.coverUrls.containsKey(11), isFalse);
+      expect(adapter.hitCount('GET', '/playlists/11/movies'), 1);
+      expect(adapter.hitCount('GET', '/playlists/12/movies'), 1);
+    },
+  );
+
+  test(
+    'refresh retains an old cover after a failed request but clears empty results',
+    () async {
+      adapter.enqueueJson(
+        method: 'GET',
+        path: '/playlists',
+        body: <Map<String, dynamic>>[
+          _playlistJson(id: 10, name: 'A', movieCount: 1),
+        ],
+      );
+      adapter.enqueueJson(
+        method: 'GET',
+        path: '/playlists/10/movies',
+        body: _moviesPage('/covers/old-10.jpg'),
+      );
+      adapter.enqueueJson(
+        method: 'GET',
+        path: '/playlists',
+        body: <Map<String, dynamic>>[
+          _playlistJson(id: 10, name: 'A', movieCount: 1),
+        ],
+      );
+      adapter.enqueueJson(
+        method: 'GET',
+        path: '/playlists/10/movies',
+        statusCode: 500,
+        body: <String, dynamic>{'detail': 'temporary failure'},
+      );
+      adapter.enqueueJson(
+        method: 'GET',
+        path: '/playlists',
+        body: <Map<String, dynamic>>[
+          _playlistJson(id: 10, name: 'A', movieCount: 1),
+        ],
+      );
+      adapter.enqueueJson(
+        method: 'GET',
+        path: '/playlists/10/movies',
+        body: _emptyMoviesPage(),
+      );
+
+      keepAlive(_scopeNoOrder);
+      await container.read(playlistsOverviewProvider(_scopeNoOrder).future);
+      await pumpEventQueue();
+      expect(
+        container
+            .read(playlistsOverviewProvider(_scopeNoOrder))
+            .requireValue
+            .coverUrlFor(10),
+        '/covers/old-10.jpg',
+      );
+
+      final notifier = container.read(
+        playlistsOverviewProvider(_scopeNoOrder).notifier,
+      );
+      await notifier.refresh();
+      await pumpEventQueue();
+      expect(adapter.hitCount('GET', '/playlists/10/movies'), 2);
+      expect(
+        container
+            .read(playlistsOverviewProvider(_scopeNoOrder))
+            .requireValue
+            .coverUrlFor(10),
+        '/covers/old-10.jpg',
+      );
+
+      await notifier.refresh();
+      await pumpEventQueue();
+      expect(adapter.hitCount('GET', '/playlists/10/movies'), 3);
+      expect(
+        container
+            .read(playlistsOverviewProvider(_scopeNoOrder))
+            .requireValue
+            .coverUrlFor(10),
+        isNull,
+      );
+    },
+  );
 
   test('refresh rethrows and keeps existing playlists on failure', () async {
     adapter.enqueueJson(
@@ -282,3 +425,37 @@ void main() {
     expect(async.value?.playlists.map((p) => p.id), <int>[10]);
   });
 }
+
+Map<String, dynamic> _moviesPage(String coverUrl) => <String, dynamic>{
+  'items': <Map<String, dynamic>>[
+    <String, dynamic>{
+      'movie_number': 'ABC-001',
+      'cover_image': <String, dynamic>{
+        'id': 1,
+        'origin': coverUrl,
+        'small': '',
+        'medium': '',
+        'large': '',
+      },
+    },
+  ],
+  'page': 1,
+  'page_size': 1,
+  'total': 1,
+};
+
+Map<String, dynamic> _emptyMoviesPage() => <String, dynamic>{
+  'items': const <Map<String, dynamic>>[],
+  'page': 1,
+  'page_size': 1,
+  'total': 0,
+};
+
+ResponseBody _jsonResponse(Map<String, dynamic> body) =>
+    ResponseBody.fromString(
+      jsonEncode(body),
+      200,
+      headers: const <String, List<String>>{
+        Headers.contentTypeHeader: <String>[Headers.jsonContentType],
+      },
+    );

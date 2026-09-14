@@ -12,20 +12,28 @@ List<RouteBase> get $appRoutes => [
   $mobileImageSearchRouteData,
   $mobileSearchQueryRouteData,
   $mobileSettingsMediaLibrariesRouteData,
+  $mobileSettingsPluginsRouteData,
   $mobileSystemOverviewRouteData,
+  $mobileMediaImportRouteData,
+  $mobileActivityRouteData,
   $mobileNotificationsRouteData,
   $mobileMediaManagementRouteData,
   $mobileSettingsDownloadersRouteData,
   $mobileSettingsIndexersRouteData,
   $mobileSettingsPlaylistsRouteData,
+  $mobileSettingsSystemMaintenanceRouteData,
   $mobileSettingsExternalPlayerRouteData,
   $mobileSettingsUsernameRouteData,
   $mobileSettingsPasswordRouteData,
   $mobileMoviePlayerRouteData,
+  $mobileVideoPlayerRouteData,
+  $mobileVideoThumbnailRouteData,
   $mobileTagsRouteData,
   $mobileTagMoviesRouteData,
   $mobileClipCollectionsRouteData,
   $mobileClipCollectionDetailRouteData,
+  $mobileMomentCollectionsRouteData,
+  $mobileMomentCollectionDetailRouteData,
   $mobileClipCollectionPlayRouteData,
   $mobileVideoCollectionsRouteData,
   $mobileVideoCollectionDetailRouteData,
@@ -133,6 +141,7 @@ mixin $MobileImageSearchRouteData on GoRouteData {
         currentMovieNumber: state.uri.queryParameters['current-movie-number'],
         currentMovieScope:
             state.uri.queryParameters['current-movie-scope'] ?? 'all',
+        mode: state.uri.queryParameters['mode'] ?? 'image',
       );
 
   MobileImageSearchRouteData get _self => this as MobileImageSearchRouteData;
@@ -146,6 +155,7 @@ mixin $MobileImageSearchRouteData on GoRouteData {
         'current-movie-number': _self.currentMovieNumber,
       if (_self.currentMovieScope != 'all')
         'current-movie-scope': _self.currentMovieScope,
+      if (_self.mode != 'image') 'mode': _self.mode,
     },
   );
 
@@ -234,6 +244,32 @@ mixin $MobileSettingsMediaLibrariesRouteData on GoRouteData {
   void replace(BuildContext context) => context.replace(location);
 }
 
+RouteBase get $mobileSettingsPluginsRouteData => GoRouteData.$route(
+  path: '/mobile/settings/plugins',
+  factory: $MobileSettingsPluginsRouteData._fromState,
+);
+
+mixin $MobileSettingsPluginsRouteData on GoRouteData {
+  static MobileSettingsPluginsRouteData _fromState(GoRouterState state) =>
+      const MobileSettingsPluginsRouteData();
+
+  @override
+  String get location => GoRouteData.$location('/mobile/settings/plugins');
+
+  @override
+  void go(BuildContext context) => context.go(location);
+
+  @override
+  Future<T?> push<T>(BuildContext context) => context.push<T>(location);
+
+  @override
+  void pushReplacement(BuildContext context) =>
+      context.pushReplacement(location);
+
+  @override
+  void replace(BuildContext context) => context.replace(location);
+}
+
 RouteBase get $mobileSystemOverviewRouteData => GoRouteData.$route(
   path: '/mobile/system/overview',
   factory: $MobileSystemOverviewRouteData._fromState,
@@ -245,6 +281,58 @@ mixin $MobileSystemOverviewRouteData on GoRouteData {
 
   @override
   String get location => GoRouteData.$location('/mobile/system/overview');
+
+  @override
+  void go(BuildContext context) => context.go(location);
+
+  @override
+  Future<T?> push<T>(BuildContext context) => context.push<T>(location);
+
+  @override
+  void pushReplacement(BuildContext context) =>
+      context.pushReplacement(location);
+
+  @override
+  void replace(BuildContext context) => context.replace(location);
+}
+
+RouteBase get $mobileMediaImportRouteData => GoRouteData.$route(
+  path: '/mobile/system/media-import',
+  factory: $MobileMediaImportRouteData._fromState,
+);
+
+mixin $MobileMediaImportRouteData on GoRouteData {
+  static MobileMediaImportRouteData _fromState(GoRouterState state) =>
+      const MobileMediaImportRouteData();
+
+  @override
+  String get location => GoRouteData.$location('/mobile/system/media-import');
+
+  @override
+  void go(BuildContext context) => context.go(location);
+
+  @override
+  Future<T?> push<T>(BuildContext context) => context.push<T>(location);
+
+  @override
+  void pushReplacement(BuildContext context) =>
+      context.pushReplacement(location);
+
+  @override
+  void replace(BuildContext context) => context.replace(location);
+}
+
+RouteBase get $mobileActivityRouteData => GoRouteData.$route(
+  path: '/mobile/system/activity',
+  factory: $MobileActivityRouteData._fromState,
+);
+
+mixin $MobileActivityRouteData on GoRouteData {
+  static MobileActivityRouteData _fromState(GoRouterState state) =>
+      const MobileActivityRouteData();
+
+  @override
+  String get location => GoRouteData.$location('/mobile/system/activity');
 
   @override
   void go(BuildContext context) => context.go(location);
@@ -390,6 +478,34 @@ mixin $MobileSettingsPlaylistsRouteData on GoRouteData {
   void replace(BuildContext context) => context.replace(location);
 }
 
+RouteBase get $mobileSettingsSystemMaintenanceRouteData => GoRouteData.$route(
+  path: '/mobile/settings/system-maintenance',
+  factory: $MobileSettingsSystemMaintenanceRouteData._fromState,
+);
+
+mixin $MobileSettingsSystemMaintenanceRouteData on GoRouteData {
+  static MobileSettingsSystemMaintenanceRouteData _fromState(
+    GoRouterState state,
+  ) => const MobileSettingsSystemMaintenanceRouteData();
+
+  @override
+  String get location =>
+      GoRouteData.$location('/mobile/settings/system-maintenance');
+
+  @override
+  void go(BuildContext context) => context.go(location);
+
+  @override
+  Future<T?> push<T>(BuildContext context) => context.push<T>(location);
+
+  @override
+  void pushReplacement(BuildContext context) =>
+      context.pushReplacement(location);
+
+  @override
+  void replace(BuildContext context) => context.replace(location);
+}
+
 RouteBase get $mobileSettingsExternalPlayerRouteData => GoRouteData.$route(
   path: '/mobile/settings/external-player',
   factory: $MobileSettingsExternalPlayerRouteData._fromState,
@@ -517,6 +633,80 @@ mixin $MobileMoviePlayerRouteData on GoRouteData {
   void replace(BuildContext context) => context.replace(location);
 }
 
+RouteBase get $mobileVideoPlayerRouteData => GoRouteData.$route(
+  path: '/mobile/library/videos/:videoId/player',
+  factory: $MobileVideoPlayerRouteData._fromState,
+);
+
+mixin $MobileVideoPlayerRouteData on GoRouteData {
+  static MobileVideoPlayerRouteData _fromState(GoRouterState state) =>
+      MobileVideoPlayerRouteData(
+        videoId: int.parse(state.pathParameters['videoId']!),
+        positionSeconds: _$convertMapValue(
+          'position-seconds',
+          state.uri.queryParameters,
+          int.tryParse,
+        ),
+      );
+
+  MobileVideoPlayerRouteData get _self => this as MobileVideoPlayerRouteData;
+
+  @override
+  String get location => GoRouteData.$location(
+    '/mobile/library/videos/${Uri.encodeComponent(_self.videoId.toString())}/player',
+    queryParams: {
+      if (_self.positionSeconds != null)
+        'position-seconds': _self.positionSeconds!.toString(),
+    },
+  );
+
+  @override
+  void go(BuildContext context) => context.go(location);
+
+  @override
+  Future<T?> push<T>(BuildContext context) => context.push<T>(location);
+
+  @override
+  void pushReplacement(BuildContext context) =>
+      context.pushReplacement(location);
+
+  @override
+  void replace(BuildContext context) => context.replace(location);
+}
+
+RouteBase get $mobileVideoThumbnailRouteData => GoRouteData.$route(
+  path: '/mobile/library/videos/:videoId/thumbnails',
+  factory: $MobileVideoThumbnailRouteData._fromState,
+);
+
+mixin $MobileVideoThumbnailRouteData on GoRouteData {
+  static MobileVideoThumbnailRouteData _fromState(GoRouterState state) =>
+      MobileVideoThumbnailRouteData(
+        videoId: int.parse(state.pathParameters['videoId']!),
+      );
+
+  MobileVideoThumbnailRouteData get _self =>
+      this as MobileVideoThumbnailRouteData;
+
+  @override
+  String get location => GoRouteData.$location(
+    '/mobile/library/videos/${Uri.encodeComponent(_self.videoId.toString())}/thumbnails',
+  );
+
+  @override
+  void go(BuildContext context) => context.go(location);
+
+  @override
+  Future<T?> push<T>(BuildContext context) => context.push<T>(location);
+
+  @override
+  void pushReplacement(BuildContext context) =>
+      context.pushReplacement(location);
+
+  @override
+  void replace(BuildContext context) => context.replace(location);
+}
+
 RouteBase get $mobileTagsRouteData => GoRouteData.$route(
   path: '/mobile/library/tags',
   factory: $MobileTagsRouteData._fromState,
@@ -619,6 +809,67 @@ mixin $MobileClipCollectionDetailRouteData on GoRouteData {
   @override
   String get location => GoRouteData.$location(
     '/mobile/library/clip-collections/${Uri.encodeComponent(_self.collectionId.toString())}',
+  );
+
+  @override
+  void go(BuildContext context) => context.go(location);
+
+  @override
+  Future<T?> push<T>(BuildContext context) => context.push<T>(location);
+
+  @override
+  void pushReplacement(BuildContext context) =>
+      context.pushReplacement(location);
+
+  @override
+  void replace(BuildContext context) => context.replace(location);
+}
+
+RouteBase get $mobileMomentCollectionsRouteData => GoRouteData.$route(
+  path: '/mobile/library/moment-collections',
+  factory: $MobileMomentCollectionsRouteData._fromState,
+);
+
+mixin $MobileMomentCollectionsRouteData on GoRouteData {
+  static MobileMomentCollectionsRouteData _fromState(GoRouterState state) =>
+      const MobileMomentCollectionsRouteData();
+
+  @override
+  String get location =>
+      GoRouteData.$location('/mobile/library/moment-collections');
+
+  @override
+  void go(BuildContext context) => context.go(location);
+
+  @override
+  Future<T?> push<T>(BuildContext context) => context.push<T>(location);
+
+  @override
+  void pushReplacement(BuildContext context) =>
+      context.pushReplacement(location);
+
+  @override
+  void replace(BuildContext context) => context.replace(location);
+}
+
+RouteBase get $mobileMomentCollectionDetailRouteData => GoRouteData.$route(
+  path: '/mobile/library/moment-collections/:collectionId',
+  factory: $MobileMomentCollectionDetailRouteData._fromState,
+);
+
+mixin $MobileMomentCollectionDetailRouteData on GoRouteData {
+  static MobileMomentCollectionDetailRouteData _fromState(
+    GoRouterState state,
+  ) => MobileMomentCollectionDetailRouteData(
+    collectionId: int.parse(state.pathParameters['collectionId']!),
+  );
+
+  MobileMomentCollectionDetailRouteData get _self =>
+      this as MobileMomentCollectionDetailRouteData;
+
+  @override
+  String get location => GoRouteData.$location(
+    '/mobile/library/moment-collections/${Uri.encodeComponent(_self.collectionId.toString())}',
   );
 
   @override
@@ -794,6 +1045,11 @@ RouteBase get $mobileRootShellRouteData => StatefulShellRouteData.$route(
           factory: $MobileOverviewRouteData._fromState,
           routes: [
             GoRouteData.$route(
+              path: 'discover/follow',
+              parentNavigatorKey: MobileFollowRouteData.$parentNavigatorKey,
+              factory: $MobileFollowRouteData._fromState,
+            ),
+            GoRouteData.$route(
               path: 'discover/movies',
               parentNavigatorKey:
                   MobileDiscoverMoviesRouteData.$parentNavigatorKey,
@@ -804,6 +1060,12 @@ RouteBase get $mobileRootShellRouteData => StatefulShellRouteData.$route(
               parentNavigatorKey:
                   MobileDiscoverMomentsRouteData.$parentNavigatorKey,
               factory: $MobileDiscoverMomentsRouteData._fromState,
+            ),
+            GoRouteData.$route(
+              path: 'discover/hot-actress-releases',
+              parentNavigatorKey:
+                  MobileHotActressReleasesRouteData.$parentNavigatorKey,
+              factory: $MobileHotActressReleasesRouteData._fromState,
             ),
             GoRouteData.$route(
               path: 'playlists/:playlistId',
@@ -902,6 +1164,28 @@ mixin $MobileOverviewRouteData on GoRouteData {
   void replace(BuildContext context) => context.replace(location);
 }
 
+mixin $MobileFollowRouteData on GoRouteData {
+  static MobileFollowRouteData _fromState(GoRouterState state) =>
+      const MobileFollowRouteData();
+
+  @override
+  String get location =>
+      GoRouteData.$location('/mobile/overview/discover/follow');
+
+  @override
+  void go(BuildContext context) => context.go(location);
+
+  @override
+  Future<T?> push<T>(BuildContext context) => context.push<T>(location);
+
+  @override
+  void pushReplacement(BuildContext context) =>
+      context.pushReplacement(location);
+
+  @override
+  void replace(BuildContext context) => context.replace(location);
+}
+
 mixin $MobileDiscoverMoviesRouteData on GoRouteData {
   static MobileDiscoverMoviesRouteData _fromState(GoRouterState state) =>
       const MobileDiscoverMoviesRouteData();
@@ -931,6 +1215,28 @@ mixin $MobileDiscoverMomentsRouteData on GoRouteData {
   @override
   String get location =>
       GoRouteData.$location('/mobile/overview/discover/moments');
+
+  @override
+  void go(BuildContext context) => context.go(location);
+
+  @override
+  Future<T?> push<T>(BuildContext context) => context.push<T>(location);
+
+  @override
+  void pushReplacement(BuildContext context) =>
+      context.pushReplacement(location);
+
+  @override
+  void replace(BuildContext context) => context.replace(location);
+}
+
+mixin $MobileHotActressReleasesRouteData on GoRouteData {
+  static MobileHotActressReleasesRouteData _fromState(GoRouterState state) =>
+      const MobileHotActressReleasesRouteData();
+
+  @override
+  String get location =>
+      GoRouteData.$location('/mobile/overview/discover/hot-actress-releases');
 
   @override
   void go(BuildContext context) => context.go(location);

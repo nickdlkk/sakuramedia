@@ -6,6 +6,7 @@ import 'package:sakuramedia/core/network/api_client.dart';
 import 'package:sakuramedia/core/network/api_exception.dart';
 import 'package:sakuramedia/core/session/session_store.dart';
 import 'package:sakuramedia/features/image_search/data/image_search_api.dart';
+import 'package:sakuramedia/features/image_search/data/image_search_target.dart';
 
 import '../../../support/fake_http_client_adapter.dart';
 
@@ -118,6 +119,25 @@ void main() {
     expect(fields['exclude_movie_ids'], '30,40');
   });
 
+  test('createTextSession sends text to the selected target endpoint', () async {
+    adapter.enqueueJson(
+      method: 'POST',
+      path: '/image-search/plot-text-sessions',
+      body: _plotSessionBody(plotImageId: 321),
+    );
+
+    final session = await imageSearchApi.createTextSession(
+      text: '长发 海边',
+      target: ImageSearchTarget.plot,
+    );
+
+    expect(session.items.single.plotImageId, 321);
+    final formData = adapter.requests.single.body as FormData;
+    final fields = Map<String, String>.fromEntries(formData.fields);
+    expect(fields['text'], '长发 海边');
+    expect(adapter.requests.single.path, '/image-search/plot-text-sessions');
+  });
+
   test(
     'getNextResults sends cursor query parameter and parses response',
     () async {
@@ -160,6 +180,40 @@ void main() {
       expect(request.method, 'GET');
       expect(request.path, '/image-search/sessions/session-1/results');
       expect(request.uri.queryParameters['cursor'], 'cursor-1');
+    },
+  );
+
+  test(
+    'plot image sessions use dedicated paths and parse plot image ids',
+    () async {
+      adapter.enqueueJson(
+        method: 'POST',
+        path: '/image-search/plot-sessions',
+        body: _plotSessionBody(nextCursor: 'plot-cursor-1', plotImageId: 321),
+      );
+      adapter.enqueueJson(
+        method: 'GET',
+        path: '/image-search/plot-sessions/plot-session-1/results',
+        body: _plotSessionBody(plotImageId: 322),
+      );
+
+      final firstPage = await imageSearchApi.createSession(
+        fileBytes: Uint8List.fromList(const <int>[1, 2, 3, 4]),
+        fileName: 'query.png',
+        target: ImageSearchTarget.plot,
+      );
+      final nextPage = await imageSearchApi.getNextResults(
+        sessionId: firstPage.sessionId,
+        cursor: firstPage.nextCursor!,
+        target: ImageSearchTarget.plot,
+      );
+
+      expect(firstPage.items.single.plotImageId, 321);
+      expect(nextPage.items.single.plotImageId, 322);
+      expect(adapter.requests.map((request) => request.path), <String>[
+        '/image-search/plot-sessions',
+        '/image-search/plot-sessions/plot-session-1/results',
+      ]);
     },
   );
 
@@ -229,4 +283,32 @@ void main() {
       ),
     );
   });
+}
+
+Map<String, dynamic> _plotSessionBody({
+  String? nextCursor,
+  required int plotImageId,
+}) {
+  return <String, dynamic>{
+    'session_id': 'plot-session-1',
+    'status': 'ready',
+    'page_size': 20,
+    'next_cursor': nextCursor,
+    'expires_at': '2026-03-08T10:10:00Z',
+    'items': <Map<String, dynamic>>[
+      <String, dynamic>{
+        'plot_image_id': plotImageId,
+        'movie_id': 789,
+        'movie_number': 'ABC-001',
+        'score': 0.91,
+        'image': <String, dynamic>{
+          'id': 10,
+          'origin': 'origin.webp',
+          'small': 'small.webp',
+          'medium': 'medium.webp',
+          'large': 'large.webp',
+        },
+      },
+    ],
+  };
 }

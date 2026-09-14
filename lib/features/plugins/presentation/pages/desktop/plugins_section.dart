@@ -2,23 +2,21 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:oktoast/oktoast.dart';
 import 'package:sakuramedia/core/network/api_error_message.dart';
 import 'package:sakuramedia/features/plugins/data/dto/plugin_dto.dart';
 import 'package:sakuramedia/features/plugins/presentation/pages/desktop/plugin_settings_dialog.dart';
-import 'package:sakuramedia/features/plugins/presentation/plugin_zip_picker.dart';
+import 'package:sakuramedia/features/plugins/presentation/plugin_management_actions.dart';
 import 'package:sakuramedia/features/plugins/presentation/providers/plugins_provider.dart';
 import 'package:sakuramedia/features/plugins/presentation/providers/plugins_state.dart';
-import 'package:sakuramedia/features/shared/presentation/restart_messages.dart';
 import 'package:sakuramedia/theme.dart';
 import 'package:sakuramedia/widgets/base/actions/app_button.dart';
 import 'package:sakuramedia/widgets/base/actions/app_icon_button.dart';
 import 'package:sakuramedia/widgets/base/actions/app_switch.dart';
-import 'package:sakuramedia/widgets/base/feedback/app_confirm_dialog.dart';
 import 'package:sakuramedia/widgets/base/feedback/app_empty_state.dart';
 import 'package:sakuramedia/widgets/base/feedback/app_inline_spinner.dart';
 import 'package:sakuramedia/widgets/base/feedback/app_section_error.dart';
 import 'package:sakuramedia/widgets/base/feedback/app_section_skeleton.dart';
+import 'package:sakuramedia/widgets/base/interaction/refresh/app_page_refresh_scope.dart';
 import 'package:sakuramedia/widgets/base/layout/cards/app_badge.dart';
 import 'package:sakuramedia/widgets/base/layout/cards/app_content_card.dart';
 import 'package:sakuramedia/widgets/base/layout/cards/app_notice_card.dart';
@@ -35,83 +33,8 @@ class DesktopPluginsSection extends ConsumerStatefulWidget {
 }
 
 class _DesktopPluginsSectionState extends ConsumerState<DesktopPluginsSection> {
-  Future<void> _install() async {
-    PluginZipFile? file;
-    try {
-      file = await pickPluginZip();
-    } on PluginZipPickerException catch (error) {
-      if (!mounted) {
-        return;
-      }
-      showToast(error.message);
-      return;
-    }
-    if (!mounted || file == null) {
-      return;
-    }
-
-    final confirmed = await showAppConfirmDialog(
-      context,
-      title: '安装插件',
-      message: '将安装「${file.fileName}」。若已存在同名插件，会替换其代码并保留 data/ 运行数据。',
-      confirmLabel: '安装',
-      dialogKey: const Key('plugins-install-confirm-dialog'),
-      confirmKey: const Key('plugins-install-confirm-button'),
-      cancelKey: const Key('plugins-install-cancel-button'),
-    );
-    if (!confirmed || !mounted) {
-      return;
-    }
-    try {
-      final refreshed = await ref
-          .read(pluginsProvider.notifier)
-          .install(fileBytes: file.bytes, fileName: file.fileName);
-      if (!mounted) {
-        return;
-      }
-      showToast(
-        refreshed
-            ? buildRestartRequiredMessage('插件已安装')
-            : '插件已安装，但列表刷新失败，请稍后重试',
-      );
-    } catch (error) {
-      if (!mounted) {
-        return;
-      }
-      showToast(apiErrorMessage(error, fallback: '安装插件失败'));
-    }
-  }
-
-  Future<void> _toggle(PluginSummaryDto plugin, bool enabled) async {
-    try {
-      await ref
-          .read(pluginsProvider.notifier)
-          .setEnabled(plugin.pluginId, enabled);
-      showToast(buildRestartRequiredMessage(enabled ? '插件已启用' : '插件已停用'));
-    } catch (error) {
-      showToast(apiErrorMessage(error, fallback: '插件启停失败'));
-    }
-  }
-
-  Future<void> _remove(PluginSummaryDto plugin) async {
-    final confirmed = await showAppConfirmDialog(
-      context,
-      title: '删除插件',
-      message: '确认删除「${plugin.displayName}」？插件目录及其运行数据（data/）都会被删除，且不可恢复。',
-      confirmLabel: '删除',
-      danger: true,
-      dialogKey: const Key('plugins-delete-confirm-dialog'),
-      confirmKey: const Key('plugins-delete-confirm-button'),
-      cancelKey: const Key('plugins-delete-cancel-button'),
-      onConfirm: () =>
-          ref.read(pluginsProvider.notifier).remove(plugin.pluginId),
-      failureFallback: '删除插件失败',
-    );
-    if (!confirmed || !mounted) {
-      return;
-    }
-    showToast(buildRestartRequiredMessage('插件已删除'));
-  }
+  PluginManagementActions get _actions =>
+      PluginManagementActions(context: context, ref: ref);
 
   void _openSettings(PluginSummaryDto plugin) {
     unawaited(showPluginSettingsDialog(context, plugin: plugin));
@@ -123,15 +46,16 @@ class _DesktopPluginsSectionState extends ConsumerState<DesktopPluginsSection> {
       return const SizedBox.shrink();
     }
     final asyncPlugins = ref.watch(pluginsProvider);
-    return asyncPlugins.when(
+    final content = asyncPlugins.when(
       loading: () => const AppSectionSkeleton(lineCount: 4),
       error: (error, _) => AppSectionError(
         title: '插件加载失败',
         message: apiErrorMessage(error, fallback: '插件加载失败，请稍后重试。'),
-        onRetry: () => ref.read(pluginsProvider.notifier).reload(),
+        onRetry: _actions.refresh,
       ),
       data: (state) => _buildLoaded(context, state),
     );
+    return AppPageRefreshScope(onRefresh: _actions.refresh, child: content);
   }
 
   Widget _buildLoaded(BuildContext context, PluginsState state) {
@@ -151,11 +75,14 @@ class _DesktopPluginsSectionState extends ConsumerState<DesktopPluginsSection> {
       rows.add(
         _PluginRow(
           plugin: plugin,
+          update: state.updates[plugin.pluginId],
           busy: state.busyPluginIds.contains(plugin.pluginId),
           installing: state.isInstalling,
+          checkingUpdates: state.isCheckingUpdates,
           onTap: () => _openSettings(plugin),
-          onToggle: (enabled) => _toggle(plugin, enabled),
-          onRemove: () => _remove(plugin),
+          onToggle: (enabled) => _actions.toggle(plugin, enabled),
+          onUpgrade: (update) => _actions.upgrade(plugin, update),
+          onRemove: () => _actions.remove(plugin),
         ),
       );
     }
@@ -165,11 +92,25 @@ class _DesktopPluginsSectionState extends ConsumerState<DesktopPluginsSection> {
         const AppNoticeCard(
           key: Key('plugins-restart-notice'),
           leadingIcon: Icons.info_outline_rounded,
-          description: '插件安装、启停、删除或配置修改后，需重启容器才生效。',
+          description: '插件安装、更新、启停、删除或配置修改后，需重启容器才生效。',
         ),
         SizedBox(height: spacing.lg),
         Row(
           children: [
+            AppButton(
+              key: const Key('plugins-check-updates-button'),
+              label: '检查更新',
+              size: AppButtonSize.small,
+              icon: const Icon(Icons.system_update_outlined),
+              isLoading: state.isCheckingUpdates,
+              onPressed:
+                  state.isInstalling ||
+                      state.isCheckingUpdates ||
+                      state.busyPluginIds.isNotEmpty
+                  ? null
+                  : _actions.checkUpdates,
+            ),
+            SizedBox(width: spacing.sm),
             AppButton(
               key: const Key('plugins-install-button'),
               label: '安装插件',
@@ -177,7 +118,9 @@ class _DesktopPluginsSectionState extends ConsumerState<DesktopPluginsSection> {
               size: AppButtonSize.small,
               icon: const Icon(Icons.upload_file_outlined),
               isLoading: state.isInstalling,
-              onPressed: state.isInstalling ? null : _install,
+              onPressed: state.isInstalling || state.isCheckingUpdates
+                  ? null
+                  : _actions.install,
             ),
             SizedBox(width: spacing.md),
             Text(
@@ -218,24 +161,30 @@ class _DesktopPluginsSectionState extends ConsumerState<DesktopPluginsSection> {
 class _PluginRow extends StatelessWidget {
   const _PluginRow({
     required this.plugin,
+    required this.update,
     required this.busy,
     required this.installing,
+    required this.checkingUpdates,
     required this.onTap,
     required this.onToggle,
+    required this.onUpgrade,
     required this.onRemove,
   });
 
   final PluginSummaryDto plugin;
+  final PluginReleaseUpdate? update;
   final bool busy;
   final bool installing;
+  final bool checkingUpdates;
   final VoidCallback onTap;
   final ValueChanged<bool> onToggle;
+  final ValueChanged<PluginReleaseUpdate> onUpgrade;
   final VoidCallback onRemove;
 
   @override
   Widget build(BuildContext context) {
     final spacing = context.appSpacing;
-    final disabled = busy || installing;
+    final disabled = busy || installing || checkingUpdates;
     return InkWell(
       key: Key('plugin-row-${plugin.pluginId}'),
       onTap: disabled ? null : onTap,
@@ -297,6 +246,16 @@ class _PluginRow extends StatelessWidget {
               ),
             ),
             SizedBox(width: spacing.md),
+            if (update != null) ...[
+              AppButton(
+                key: Key('plugin-upgrade-button-${plugin.pluginId}'),
+                label: '更新',
+                variant: AppButtonVariant.primary,
+                size: AppButtonSize.xSmall,
+                onPressed: disabled ? null : () => onUpgrade(update!),
+              ),
+              SizedBox(width: spacing.xs),
+            ],
             if (busy)
               const AppInlineSpinner()
             else

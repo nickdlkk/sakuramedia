@@ -4,6 +4,7 @@ import 'package:sakuramedia/routes/desktop_top_bar_config.dart';
 import 'package:sakuramedia/theme.dart';
 import 'package:sakuramedia/widgets/base/actions/app_icon_button.dart';
 import 'package:sakuramedia/widgets/shell/window/app_window_drag_area.dart';
+import 'package:sakuramedia/widgets/shell/window/app_windows_caption.dart';
 
 /// 桌面壳顶栏。
 ///
@@ -83,6 +84,7 @@ class AppTopBar extends StatelessWidget {
                     isRefreshing: isRefreshing,
                   ),
                 SizedBox(width: rightInset),
+                if (usesAppWindowsCaption) const AppWindowsCaption(),
               ],
             ),
           ),
@@ -138,9 +140,13 @@ class _TopBarRefreshButton extends StatelessWidget {
           child: SizedBox(
             width: iconSize,
             height: iconSize,
-            child: CircularProgressIndicator(
+            child: CircularProgressIndicator.adaptive(
+              backgroundColor: switch (Theme.of(context).platform) {
+                TargetPlatform.iOS || TargetPlatform.macOS => context.appTextPalette.muted,
+                _ => null,
+              },
               strokeWidth: 2,
-              color: context.appTextPalette.muted,
+              valueColor: AlwaysStoppedAnimation<Color?>(context.appTextPalette.muted),
             ),
           ),
         ),

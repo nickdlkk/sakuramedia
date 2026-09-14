@@ -1,8 +1,10 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:sakuramedia/widgets/base/layout/scrolling/app_fixed_header_layout.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:oktoast/oktoast.dart';
+import 'package:sakuramedia/app/app_platform.dart';
 import 'package:sakuramedia/core/format/updated_at_label.dart';
 import 'package:sakuramedia/core/network/api_exception.dart';
 import 'package:sakuramedia/core/network/api_error_message.dart';
@@ -12,12 +14,11 @@ import 'package:sakuramedia/features/activity/presentation/activity_filter_state
 import 'package:sakuramedia/features/activity/presentation/providers/activity_center_provider.dart';
 import 'package:sakuramedia/features/activity/presentation/providers/activity_center_state.dart';
 import 'package:sakuramedia/features/activity/presentation/job_params_dialog.dart';
-import 'package:sakuramedia/features/activity/presentation/providers/resource_task_center_provider.dart';
-import 'package:sakuramedia/features/activity/presentation/resource_task_pane.dart';
 import 'package:sakuramedia/features/downloads/presentation/download_task_pane.dart';
 import 'package:sakuramedia/features/downloads/presentation/download_task_filter_state.dart';
 import 'package:sakuramedia/features/downloads/presentation/providers/download_task_center_provider.dart';
 import 'package:sakuramedia/features/downloads/presentation/providers/download_task_center_state.dart';
+import 'package:sakuramedia/features/shared/presentation/providers/paged_async_notifier.dart';
 import 'package:sakuramedia/theme.dart';
 import 'package:sakuramedia/widgets/base/actions/app_button.dart';
 import 'package:sakuramedia/widgets/base/feedback/app_inline_spinner.dart';
@@ -26,10 +27,15 @@ import 'package:sakuramedia/widgets/base/interaction/refresh/app_page_refresh_sc
 import 'package:sakuramedia/widgets/base/layout/scrolling/app_paged_load_more_footer.dart';
 import 'package:sakuramedia/widgets/base/layout/cards/app_badge.dart';
 import 'package:sakuramedia/widgets/base/feedback/app_empty_state.dart';
+import 'package:sakuramedia/widgets/base/feedback/app_filter_result_loading_overlay.dart';
 import 'package:sakuramedia/widgets/base/feedback/app_filter_update_bar.dart';
+import 'package:sakuramedia/widgets/base/feedback/app_section_skeleton.dart';
 import 'package:sakuramedia/widgets/base/forms/app_select_field.dart';
 import 'package:sakuramedia/widgets/base/navigation/app_tab_bar.dart';
 import 'package:sakuramedia/widgets/base/overlays/app_adaptive_modal.dart';
+import 'package:sakuramedia/widgets/base/overlays/app_bottom_drawer.dart';
+import 'package:sakuramedia/widgets/base/overlays/app_filter_popover.dart';
+import 'package:sakuramedia/widgets/base/navigation/app_mobile_filter_drawer_scaffold.dart';
 
 class DesktopActivityPage extends ConsumerStatefulWidget {
   const DesktopActivityPage({super.key, this.initialDownloadMovieNumber});
@@ -50,17 +56,15 @@ class _DesktopActivityPageState extends ConsumerState<DesktopActivityPage>
   late final ScrollController _pageScrollController;
   bool _isViewportWorkScheduled = false;
   ActivityTab? _lastActiveTab = ActivityTab.tasks;
-  bool _hasOpenedResourceTasks = false;
   bool _hasOpenedDownloadTasks = false;
+  bool? _isPageVisible;
 
   ActivityCenter get _controller => ref.read(activityCenterProvider.notifier);
-  ResourceTaskCenter get _resourceTaskController =>
-      ref.read(resourceTaskCenterProvider.notifier);
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this)
+    _tabController = TabController(length: 2, vsync: this)
       ..addListener(_handleTabChanged);
     _pageScrollController = ScrollController()..addListener(_handlePageScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -70,33 +74,74 @@ class _DesktopActivityPageState extends ConsumerState<DesktopActivityPage>
     });
     // 订阅卡片跳转进来的下载意图：等首帧后统一走同一路径（切 tab + 应用筛选），
     // 避免与 activity provider 的 bootstrap 初始化互相踩。
-    if (widget.initialDownloadMovieNumber != null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          unawaited(_applyInitialDownloadIntent());
-        }
-      });
+    _scheduleInitialDownloadIntent();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final isVisible = TickerMode.of(context);
+    if (_isPageVisible == isVisible) return;
+    _isPageVisible = isVisible;
+
+    // didChangeDependencies 属于 widget 构建阶段；延后 provider 写入，避免
+    // TickerMode 切换时同步更新轮询状态而触发 build 期间修改 provider。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _isPageVisible != isVisible) return;
+      _updatePollingForVisibility(isVisible);
+    });
+  }
+
+  void _updatePollingForVisibility(bool isVisible) {
+    if (isVisible) {
+      unawaited(_controller.resumePolling());
+    } else {
+      _controller.pausePolling();
+    }
+
+    // 下载中心保持按需初始化：从未进入下载 tab 的隐藏分支不应创建它。
+    if (!_hasOpenedDownloadTasks) return;
+    final downloadController = ref.read(downloadTaskCenterProvider.notifier);
+    if (isVisible) {
+      unawaited(downloadController.resumePolling());
+    } else {
+      downloadController.pausePolling();
     }
   }
 
-  /// 消费「打开即看某番号下载任务」的意图：先应用筛选再切 tab，保证
-  /// connectStream 在 _activeFilter 就位后才建立 SSE。
-  Future<void> _applyInitialDownloadIntent() async {
-    final movieNumber = widget.initialDownloadMovieNumber?.trim();
-    if (movieNumber == null || movieNumber.isEmpty) {
+  @override
+  void didUpdateWidget(covariant DesktopActivityPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.initialDownloadMovieNumber ==
+        widget.initialDownloadMovieNumber) {
       return;
     }
+    _scheduleInitialDownloadIntent();
+  }
+
+  void _scheduleInitialDownloadIntent() {
+    final movieNumber = widget.initialDownloadMovieNumber?.trim();
+    if (movieNumber == null || movieNumber.isEmpty) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && widget.initialDownloadMovieNumber?.trim() == movieNumber) {
+        unawaited(_applyInitialDownloadIntent(movieNumber));
+      }
+    });
+  }
+
+  /// 消费「打开即看某番号下载任务」的意图：先应用筛选再切 tab。
+  Future<void> _applyInitialDownloadIntent(String movieNumber) async {
     await ref
         .read(downloadTaskCenterProvider.notifier)
         .applyFilter(
           DownloadTaskFilterState(
-            // 用 all 而不是默认 downloading：订阅的 import_failed 档任务往往已下载完成
-            // （download_state=completed/seeding），按 downloading 过滤会把它们滤掉。
+            // 用 all 而不是默认 downloading：订阅的导入失败任务可能已经下载完成，
+            // 按 downloading 过滤会把它们滤掉。
             stateFilter: DownloadTaskStateFilter.all,
             search: movieNumber,
           ),
         );
-    if (!mounted) {
+    if (!mounted || widget.initialDownloadMovieNumber?.trim() != movieNumber) {
       return;
     }
     _controller.setActiveTab(ActivityTab.downloadTasks);
@@ -128,7 +173,7 @@ class _DesktopActivityPageState extends ConsumerState<DesktopActivityPage>
   }
 
   /// 收敛 tab 切换的副作用：手势切 tab、程序化 setActiveTab（如 triggerJob）
-  /// 都过这条路径。切进 → initialize/connect；切走下载 → disconnect。
+  /// 都过这条路径。切进下载任务时开始轮询，切走后停止轮询。
   void _handleActiveTabDiff(ActivityTab nextTab) {
     if (nextTab == _lastActiveTab) {
       return;
@@ -136,22 +181,19 @@ class _DesktopActivityPageState extends ConsumerState<DesktopActivityPage>
     final previousTab = _lastActiveTab;
     _lastActiveTab = nextTab;
 
-    if (nextTab == ActivityTab.resourceTasks && !_hasOpenedResourceTasks) {
-      setState(() {
-        _hasOpenedResourceTasks = true;
-      });
-    }
     if (nextTab == ActivityTab.downloadTasks) {
       if (!_hasOpenedDownloadTasks) {
         setState(() {
           _hasOpenedDownloadTasks = true;
         });
       }
-      // AsyncNotifier 的 build() 在首次 watch 时自动跑（`ref.read(...notifier)`
-      // 也会触发 build）；这里只需要打开 SSE。
-      unawaited(ref.read(downloadTaskCenterProvider.notifier).connectStream());
+      final downloadController = ref.read(downloadTaskCenterProvider.notifier);
+      if (_isPageVisible == false) {
+        downloadController.pausePolling();
+      }
+      unawaited(downloadController.startPolling());
     } else if (previousTab == ActivityTab.downloadTasks) {
-      ref.read(downloadTaskCenterProvider.notifier).disconnectStream();
+      ref.read(downloadTaskCenterProvider.notifier).stopPolling();
     }
   }
 
@@ -197,21 +239,12 @@ class _DesktopActivityPageState extends ConsumerState<DesktopActivityPage>
           unawaited(_controller.loadMoreTasks());
         }
         break;
-      case ActivityTab.resourceTasks:
-        final resource = ref.read(resourceTaskCenterProvider).value;
-        if (resource != null &&
-            resource.hasMoreRecords &&
-            !resource.isLoadingMoreRecords &&
-            resource.recordsLoadMoreErrorMessage == null) {
-          unawaited(_resourceTaskController.loadMoreRecords());
-        }
-        break;
       case ActivityTab.downloadTasks:
-        final downloadState = ref.read(downloadTaskCenterProvider).value;
-        if (downloadState != null &&
-            downloadState.paged.hasMore &&
-            !downloadState.paged.isLoadingMore &&
-            downloadState.paged.loadMoreErrorMessage == null) {
+        final downloadCenter = ref.read(downloadTaskCenterProvider).value;
+        if (downloadCenter != null &&
+            downloadCenter.paged.hasMore &&
+            !downloadCenter.paged.isLoadingMore &&
+            downloadCenter.paged.loadMoreErrorMessage == null) {
           unawaited(ref.read(downloadTaskCenterProvider.notifier).loadMore());
         }
         break;
@@ -254,6 +287,7 @@ class _DesktopActivityPageState extends ConsumerState<DesktopActivityPage>
   }
 
   Future<void> _openExecutableJobsDialog(BuildContext context) async {
+    unawaited(_controller.refreshJobs());
     await showAppAdaptiveModal<void>(
       context: context,
       modalKey: const Key('activity-executable-jobs-dialog'),
@@ -278,10 +312,6 @@ class _DesktopActivityPageState extends ConsumerState<DesktopActivityPage>
     }
     return switch (_controller.activeTab) {
       ActivityTab.tasks => _buildTaskSlivers(context),
-      ActivityTab.resourceTasks => buildResourceTaskSlivers(
-        context: context,
-        controller: _resourceTaskController,
-      ),
       ActivityTab.downloadTasks => buildDownloadTaskSlivers(
         context: context,
         ref: ref,
@@ -292,7 +322,7 @@ class _DesktopActivityPageState extends ConsumerState<DesktopActivityPage>
   List<Widget> _buildTaskSlivers(BuildContext context) {
     final titleStyle = resolveAppTextStyle(
       context,
-      size: AppTextSize.s18,
+      size: AppTextSize.s14,
       weight: AppTextWeight.semibold,
       tone: AppTextTone.primary,
     );
@@ -334,21 +364,7 @@ class _DesktopActivityPageState extends ConsumerState<DesktopActivityPage>
               onOpen: () => unawaited(_openExecutableJobsDialog(context)),
             ),
             SizedBox(height: context.appSpacing.xl),
-            _ActivitySection(
-              title: '任务历史',
-              titleStyle: titleStyle,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _TaskFilterBar(controller: _controller),
-                  AppFilterUpdateBar(
-                    state: _controller.taskFilterUpdate,
-                    hasPreviousItems: _controller.taskRuns.isNotEmpty,
-                    onRetry: _controller.refreshTaskHistory,
-                  ),
-                ],
-              ),
-            ),
+            Text('任务历史', style: titleStyle),
             SizedBox(height: context.appSpacing.lg),
           ],
         ),
@@ -407,8 +423,6 @@ class _DesktopActivityPageState extends ConsumerState<DesktopActivityPage>
     switch (_controller.activeTab) {
       case ActivityTab.tasks:
         await _controller.refreshTaskHistory();
-      case ActivityTab.resourceTasks:
-        await _resourceTaskController.refreshRecords();
       case ActivityTab.downloadTasks:
         await ref.read(downloadTaskCenterProvider.notifier).refresh();
     }
@@ -418,12 +432,10 @@ class _DesktopActivityPageState extends ConsumerState<DesktopActivityPage>
   Widget build(BuildContext context) {
     final activityAsync = ref.watch(activityCenterProvider);
     final activeTab = activityAsync.value?.activeTab ?? ActivityTab.tasks;
-    if (_hasOpenedResourceTasks || activeTab == ActivityTab.resourceTasks) {
-      ref.watch(resourceTaskCenterProvider);
-    }
-    if (_hasOpenedDownloadTasks || activeTab == ActivityTab.downloadTasks) {
-      ref.watch(downloadTaskCenterProvider);
-    }
+    final downloadAsync =
+        _hasOpenedDownloadTasks || activeTab == ActivityTab.downloadTasks
+        ? ref.watch(downloadTaskCenterProvider)
+        : null;
     ref.listen<ActivityTab>(
       activityCenterProvider.select(
         (value) => value.value?.activeTab ?? ActivityTab.tasks,
@@ -442,22 +454,6 @@ class _DesktopActivityPageState extends ConsumerState<DesktopActivityPage>
         }
       },
     );
-    if (_hasOpenedResourceTasks || activeTab == ActivityTab.resourceTasks) {
-      ref.listen(
-        resourceTaskCenterProvider.select(
-          (value) => value.value?.activeBucket?.filter,
-        ),
-        (previous, next) {
-          if (previous != null &&
-              next != null &&
-              previous != next &&
-              activeTab == ActivityTab.resourceTasks &&
-              _pageScrollController.hasClients) {
-            _pageScrollController.jumpTo(0);
-          }
-        },
-      );
-    }
     if (_hasOpenedDownloadTasks || activeTab == ActivityTab.downloadTasks) {
       ref.listen(
         downloadTaskCenterProvider.select((value) => value.value?.filter),
@@ -476,23 +472,53 @@ class _DesktopActivityPageState extends ConsumerState<DesktopActivityPage>
       activityCenterProvider,
       (_, __) => _handleControllerChanged(),
     );
-    if (_hasOpenedResourceTasks || activeTab == ActivityTab.resourceTasks) {
-      ref.listen(
-        resourceTaskCenterProvider,
-        (_, __) => _handleControllerChanged(),
-      );
-    }
     if (_hasOpenedDownloadTasks || activeTab == ActivityTab.downloadTasks) {
       ref.listen<AsyncValue<DownloadTaskCenterState>>(
         downloadTaskCenterProvider,
         (_, __) => _handleControllerChanged(),
       );
     }
+    final filterUpdate = switch (activeTab) {
+      ActivityTab.tasks => _controller.taskFilterUpdate,
+      ActivityTab.downloadTasks =>
+        downloadAsync?.value?.paged.filterUpdate ??
+            const FilterUpdateState.idle(),
+    };
+    final hasPreviousItems = switch (activeTab) {
+      ActivityTab.tasks => _controller.taskRuns.isNotEmpty,
+      ActivityTab.downloadTasks =>
+        downloadAsync?.value?.paged.items.isNotEmpty ?? false,
+    };
     return AppPageRefreshScope(
       onRefresh: _refreshActiveTab,
-      child: Stack(
-        children: [
-          CustomScrollView(
+      child: AppFixedHeaderLayout(
+        header: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            AppTabBar(
+              controller: _tabController,
+              tabs: const [
+                Tab(key: Key('activity-tab-tasks'), text: '后台任务'),
+                Tab(key: Key('activity-tab-download-tasks'), text: '下载任务'),
+              ],
+            ),
+            SizedBox(height: context.appSpacing.lg),
+            if (activeTab == ActivityTab.tasks) ...[
+              _TaskFilterBar(controller: _controller),
+              AppFilterUpdateBar(
+                state: _controller.taskFilterUpdate,
+                hasPreviousItems: _controller.taskRuns.isNotEmpty,
+                onRetry: _controller.refreshTaskHistory,
+              ),
+              SizedBox(height: context.appSpacing.lg),
+            ] else
+              buildDownloadTaskHeader(context: context, ref: ref),
+          ],
+        ),
+        child: AppFilterResultLoadingOverlay(
+          isLoading: filterUpdate.isLoading,
+          hasPreviousItems: hasPreviousItems,
+          child: CustomScrollView(
             controller: _pageScrollController,
             slivers: [
               SliverToBoxAdapter(
@@ -500,20 +526,6 @@ class _DesktopActivityPageState extends ConsumerState<DesktopActivityPage>
                   key: const Key('desktop-activity-page'),
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    AppTabBar(
-                      controller: _tabController,
-                      tabs: const [
-                        Tab(key: Key('activity-tab-tasks'), text: '后台任务'),
-                        Tab(
-                          key: Key('activity-tab-resource-tasks'),
-                          text: '元数据任务',
-                        ),
-                        Tab(
-                          key: Key('activity-tab-download-tasks'),
-                          text: '下载任务',
-                        ),
-                      ],
-                    ),
                     SizedBox(height: context.appSpacing.lg),
                     _ConnectionBanner(
                       state: _controller.connectionState,
@@ -526,22 +538,7 @@ class _DesktopActivityPageState extends ConsumerState<DesktopActivityPage>
               ..._buildTabSlivers(context),
             ],
           ),
-          if (_controller.activeTab == ActivityTab.resourceTasks)
-            Positioned.fill(
-              child: IgnorePointer(
-                ignoring: !_resourceTaskController.isDetailOpen,
-                child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 180),
-                  child: _resourceTaskController.isDetailOpen
-                      ? buildResourceTaskDetailOverlay(
-                          context: context,
-                          controller: _resourceTaskController,
-                        )
-                      : const SizedBox.shrink(),
-                ),
-              ),
-            ),
-        ],
+        ),
       ),
     );
   }
@@ -554,14 +551,14 @@ class _InitialLoadingState extends StatelessWidget {
   Widget build(BuildContext context) {
     return _ActivitySection(
       title: '任务中心',
-      child: SizedBox(
-        width: double.infinity,
-        height: 220,
-        child: Center(
-          child: CircularProgressIndicator(
-            strokeWidth: context.appComponentTokens.movieCardLoaderStrokeWidth,
-          ),
-        ),
+      child: Column(
+        key: const Key('activity-initial-skeleton'),
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const AppSectionSkeleton(lineCount: 3),
+          SizedBox(height: context.appSpacing.lg),
+          const AppSectionSkeleton(lineCount: 4),
+        ],
       ),
     );
   }
@@ -610,7 +607,7 @@ class _ActivitySection extends StatelessWidget {
               titleStyle ??
               resolveAppTextStyle(
                 context,
-                size: AppTextSize.s18,
+                size: AppTextSize.s14,
                 weight: AppTextWeight.semibold,
                 tone: AppTextTone.primary,
               ),
@@ -632,24 +629,15 @@ class _ConnectionBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.appColors;
     final backgroundColor = switch (state) {
-      ActivityConnectionState.live => Theme.of(
-        context,
-      ).colorScheme.primary.withValues(alpha: 0.08),
       ActivityConnectionState.connecting => colors.surfaceMuted,
-      ActivityConnectionState.reconnecting => colors.warningSurface,
-      ActivityConnectionState.polling => colors.infoSurface,
+      ActivityConnectionState.polling => colors.selectionSurface,
     };
     final foregroundColor = switch (state) {
-      ActivityConnectionState.live => Theme.of(context).colorScheme.primary,
       ActivityConnectionState.connecting => context.appTextPalette.secondary,
-      ActivityConnectionState.reconnecting => context.appTextPalette.warning,
-      ActivityConnectionState.polling => context.appTextPalette.info,
+      ActivityConnectionState.polling => context.appTextPalette.accent,
     };
     final icon = switch (state) {
-      ActivityConnectionState.live => Icons.bolt_rounded,
       ActivityConnectionState.connecting => Icons.sync_rounded,
-      ActivityConnectionState.reconnecting =>
-        Icons.wifi_tethering_error_rounded,
       ActivityConnectionState.polling => Icons.schedule_rounded,
     };
 
@@ -864,7 +852,7 @@ class _ExecutableJobsDialog extends ConsumerWidget {
   }
 }
 
-class _ExecutableJobsDialogContent extends StatelessWidget {
+class _ExecutableJobsDialogContent extends StatefulWidget {
   const _ExecutableJobsDialogContent({
     required this.state,
     required this.controller,
@@ -876,9 +864,59 @@ class _ExecutableJobsDialogContent extends StatelessWidget {
   final ValueChanged<JobMetadataDto> onTriggerJob;
 
   @override
+  State<_ExecutableJobsDialogContent> createState() =>
+      _ExecutableJobsDialogContentState();
+}
+
+class _ExecutableJobsDialogContentState
+    extends State<_ExecutableJobsDialogContent> {
+  static const String _systemFilterValue = '__system__';
+
+  String? _selectedFilter;
+
+  @override
   Widget build(BuildContext context) {
     final spacing = context.appSpacing;
+    final state = widget.state;
     final jobs = state.jobs;
+    final pluginIds = <String>{};
+    var hasSystemJobs = false;
+    for (final job in jobs) {
+      final pluginId = job.pluginId?.trim();
+      if (pluginId == null || pluginId.isEmpty) {
+        hasSystemJobs = true;
+      } else {
+        pluginIds.add(pluginId);
+      }
+    }
+    final sortedPluginIds = pluginIds.toList()..sort();
+    final filterItems = <DropdownMenuItem<String?>>[
+      const DropdownMenuItem<String?>(value: null, child: Text('全部任务')),
+      if (hasSystemJobs)
+        const DropdownMenuItem<String?>(
+          value: _systemFilterValue,
+          child: Text('系统任务'),
+        ),
+      ...sortedPluginIds.map(
+        (pluginId) =>
+            DropdownMenuItem<String?>(value: pluginId, child: Text(pluginId)),
+      ),
+    ];
+    final selectedFilter =
+        filterItems.any((item) => item.value == _selectedFilter)
+        ? _selectedFilter
+        : null;
+    final visibleJobs = selectedFilter == null
+        ? jobs
+        : jobs
+              .where((job) {
+                final pluginId = job.pluginId?.trim();
+                if (selectedFilter == _systemFilterValue) {
+                  return pluginId == null || pluginId.isEmpty;
+                }
+                return pluginId == selectedFilter;
+              })
+              .toList(growable: false);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -888,7 +926,7 @@ class _ExecutableJobsDialogContent extends StatelessWidget {
           AppEmptyState(
             key: const Key('activity-jobs-error'),
             message: state.jobErrorMessage!,
-            onRetry: controller.refreshJobs,
+            onRetry: widget.controller.refreshJobs,
             retryKey: const Key('activity-jobs-retry-button'),
           )
         else if (jobs.isEmpty)
@@ -912,6 +950,20 @@ class _ExecutableJobsDialogContent extends StatelessWidget {
             ),
             SizedBox(height: spacing.md),
           ],
+          SizedBox(
+            width: double.infinity,
+            child: AppSelectField<String?>(
+              key: const Key('activity-job-plugin-filter'),
+              label: '任务来源',
+              value: selectedFilter,
+              size: AppSelectFieldSize.compact,
+              items: filterItems,
+              onChanged: (value) {
+                setState(() => _selectedFilter = value);
+              },
+            ),
+          ),
+          SizedBox(height: spacing.md),
           ConstrainedBox(
             constraints: BoxConstraints(
               maxHeight: MediaQuery.sizeOf(context).height * 0.68,
@@ -919,14 +971,16 @@ class _ExecutableJobsDialogContent extends StatelessWidget {
             child: ListView.separated(
               key: const Key('activity-executable-jobs-list'),
               shrinkWrap: true,
-              itemCount: jobs.length,
+              itemCount: visibleJobs.length,
               separatorBuilder: (_, __) => SizedBox(height: spacing.md),
               itemBuilder: (_, index) {
-                final job = jobs[index];
+                final job = visibleJobs[index];
                 return _ExecutableJobCard(
                   job: job,
-                  isTriggering: controller.isTriggeringJob(job.taskKey),
-                  onTrigger: () => onTriggerJob(job),
+                  isTriggering: widget.controller.isTriggeringJob(
+                    job.taskKey,
+                  ),
+                  onTrigger: () => widget.onTriggerJob(job),
                 );
               },
             ),
@@ -935,7 +989,7 @@ class _ExecutableJobsDialogContent extends StatelessWidget {
             SizedBox(height: spacing.md),
             _ExecutableJobsRefreshError(
               message: state.jobErrorMessage!,
-              onRetry: controller.refreshJobs,
+              onRetry: widget.controller.refreshJobs,
             ),
           ],
         ],
@@ -1049,6 +1103,9 @@ class _TaskFilterBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (AppPlatformScope.maybeOf(context) == AppPlatform.mobile) {
+      return _MobileTaskFilterEntry(controller: controller);
+    }
     final layoutTokens = context.appLayoutTokens;
     final filterTextStyle = resolveAppTextStyle(
       context,
@@ -1153,6 +1210,204 @@ class _TaskFilterBar extends StatelessWidget {
       ],
     );
   }
+}
+
+class _MobileTaskFilterEntry extends StatelessWidget {
+  const _MobileTaskFilterEntry({required this.controller});
+
+  final ActivityCenter controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final filter = controller.taskFilter;
+    final isSelected = filter != ActivityTaskFilterState.initial;
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            _taskFilterSummary(filter),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: resolveAppTextStyle(
+              context,
+              size: AppTextSize.s12,
+              weight: AppTextWeight.regular,
+              tone: AppTextTone.muted,
+            ),
+          ),
+        ),
+        SizedBox(width: context.appSpacing.md),
+        AppButton(
+          key: const Key('mobile-activity-task-filter-button'),
+          label: isSelected ? '已筛选' : '筛选',
+          icon: const Icon(Icons.tune_rounded),
+          size: AppButtonSize.small,
+          isSelected: isSelected,
+          onPressed: () => _showMobileActivityTaskFilterDrawer(
+            context,
+            current: filter,
+            knownTaskKeys: controller.knownTaskKeys,
+            onChanged: (next) => unawaited(controller.applyTaskFilter(next)),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+Future<void> _showMobileActivityTaskFilterDrawer(
+  BuildContext context, {
+  required ActivityTaskFilterState current,
+  required List<String> knownTaskKeys,
+  required ValueChanged<ActivityTaskFilterState> onChanged,
+}) {
+  return showAppBottomDrawer<void>(
+    context: context,
+    drawerKey: const Key('mobile-activity-task-filter-drawer'),
+    maxHeightFactor: 0.68,
+    builder: (_) => _MobileTaskFilterDrawerContent(
+      current: current,
+      knownTaskKeys: knownTaskKeys,
+      onChanged: onChanged,
+    ),
+  );
+}
+
+class _MobileTaskFilterDrawerContent extends StatefulWidget {
+  const _MobileTaskFilterDrawerContent({
+    required this.current,
+    required this.knownTaskKeys,
+    required this.onChanged,
+  });
+
+  final ActivityTaskFilterState current;
+  final List<String> knownTaskKeys;
+  final ValueChanged<ActivityTaskFilterState> onChanged;
+
+  @override
+  State<_MobileTaskFilterDrawerContent> createState() =>
+      _MobileTaskFilterDrawerContentState();
+}
+
+class _MobileTaskFilterDrawerContentState
+    extends State<_MobileTaskFilterDrawerContent> {
+  late ActivityTaskFilterState _local;
+
+  @override
+  void initState() {
+    super.initState();
+    _local = widget.current;
+  }
+
+  void _apply(ActivityTaskFilterState next) {
+    setState(() => _local = next);
+    widget.onChanged(next);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AppMobileFilterDrawerScaffold(
+      scrollViewKey: const Key('mobile-activity-task-filter-scroll-view'),
+      footer: AppFilterPanelFooter(
+        isDefault: _local == ActivityTaskFilterState.initial,
+        onReset: () => _apply(ActivityTaskFilterState.initial),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            '筛选任务历史',
+            style: resolveAppTextStyle(
+              context,
+              size: AppTextSize.s18,
+              weight: AppTextWeight.semibold,
+              tone: AppTextTone.primary,
+            ),
+          ),
+          SizedBox(height: context.appSpacing.lg),
+          AppSelectField<String?>(
+            key: const Key('mobile-activity-task-state-filter'),
+            label: '任务状态',
+            value: _local.state,
+            items: <DropdownMenuItem<String?>>[
+              const DropdownMenuItem<String?>(value: null, child: Text('全部状态')),
+              ..._TaskFilterBar._states.map(
+                (value) => DropdownMenuItem<String?>(
+                  value: value,
+                  child: Text(_labelForTaskState(value)),
+                ),
+              ),
+            ],
+            onChanged: (value) => _apply(_local.copyWith(state: value)),
+          ),
+          SizedBox(height: context.appSpacing.md),
+          AppSelectField<String?>(
+            key: const Key('mobile-activity-task-key-filter'),
+            label: '任务类型',
+            value: _local.taskKey,
+            items: <DropdownMenuItem<String?>>[
+              const DropdownMenuItem<String?>(
+                value: null,
+                child: Text('全部任务类型'),
+              ),
+              ...widget.knownTaskKeys.map(
+                (value) =>
+                    DropdownMenuItem<String?>(value: value, child: Text(value)),
+              ),
+            ],
+            onChanged: (value) => _apply(_local.copyWith(taskKey: value)),
+          ),
+          SizedBox(height: context.appSpacing.md),
+          AppSelectField<String?>(
+            key: const Key('mobile-activity-task-trigger-filter'),
+            label: '触发来源',
+            value: _local.triggerType,
+            items: <DropdownMenuItem<String?>>[
+              const DropdownMenuItem<String?>(
+                value: null,
+                child: Text('全部触发来源'),
+              ),
+              ..._TaskFilterBar._triggerTypes.map(
+                (value) => DropdownMenuItem<String?>(
+                  value: value,
+                  child: Text(_labelForTriggerType(value)),
+                ),
+              ),
+            ],
+            onChanged: (value) => _apply(_local.copyWith(triggerType: value)),
+          ),
+          SizedBox(height: context.appSpacing.md),
+          AppSelectField<ActivityTaskSort>(
+            key: const Key('mobile-activity-task-sort-filter'),
+            label: '排序方式',
+            value: _local.sort,
+            items: ActivityTaskSort.values
+                .map(
+                  (value) => DropdownMenuItem<ActivityTaskSort>(
+                    value: value,
+                    child: Text(value.label),
+                  ),
+                )
+                .toList(growable: false),
+            onChanged: (value) => _apply(
+              _local.copyWith(sort: value ?? ActivityTaskSort.startedAtDesc),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+String _taskFilterSummary(ActivityTaskFilterState filter) {
+  final values = <String>[];
+  if (filter.state != null) values.add(_labelForTaskState(filter.state!));
+  if (filter.taskKey != null) values.add(filter.taskKey!);
+  if (filter.triggerType != null) {
+    values.add(_labelForTriggerType(filter.triggerType!));
+  }
+  values.add(filter.sort.label);
+  return values.join(' · ');
 }
 
 class _TaskRunCard extends StatelessWidget {

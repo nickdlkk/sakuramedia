@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:sakuramedia/widgets/base/layout/scrolling/app_pinned_list_header.dart';
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import 'package:oktoast/oktoast.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -16,7 +17,7 @@ import 'package:sakuramedia/features/videos/data/dto/video_item_list_item_dto.da
 import 'package:sakuramedia/features/videos/presentation/widgets/collections/add_to_video_collection_dialog.dart';
 import 'package:sakuramedia/features/videos/presentation/widgets/collections/create_video_collection_dialog.dart';
 import 'package:sakuramedia/features/videos/presentation/pages/mobile/video_actions_sheet.dart';
-import 'package:sakuramedia/features/videos/presentation/pages/mobile/video_player_page.dart';
+import 'package:sakuramedia/features/videos/presentation/actions/video_playback_launcher.dart';
 import 'package:sakuramedia/features/videos/presentation/pages/mobile/video_sort_drawer.dart';
 import 'package:sakuramedia/features/videos/presentation/widgets/collections/pick_video_collection_dialog.dart';
 import 'package:sakuramedia/features/videos/presentation/providers/video_collections_overview_provider.dart';
@@ -28,6 +29,8 @@ import 'package:sakuramedia/routes/mobile_routes.dart';
 import 'package:sakuramedia/theme.dart';
 import 'package:sakuramedia/widgets/base/actions/app_button.dart';
 import 'package:sakuramedia/widgets/base/actions/app_text_button.dart';
+import 'package:sakuramedia/widgets/base/feedback/app_confirm_dialog.dart';
+import 'package:sakuramedia/widgets/base/feedback/app_filter_result_loading_overlay.dart';
 import 'package:sakuramedia/widgets/base/layout/scrolling/app_adaptive_refresh_scroll_view.dart';
 import 'package:sakuramedia/widgets/base/layout/scrolling/app_paged_load_more_footer.dart';
 import 'package:sakuramedia/widgets/base/feedback/app_empty_state.dart';
@@ -57,6 +60,7 @@ class _MobilePornboxPageState extends ConsumerState<MobilePornboxPage>
 
   late final RiverpodPageHandle _pageCacheHandle;
   late final ScrollController _scrollController;
+  final _listHeaderKey = GlobalKey();
   bool _railRefreshScheduled = false;
 
   @override
@@ -116,7 +120,7 @@ class _MobilePornboxPageState extends ConsumerState<MobilePornboxPage>
       return;
     }
     if (_scrollController.hasClients) {
-      _scrollController.jumpTo(0);
+      AppPinnedListHeader.scrollToStart(_listHeaderKey, _scrollController);
     }
     unawaited(
       ref.read(videoSummaryProvider(_scope).notifier).applyFilter(next),
@@ -150,6 +154,8 @@ class _MobilePornboxPageState extends ConsumerState<MobilePornboxPage>
       context,
       video: video,
       onPlay: () => _playVideo(video),
+      onThumbnails: () =>
+          MobileVideoThumbnailRouteData(videoId: video.id).push<void>(context),
       onAddToCollection: () => _addToCollection(video),
       onDelete: () => _deleteVideo(video),
       collections: video.collections,
@@ -159,16 +165,18 @@ class _MobilePornboxPageState extends ConsumerState<MobilePornboxPage>
     );
   }
 
-  void _playVideo(VideoItemListItemDto video) {
-    // 用根 Navigator 推全屏页，覆盖底部导航。
-    Navigator.of(context, rootNavigator: true).push(
-      MaterialPageRoute<void>(
-        builder: (_) => MobileVideoPlayerPage(
-          videoId: video.id,
-          title: video.preferredTitle,
-        ),
-      ),
-    );
+  Future<void> _playVideo(VideoItemListItemDto video) async {
+    if (await tryLaunchExternalVideoPlayback(
+      context,
+      videoId: video.id,
+      title: video.preferredTitle,
+    )) {
+      return;
+    }
+    if (!mounted) {
+      return;
+    }
+    await MobileVideoPlayerRouteData(videoId: video.id).push<void>(context);
   }
 
   Future<void> _addToCollection(VideoItemListItemDto video) async {
@@ -190,26 +198,22 @@ class _MobilePornboxPageState extends ConsumerState<MobilePornboxPage>
   Future<void> _deleteVideo(VideoItemListItemDto video) async {
     final title = video.preferredTitle.trim();
     final label = title.isEmpty ? '该视频' : '“$title”';
-    final confirmed = await showMobileClipConfirmDrawer(
+    final confirmed = await showAppConfirmDialog(
       context,
       title: '删除视频',
       message: '确认删除$label？该操作不可恢复。',
       confirmLabel: '删除',
-      drawerKey: const Key('mobile-video-delete-drawer'),
-      confirmButtonKey: const Key('mobile-video-delete-confirm-button'),
+      danger: true,
+      dialogKey: const Key('mobile-video-delete-drawer'),
+      confirmKey: const Key('mobile-video-delete-confirm-button'),
+      onConfirm: () => ref.read(videosApiProvider).deleteVideo(video.id),
+      failureFallback: '删除失败，请重试',
     );
-    if (!mounted || confirmed != true) {
+    if (!mounted || !confirmed) {
       return;
     }
-    try {
-      await ref.read(videosApiProvider).deleteVideo(video.id);
-      ref.read(videoMutationEventsProvider.notifier).reportDeleted(video.id);
-      if (mounted) {
-        showToast('已删除视频');
-      }
-    } catch (error) {
-      showToast(apiErrorMessage(error, fallback: '删除失败，请重试'));
-    }
+    ref.read(videoMutationEventsProvider.notifier).reportDeleted(video.id);
+    showToast('已删除视频');
   }
 
   // --------------------------------------------------------- 批量动作
@@ -337,32 +341,42 @@ class _MobilePornboxPageState extends ConsumerState<MobilePornboxPage>
       child: Column(
         children: [
           Expanded(
-            child: AppAdaptiveRefreshScrollView(
-              key: const PageStorageKey<String>('mobile:pornbox:list'),
-              controller: _scrollController,
-              onRefresh: _refresh,
-              slivers: <Widget>[
-                if (!selectionMode)
-                  SliverToBoxAdapter(child: _buildCollectionsSection(context)),
-                SliverToBoxAdapter(
-                  child: _buildVideosHeader(
+            child: AppFilterResultLoadingOverlay(
+              protectedHeaderKey: _listHeaderKey,
+              scrollController: _scrollController,
+              isLoading: paged.filterUpdate.isLoading,
+              hasPreviousItems: paged.items.isNotEmpty,
+              child: AppAdaptiveRefreshScrollView(
+                key: const PageStorageKey<String>('mobile:pornbox:list'),
+                controller: _scrollController,
+                onRefresh: _refresh,
+                slivers: <Widget>[
+                  if (!selectionMode)
+                    SliverToBoxAdapter(
+                      child: _buildCollectionsSection(context),
+                    ),
+                  AppPinnedListHeader(
+                    key: _listHeaderKey,
+                    color: context.appColors.surfaceCard,
+                    child: _buildVideosHeader(
+                      context,
+                      paged: paged,
+                      videos: paged.items,
+                      filter: filter,
+                      total: paged.total,
+                    ),
+                  ),
+                  _buildVideosSliver(
                     context,
                     paged: paged,
-                    videos: paged.items,
-                    filter: filter,
-                    total: paged.total,
+                    isInitialLoading: videosAsync.isLoading && summary == null,
+                    initialErrorMessage: videosAsync.hasError && summary == null
+                        ? '视频列表加载失败，请稍后重试'
+                        : null,
                   ),
-                ),
-                _buildVideosSliver(
-                  context,
-                  paged: paged,
-                  isInitialLoading: videosAsync.isLoading && summary == null,
-                  initialErrorMessage: videosAsync.hasError && summary == null
-                      ? '视频列表加载失败，请稍后重试'
-                      : null,
-                ),
-                SliverToBoxAdapter(child: _buildFooter(context, paged)),
-              ],
+                  SliverToBoxAdapter(child: _buildFooter(context, paged)),
+                ],
+              ),
             ),
           ),
           if (selectionMode) _buildBatchBar(context),

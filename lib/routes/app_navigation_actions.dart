@@ -6,10 +6,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart' show ProviderScope;
 import 'package:sakuramedia/core/session/providers/credential_store_provider.dart';
 import 'package:sakuramedia/core/session/providers/session_store_provider.dart';
 import 'package:sakuramedia/features/image_search/presentation/providers/image_search_draft_store_provider.dart';
+import 'package:sakuramedia/features/image_search/presentation/providers/image_search_state.dart';
 import 'package:sakuramedia/features/image_search/presentation/image_search_filter_state.dart';
 import 'package:sakuramedia/routes/app_navigation.dart';
 import 'package:sakuramedia/routes/desktop_image_search_route_state.dart';
+import 'package:sakuramedia/routes/desktop_navigation_route_state.dart';
 import 'package:sakuramedia/routes/desktop_routes.dart';
+import 'package:sakuramedia/routes/desktop_search_route_state.dart';
 import 'package:sakuramedia/routes/mobile_routes.dart';
 
 extension AppNavigationActions on BuildContext {
@@ -32,8 +35,6 @@ extension AppNavigationActions on BuildContext {
         return const DesktopPlaylistsRouteData().go(this);
       case desktopRankingsPath:
         return const DesktopRankingsRouteData().go(this);
-      case desktopHotReviewsPath:
-        return const DesktopHotReviewsRouteData().go(this);
       case desktopConfigurationPath:
         return const DesktopConfigurationRouteData().go(this);
       case desktopActivityPath:
@@ -60,7 +61,8 @@ extension AppNavigationActions on BuildContext {
     String? fallbackPath,
   }) {
     GoRouter.optionURLReflectsImperativeAPIs = true;
-    DesktopMovieDetailRouteData(movieNumber: movieNumber).push(this);
+    final route = DesktopMovieDetailRouteData(movieNumber: movieNumber);
+    _pushDesktopRoute(this, route.location, fallbackPath: fallbackPath);
   }
 
   void pushDesktopSystemDiagnostics() {
@@ -77,27 +79,23 @@ extension AppNavigationActions on BuildContext {
     DesktopActivityRouteData(downloadMovieNumber: movieNumber).go(this);
   }
 
-  /// 跳到资源导入中心（订阅页 import_failed 行看失败文件明细的落点）。
-  void goDesktopMediaImport() {
-    GoRouter.optionURLReflectsImperativeAPIs = true;
-    const DesktopMediaImportRouteData().go(this);
-  }
-
   void pushDesktopMovieSeries({
     required int seriesId,
     String? seriesName,
     String? fallbackPath,
   }) {
     GoRouter.optionURLReflectsImperativeAPIs = true;
-    DesktopMovieSeriesRouteData(
+    final route = DesktopMovieSeriesRouteData(
       seriesId: seriesId,
       seriesName: seriesName,
-    ).push(this);
+    );
+    _pushDesktopRoute(this, route.location, fallbackPath: fallbackPath);
   }
 
   void pushDesktopActorDetail({required int actorId, String? fallbackPath}) {
     GoRouter.optionURLReflectsImperativeAPIs = true;
-    DesktopActorDetailRouteData(actorId: actorId).push(this);
+    final route = DesktopActorDetailRouteData(actorId: actorId);
+    _pushDesktopRoute(this, route.location, fallbackPath: fallbackPath);
   }
 
   void pushDesktopTags({required int tagId}) {
@@ -110,7 +108,8 @@ extension AppNavigationActions on BuildContext {
     String? fallbackPath,
   }) {
     GoRouter.optionURLReflectsImperativeAPIs = true;
-    DesktopPlaylistDetailRouteData(playlistId: playlistId).push(this);
+    final route = DesktopPlaylistDetailRouteData(playlistId: playlistId);
+    _pushDesktopRoute(this, route.location, fallbackPath: fallbackPath);
   }
 
   void pushDesktopMoviePlayer({
@@ -120,11 +119,30 @@ extension AppNavigationActions on BuildContext {
     int? positionSeconds,
   }) {
     GoRouter.optionURLReflectsImperativeAPIs = true;
-    DesktopMoviePlayerRouteData(
+    final route = DesktopMoviePlayerRouteData(
       movieNumber: movieNumber,
       mediaId: mediaId,
       positionSeconds: positionSeconds,
-    ).push(this);
+    );
+    _pushDesktopRoute(this, route.location, fallbackPath: fallbackPath);
+  }
+
+  void pushDesktopVideoPlayer({
+    required int videoId,
+    String? fallbackPath,
+    int? positionSeconds,
+  }) {
+    GoRouter.optionURLReflectsImperativeAPIs = true;
+    final route = DesktopVideoPlayerRouteData(
+      videoId: videoId,
+      positionSeconds: positionSeconds,
+    );
+    _pushDesktopRoute(this, route.location, fallbackPath: fallbackPath);
+  }
+
+  void pushDesktopVideoThumbnails({required int videoId}) {
+    GoRouter.optionURLReflectsImperativeAPIs = true;
+    DesktopVideoThumbnailRouteData(videoId: videoId).push(this);
   }
 
   /// 返回的 Future 在「全部切片合集」页出栈后完成，调用方可据此刷新首页合集横滑区
@@ -137,6 +155,18 @@ extension AppNavigationActions on BuildContext {
   void pushDesktopClipCollectionDetail({required int collectionId}) {
     GoRouter.optionURLReflectsImperativeAPIs = true;
     DesktopClipCollectionDetailRouteData(collectionId: collectionId).push(this);
+  }
+
+  Future<void> pushDesktopMomentCollections() {
+    GoRouter.optionURLReflectsImperativeAPIs = true;
+    return const DesktopMomentCollectionsRouteData().push<void>(this);
+  }
+
+  void pushDesktopMomentCollectionDetail({required int collectionId}) {
+    GoRouter.optionURLReflectsImperativeAPIs = true;
+    DesktopMomentCollectionDetailRouteData(
+      collectionId: collectionId,
+    ).push(this);
   }
 
   void pushDesktopClipCollectionPlay({
@@ -185,13 +215,27 @@ extension AppNavigationActions on BuildContext {
     GoRouter.optionURLReflectsImperativeAPIs = true;
     final trimmed = query.trim();
     if (trimmed.isEmpty) {
-      DesktopSearchRouteData(useOnlineSearch: useOnlineSearch).push(this);
+      final route = DesktopSearchRouteData(useOnlineSearch: useOnlineSearch);
+      GoRouter.of(this).push<void>(
+        route.location,
+        extra: DesktopSearchRouteState(
+          fallbackPath: fallbackPath,
+          useOnlineSearch: useOnlineSearch,
+        ),
+      );
       return;
     }
-    DesktopSearchQueryRouteData(
+    final route = DesktopSearchQueryRouteData(
       query: trimmed,
       useOnlineSearch: useOnlineSearch,
-    ).push(this);
+    );
+    GoRouter.of(this).push<void>(
+      route.location,
+      extra: DesktopSearchRouteState(
+        fallbackPath: fallbackPath,
+        useOnlineSearch: useOnlineSearch,
+      ),
+    );
   }
 
   void pushDesktopImageSearch({
@@ -202,6 +246,7 @@ extension AppNavigationActions on BuildContext {
     String? currentMovieNumber,
     ImageSearchCurrentMovieScope initialCurrentMovieScope =
         ImageSearchCurrentMovieScope.all,
+    ImageSearchInputKind initialInputKind = ImageSearchInputKind.image,
   }) {
     GoRouter.optionURLReflectsImperativeAPIs = true;
     final draftId = _saveImageSearchDraft(
@@ -213,6 +258,7 @@ extension AppNavigationActions on BuildContext {
       draftId: draftId,
       currentMovieNumber: currentMovieNumber,
       currentMovieScope: initialCurrentMovieScope.name,
+      mode: initialInputKind.name,
     );
     GoRouter.of(this).push<void>(
       route.location,
@@ -228,6 +274,7 @@ extension AppNavigationActions on BuildContext {
     String? currentMovieNumber,
     ImageSearchCurrentMovieScope initialCurrentMovieScope =
         ImageSearchCurrentMovieScope.all,
+    ImageSearchInputKind initialInputKind = ImageSearchInputKind.image,
   }) {
     GoRouter.optionURLReflectsImperativeAPIs = true;
     final draftId = _saveImageSearchDraft(
@@ -239,6 +286,7 @@ extension AppNavigationActions on BuildContext {
       draftId: draftId,
       currentMovieNumber: currentMovieNumber,
       currentMovieScope: initialCurrentMovieScope.name,
+      mode: initialInputKind.name,
     );
     GoRouter.of(this).go(
       route.location,
@@ -279,6 +327,7 @@ extension AppNavigationActions on BuildContext {
     String? currentMovieNumber,
     ImageSearchCurrentMovieScope initialCurrentMovieScope =
         ImageSearchCurrentMovieScope.all,
+    ImageSearchInputKind initialInputKind = ImageSearchInputKind.image,
   }) {
     GoRouter.optionURLReflectsImperativeAPIs = true;
     final draftId = _saveImageSearchDraft(
@@ -290,6 +339,7 @@ extension AppNavigationActions on BuildContext {
       draftId: draftId,
       currentMovieNumber: currentMovieNumber,
       currentMovieScope: initialCurrentMovieScope.name,
+      mode: initialInputKind.name,
     ).push(this);
   }
 
@@ -321,4 +371,15 @@ extension AppNavigationActions on BuildContext {
         .read(imageSearchDraftStoreProvider)
         .save(fileName: fileName, bytes: fileBytes, mimeType: mimeType);
   }
+}
+
+void _pushDesktopRoute(
+  BuildContext context,
+  String location, {
+  required String? fallbackPath,
+}) {
+  GoRouter.of(context).push<void>(
+    location,
+    extra: DesktopNavigationRouteState(fallbackPath: fallbackPath),
+  );
 }

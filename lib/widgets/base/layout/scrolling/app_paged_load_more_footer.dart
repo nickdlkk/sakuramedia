@@ -26,7 +26,7 @@ class AppPagedLoadMoreFooter extends StatelessWidget {
           child: SizedBox(
             width: componentTokens.movieCardLoaderSize,
             height: componentTokens.movieCardLoaderSize,
-            child: CircularProgressIndicator(
+            child: CircularProgressIndicator.adaptive(
               strokeWidth: componentTokens.movieCardLoaderStrokeWidth,
             ),
           ),

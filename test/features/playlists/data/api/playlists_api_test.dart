@@ -288,50 +288,6 @@ void main() {
     expect(page.total, 0);
   });
 
-  test('getPlaylistResolutions parses resolution options', () async {
-    adapter.enqueueJson(
-      method: 'GET',
-      path: '/playlists/8/resolutions',
-      body: <Map<String, dynamic>>[
-        <String, dynamic>{'resolution': '8K', 'count': 3},
-        <String, dynamic>{'resolution': '4K', 'count': 42},
-        <String, dynamic>{'resolution': '1080P', 'count': 120},
-      ],
-    );
-
-    final options = await playlistsApi.getPlaylistResolutions(playlistId: 8);
-
-    final request = adapter.requests.single;
-    expect(request.method, 'GET');
-    expect(request.path, '/playlists/8/resolutions');
-    expect(options, hasLength(3));
-    expect(options.first.resolution, '8K');
-    expect(options.first.count, 3);
-  });
-
-  test('getPlaylistResolutions 稳定排序：按枚举顺序，未知档位排最后', () async {
-    // 后端故意乱序返回 + 掺一个未知档位，前端要重排成 8K/4K/1080P/未知。
-    adapter.enqueueJson(
-      method: 'GET',
-      path: '/playlists/8/resolutions',
-      body: <Map<String, dynamic>>[
-        <String, dynamic>{'resolution': '1080P', 'count': 120},
-        <String, dynamic>{'resolution': '9K', 'count': 1},
-        <String, dynamic>{'resolution': '8K', 'count': 3},
-        <String, dynamic>{'resolution': '4K', 'count': 42},
-      ],
-    );
-
-    final options = await playlistsApi.getPlaylistResolutions(playlistId: 8);
-
-    expect(options.map((o) => o.resolution).toList(), <String>[
-      '8K',
-      '4K',
-      '1080P',
-      '9K',
-    ]);
-  });
-
   test('addMovieToPlaylist sends put request', () async {
     adapter.enqueueJson(
       method: 'PUT',

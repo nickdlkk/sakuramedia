@@ -175,7 +175,7 @@ class _AddToClipCollectionDialogState
       return const SizedBox(
         key: Key('add-to-clip-collection-loading'),
         height: 160,
-        child: Center(child: CircularProgressIndicator()),
+        child: Center(child: CircularProgressIndicator.adaptive()),
       );
     }
     if (_errorMessage != null) {

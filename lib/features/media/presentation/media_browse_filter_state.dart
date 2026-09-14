@@ -35,37 +35,27 @@ extension MediaBrowseSortDirectionX on MediaBrowseSortDirection {
 /// 使用 [MediaListItemKind.jav] / [MediaListItemKind.video]，`unknown` 视为不限。
 typedef MediaBrowseKindFilter = MediaListItemKind?;
 
-/// 上次秒传状态筛选值域。对应后端 `MediaRapidUploadFilterStatus`：前 4 项跟
-/// [LastRapidUploadStatus] 一一对应；[none] 代表"未参与秒传或最近一次已成功"，
-/// 后端用 `Media.id.not_in` 反选实现。
-///
-/// 前端筛选 `null` = 不限，不下发 `rapid_upload_status` 参数。
-enum MediaBrowseRapidUploadFilter {
-  none,
-  notHit,
-  failed,
-  cleanupFailed,
-  inProgress,
+enum MediaBrowseThumbnailGenerationFilter {
+  pending,
+  retryWait,
+  terminal,
+  succeeded,
 }
 
-extension MediaBrowseRapidUploadFilterX on MediaBrowseRapidUploadFilter {
+extension MediaBrowseThumbnailGenerationFilterX
+    on MediaBrowseThumbnailGenerationFilter {
   String get apiValue => switch (this) {
-    MediaBrowseRapidUploadFilter.none => 'none',
-    MediaBrowseRapidUploadFilter.notHit => 'not_hit',
-    MediaBrowseRapidUploadFilter.failed => 'failed',
-    MediaBrowseRapidUploadFilter.cleanupFailed => 'cleanup_failed',
-    MediaBrowseRapidUploadFilter.inProgress => 'in_progress',
+    MediaBrowseThumbnailGenerationFilter.pending => 'pending',
+    MediaBrowseThumbnailGenerationFilter.retryWait => 'retry_wait',
+    MediaBrowseThumbnailGenerationFilter.terminal => 'terminal',
+    MediaBrowseThumbnailGenerationFilter.succeeded => 'succeeded',
   };
 
-  /// 复用列表 badge 的 label 保持一致文案；`none` 独立文案（badge 侧不显示这个态）。
   String get label => switch (this) {
-    MediaBrowseRapidUploadFilter.none => '未秒传',
-    MediaBrowseRapidUploadFilter.notHit => LastRapidUploadStatus.notHit.label,
-    MediaBrowseRapidUploadFilter.failed => LastRapidUploadStatus.failed.label,
-    MediaBrowseRapidUploadFilter.cleanupFailed =>
-      LastRapidUploadStatus.cleanupFailed.label,
-    MediaBrowseRapidUploadFilter.inProgress =>
-      LastRapidUploadStatus.inProgress.label,
+    MediaBrowseThumbnailGenerationFilter.pending => '待生成',
+    MediaBrowseThumbnailGenerationFilter.retryWait => '等待重试',
+    MediaBrowseThumbnailGenerationFilter.terminal => '生成失败',
+    MediaBrowseThumbnailGenerationFilter.succeeded => '已完成',
   };
 }
 
@@ -75,7 +65,7 @@ class MediaBrowseFilterState {
   const MediaBrowseFilterState({
     this.kind,
     this.libraryId,
-    this.rapidUploadStatus,
+    this.thumbnailGenerationState,
     this.sortField,
     this.sortDirection = MediaBrowseSortDirection.desc,
   });
@@ -83,8 +73,7 @@ class MediaBrowseFilterState {
   final MediaBrowseKindFilter kind;
   final int? libraryId;
 
-  /// `null` = 不按秒传状态筛选。非 null 时下发 `rapid_upload_status` 参数。
-  final MediaBrowseRapidUploadFilter? rapidUploadStatus;
+  final MediaBrowseThumbnailGenerationFilter? thumbnailGenerationState;
 
   /// `null` = 使用后端默认（入库时间倒序）；非 null 明确按选中字段+方向排序。
   final MediaBrowseSortField? sortField;
@@ -95,7 +84,7 @@ class MediaBrowseFilterState {
   bool get isDefault =>
       kind == null &&
       libraryId == null &&
-      rapidUploadStatus == null &&
+      thumbnailGenerationState == null &&
       sortField == null &&
       sortDirection == MediaBrowseSortDirection.desc;
 
@@ -119,27 +108,26 @@ class MediaBrowseFilterState {
     return kindValue.label;
   }
 
-  /// [libraryId] / [rapidUploadStatus] / [sortField] 使用哨兵：省略 = 保持；传 `null` = 清空。
+  /// 可选筛选使用哨兵：省略 = 保持；传 `null` = 清空。
   MediaBrowseFilterState copyWith({
     MediaBrowseKindFilter? kind,
     Object? libraryId = _sentinel,
-    Object? rapidUploadStatus = _sentinel,
+    Object? thumbnailGenerationState = _sentinel,
     Object? sortField = _sentinel,
     MediaBrowseSortDirection? sortDirection,
     bool resetKind = false,
   }) {
     return MediaBrowseFilterState(
       kind: resetKind ? null : (kind ?? this.kind),
-      libraryId:
-          identical(libraryId, _sentinel) ? this.libraryId : libraryId as int?,
-      rapidUploadStatus:
-          identical(rapidUploadStatus, _sentinel)
-              ? this.rapidUploadStatus
-              : rapidUploadStatus as MediaBrowseRapidUploadFilter?,
-      sortField:
-          identical(sortField, _sentinel)
-              ? this.sortField
-              : sortField as MediaBrowseSortField?,
+      libraryId: identical(libraryId, _sentinel)
+          ? this.libraryId
+          : libraryId as int?,
+      thumbnailGenerationState: identical(thumbnailGenerationState, _sentinel)
+          ? this.thumbnailGenerationState
+          : thumbnailGenerationState as MediaBrowseThumbnailGenerationFilter?,
+      sortField: identical(sortField, _sentinel)
+          ? this.sortField
+          : sortField as MediaBrowseSortField?,
       sortDirection: sortDirection ?? this.sortDirection,
     );
   }
@@ -150,13 +138,18 @@ class MediaBrowseFilterState {
       other is MediaBrowseFilterState &&
           other.kind == kind &&
           other.libraryId == libraryId &&
-          other.rapidUploadStatus == rapidUploadStatus &&
+          other.thumbnailGenerationState == thumbnailGenerationState &&
           other.sortField == sortField &&
           other.sortDirection == sortDirection;
 
   @override
-  int get hashCode =>
-      Object.hash(kind, libraryId, rapidUploadStatus, sortField, sortDirection);
+  int get hashCode => Object.hash(
+    kind,
+    libraryId,
+    thumbnailGenerationState,
+    sortField,
+    sortDirection,
+  );
 }
 
 const Object _sentinel = Object();

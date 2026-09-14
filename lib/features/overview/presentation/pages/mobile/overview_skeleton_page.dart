@@ -9,9 +9,8 @@ import 'package:sakuramedia/core/session/providers/session_store_provider.dart';
 import 'package:sakuramedia/features/movies/presentation/providers/movies_api_provider.dart';
 import 'package:sakuramedia/features/discovery/presentation/mobile_overview_discover_tab.dart';
 import 'package:sakuramedia/features/clips/presentation/pages/mobile/overview_clips_tab.dart';
-import 'package:sakuramedia/features/hot_reviews/presentation/pages/mobile/overview_hot_reviews_tab.dart';
 import 'package:sakuramedia/features/image_search/presentation/image_search_file_picker.dart';
-import 'package:sakuramedia/features/subscriptions/presentation/pages/mobile/overview_follow_tab.dart';
+import 'package:sakuramedia/features/image_search/presentation/providers/image_search_state.dart';
 import 'package:sakuramedia/features/moments/presentation/pages/mobile/overview_moments_tab.dart';
 import 'package:sakuramedia/features/movies/data/dto/listing/movie_list_item_dto.dart';
 import 'package:sakuramedia/features/playlists/presentation/providers/playlists_overview_provider.dart';
@@ -22,6 +21,7 @@ import 'package:sakuramedia/routes/app_navigation_actions.dart';
 import 'package:sakuramedia/routes/mobile_routes.dart';
 import 'package:sakuramedia/theme.dart';
 import 'package:sakuramedia/widgets/base/actions/app_icon_button.dart';
+import 'package:sakuramedia/widgets/base/layout/keep_alive_page.dart';
 import 'package:sakuramedia/widgets/base/layout/scrolling/app_adaptive_refresh_scroll_view.dart';
 import 'package:sakuramedia/widgets/base/feedback/app_empty_state.dart';
 import 'package:sakuramedia/widgets/domain/movies/movie_summary_card.dart';
@@ -37,7 +37,7 @@ class MobileOverviewSkeletonPage extends StatelessWidget {
     final colors = context.appColors;
 
     return DefaultTabController(
-      length: 6,
+      length: 4,
       child: _MobileOverviewTabIndexReporter(
         child: ColoredBox(
           key: const Key('mobile-overview-skeleton-page'),
@@ -50,12 +50,10 @@ class MobileOverviewSkeletonPage extends StatelessWidget {
                 child: TabBarView(
                   key: const Key('mobile-overview-tab-view'),
                   children: const [
-                    _MobileOverviewMyTab(),
-                    MobileOverviewClipsTab(),
-                    MobileOverviewFollowTab(),
-                    MobileOverviewDiscoverTab(),
-                    MobileOverviewMomentsTab(),
-                    MobileOverviewHotReviewsTab(),
+                    AppKeepAlive(child: _MobileOverviewMyTab()),
+                    AppKeepAlive(child: MobileOverviewClipsTab()),
+                    AppKeepAlive(child: MobileOverviewDiscoverTab()),
+                    AppKeepAlive(child: MobileOverviewMomentsTab()),
                   ],
                 ),
               ),
@@ -176,10 +174,8 @@ class _MobileOverviewHeader extends StatelessWidget {
                 tabs: [
                   Tab(text: '我的'),
                   Tab(text: '切片'),
-                  Tab(text: '关注'),
                   Tab(text: '发现'),
                   Tab(text: '时刻'),
-                  Tab(text: '热评'),
                 ],
               ),
             ),
@@ -285,12 +281,17 @@ class _MobileOverviewMyTabState extends ConsumerState<_MobileOverviewMyTab> {
                 imageSearchButtonKey: const Key(
                   'mobile-overview-my-search-image',
                 ),
+                textImageSearchButtonKey: const Key(
+                  'mobile-overview-my-search-text-image',
+                ),
                 controller: _searchController,
                 hintText: '如 SSNI-888、三上悠亚',
                 showImageSearchButton: true,
+                showTextImageSearchButton: true,
                 onSearchTap: _submitSearch,
                 onSubmitted: (_) => _submitSearch(),
                 onImageSearchTap: _openImageSearch,
+                onTextImageSearchTap: _openTextImageSearch,
               ),
               SizedBox(height: spacing.sm),
               Text(
@@ -524,6 +525,10 @@ class _MobileOverviewMyTabState extends ConsumerState<_MobileOverviewMyTab> {
       return;
     }
     MobileSearchQueryRouteData(query: query).push(context);
+  }
+
+  void _openTextImageSearch() {
+    context.pushMobileImageSearch(initialInputKind: ImageSearchInputKind.text);
   }
 
   Future<void> _openImageSearch() async {

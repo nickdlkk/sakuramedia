@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:sakuramedia/widgets/base/layout/scrolling/app_pinned_list_header.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:oktoast/oktoast.dart';
 import 'package:sakuramedia/app/app_platform.dart';
@@ -13,13 +14,14 @@ import 'package:sakuramedia/features/movies/presentation/providers/movie_summary
 import 'package:sakuramedia/features/shared/presentation/providers/paged_async_notifier.dart';
 import 'package:sakuramedia/features/playlists/presentation/controllers/playlist_filter_state.dart';
 import 'package:sakuramedia/features/playlists/presentation/providers/playlist_detail_provider.dart';
-import 'package:sakuramedia/features/playlists/presentation/providers/playlist_resolution_options_provider.dart';
 import 'package:sakuramedia/features/playlists/presentation/widgets/playlist_filter_drawer.dart';
 import 'package:sakuramedia/features/playlists/presentation/widgets/playlist_filter_sections.dart';
 import 'package:sakuramedia/features/subscriptions/presentation/subscription_feedback.dart';
 import 'package:sakuramedia/theme.dart';
 import 'package:sakuramedia/widgets/base/feedback/app_empty_state.dart';
+import 'package:sakuramedia/widgets/base/feedback/app_filter_result_loading_overlay.dart';
 import 'package:sakuramedia/widgets/base/feedback/app_inline_spinner.dart';
+import 'package:sakuramedia/widgets/base/feedback/app_mobile_skeleton.dart';
 import 'package:sakuramedia/widgets/base/interaction/refresh/app_page_refresh_scope.dart';
 import 'package:sakuramedia/widgets/base/interaction/selection/multi_select_state_mixin.dart';
 import 'package:sakuramedia/widgets/base/layout/scrolling/app_adaptive_refresh_scroll_view.dart';
@@ -52,6 +54,7 @@ class _PlaylistDetailContentState extends ConsumerState<PlaylistDetailContent>
         MultiSelectStateMixin<PlaylistDetailContent, String>,
         MovieBatchSelectionMixin<PlaylistDetailContent> {
   late final ScrollController _scrollController;
+  final _listHeaderKey = GlobalKey();
 
   MovieSummaryScope get _scope =>
       MovieSummaryScope.playlist(playlistId: widget.playlistId);
@@ -118,9 +121,7 @@ class _PlaylistDetailContentState extends ConsumerState<PlaylistDetailContent>
       child: Builder(
         builder: (context) {
           if (detailAsync.isLoading && detailAsync.value == null) {
-            return const SizedBox.expand(
-              child: Center(child: CircularProgressIndicator()),
-            );
+            return const _PlaylistDetailLoadingContent();
           }
 
           if (detailAsync.hasError && detailAsync.value == null) {
@@ -143,7 +144,9 @@ class _PlaylistDetailContentState extends ConsumerState<PlaylistDetailContent>
                     paged?.items.firstOrNull?.coverImage?.bestAvailableUrl,
               ),
             ),
-            SliverToBoxAdapter(
+            AppPinnedListHeader(
+              key: _listHeaderKey,
+              color: context.appColors.surfaceElevated,
               child: Padding(
                 padding: EdgeInsets.only(bottom: context.appSpacing.sm),
                 child: selectionMode
@@ -195,20 +198,30 @@ class _PlaylistDetailContentState extends ConsumerState<PlaylistDetailContent>
             slivers: slivers,
           );
 
+          final Widget listContent;
           if (!widget.enablePullToRefresh) {
-            return scrollView;
-          }
-
-          if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
-            return AppAdaptiveRefreshScrollView(
+            listContent = scrollView;
+          } else if (defaultTargetPlatform == TargetPlatform.iOS) {
+            listContent = AppAdaptiveRefreshScrollView(
               onRefresh: _handleRefresh,
               controller: _scrollController,
               physics: const AlwaysScrollableScrollPhysics(),
               slivers: slivers,
             );
+          } else {
+            listContent = AppPullToRefresh(
+              onRefresh: _handleRefresh,
+              child: scrollView,
+            );
           }
 
-          return AppPullToRefresh(onRefresh: _handleRefresh, child: scrollView);
+          return AppFilterResultLoadingOverlay(
+            protectedHeaderKey: _listHeaderKey,
+            scrollController: _scrollController,
+            isLoading: paged?.filterUpdate.isLoading ?? false,
+            hasPreviousItems: paged?.items.isNotEmpty ?? false,
+            child: listContent,
+          );
         },
       ),
     );
@@ -219,9 +232,6 @@ class _PlaylistDetailContentState extends ConsumerState<PlaylistDetailContent>
       await Future.wait<void>([
         ref.read(playlistDetailProvider(widget.playlistId).notifier).refresh(),
         ref.read(movieSummaryProvider(_scope).notifier).refresh(),
-        ref
-            .read(playlistResolutionOptionsProvider(widget.playlistId).notifier)
-            .refresh(),
       ]);
     } catch (_) {
       if (mounted) {
@@ -232,10 +242,6 @@ class _PlaylistDetailContentState extends ConsumerState<PlaylistDetailContent>
 
   /// 列表顶栏：与影片 / 女优列表共用同一条 `AppListHeader`。
   /// 差别只在筛选面板的容器——桌面就地浮层，移动底部抽屉。
-  ///
-  /// 分辨率状态通过 [playlistResolutionOptionsProvider] 暴露（惰性加载，面板首次
-  /// 打开才拉取），widgets 层通过纯值 [PlaylistResolutionOptionsState] 传入，
-  /// 桌面/移动都实时跟随 provider 更新；抽屉里的重试按钮也能正确刷新。
   Widget _buildListHeader(
     BuildContext context,
     int totalMovies,
@@ -254,37 +260,9 @@ class _PlaylistDetailContentState extends ConsumerState<PlaylistDetailContent>
       onFilterTap: isMobile ? () => unawaited(_openFilterDrawer()) : null,
       filterPanelBuilder: isMobile
           ? null
-          : (_) => Consumer(
-              builder: (context, ref, _) {
-                final resolutionState = ref.watch(
-                  playlistResolutionOptionsProvider(widget.playlistId),
-                );
-                return PlaylistFilterSectionGroup(
-                  filterState: _filterState,
-                  onChanged: _applyFilter,
-                  resolutionState: resolutionState,
-                  onResolutionRetry: () => unawaited(
-                    ref
-                        .read(
-                          playlistResolutionOptionsProvider(
-                            widget.playlistId,
-                          ).notifier,
-                        )
-                        .retry(),
-                  ),
-                );
-              },
-            ),
-      onFilterPanelOpened: isMobile
-          ? null
-          : () => unawaited(
-              ref
-                  .read(
-                    playlistResolutionOptionsProvider(
-                      widget.playlistId,
-                    ).notifier,
-                  )
-                  .ensureLoaded(),
+          : (_) => PlaylistFilterSectionGroup(
+              filterState: _filterState,
+              onChanged: _applyFilter,
             ),
       filterPanelFooter: AppFilterPanelFooter(
         isDefault: _filterState.isDefault,
@@ -308,9 +286,7 @@ class _PlaylistDetailContentState extends ConsumerState<PlaylistDetailContent>
     if (selectionMode) {
       exitSelection();
     }
-    if (_scrollController.hasClients) {
-      _scrollController.jumpTo(0);
-    }
+    AppPinnedListHeader.scrollToStart(_listHeaderKey, _scrollController);
     unawaited(
       ref
           .read(movieSummaryProvider(_scope).notifier)
@@ -323,25 +299,10 @@ class _PlaylistDetailContentState extends ConsumerState<PlaylistDetailContent>
   }
 
   Future<void> _openFilterDrawer() async {
-    // 分辨率状态由 provider 惰性加载，抽屉打开时若还没加载过就触发一次。
-    // 抽屉内部通过 resolutionStateBuilder 回调实时读 provider 快照——移动抽屉
-    // 是 modal route 且 build 是同步的，每次 build 都会调 builder 拿最新状态。
-    unawaited(
-      ref
-          .read(playlistResolutionOptionsProvider(widget.playlistId).notifier)
-          .ensureLoaded(),
-    );
     await showMobilePlaylistFilterDrawer(
       context,
       current: _filterState,
       onChanged: _applyFilter,
-      resolutionStateBuilder: (_) =>
-          ref.read(playlistResolutionOptionsProvider(widget.playlistId)),
-      onResolutionRetry: () => unawaited(
-        ref
-            .read(playlistResolutionOptionsProvider(widget.playlistId).notifier)
-            .retry(),
-      ),
     );
   }
 
@@ -387,3 +348,42 @@ class _PlaylistDetailContentState extends ConsumerState<PlaylistDetailContent>
     );
   }
 }
+
+class _PlaylistDetailLoadingContent extends StatelessWidget {
+  const _PlaylistDetailLoadingContent();
+
+  @override
+  Widget build(BuildContext context) {
+    final spacing = context.appSpacing;
+    return CustomScrollView(
+      key: const Key('playlist-detail-loading'),
+      slivers: [
+        const SliverToBoxAdapter(child: PlaylistBannerCardSkeleton()),
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: EdgeInsets.only(bottom: spacing.sm),
+            child: Row(
+              children: [
+                const AppSkeletonBlock(width: 96, height: 14),
+                const Spacer(),
+                AppSkeletonBlock(
+                  width: 76,
+                  height: context.appComponentTokens.buttonHeightXs,
+                  radius: context.appRadius.pillBorder,
+                ),
+              ],
+            ),
+          ),
+        ),
+        const MovieSummarySliver(
+          items: <MovieListItemDto>[],
+          isLoading: true,
+          placeholderCount: 12,
+          onMovieTap: _ignoreMovieTap,
+        ),
+      ],
+    );
+  }
+}
+
+void _ignoreMovieTap(MovieListItemDto _) {}

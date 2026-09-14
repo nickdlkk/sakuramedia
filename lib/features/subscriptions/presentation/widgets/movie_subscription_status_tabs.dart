@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -53,11 +51,7 @@ class MovieSubscriptionStatusTabs extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final activeStatus = ref.watch(
-      movieSubscriptionManagerProvider.select(
-        (asyncState) => asyncState.value?.filter.status,
-      ),
-    );
+    final activeStatus = ref.watch(movieSubscriptionStatusSelectionProvider);
     final counts =
         ref.watch(movieSubscriptionStatusCountsProvider).value ??
         MovieSubscriptionStatusCountsDto.empty;
@@ -83,11 +77,9 @@ class MovieSubscriptionStatusTabs extends HookConsumerWidget {
       controller: tabController,
       onTap: (index) {
         final status = kMovieSubscriptionStatusTabs[index];
-        unawaited(
-          ref
-              .read(movieSubscriptionManagerProvider.notifier)
-              .applyStatus(status),
-        );
+        ref
+            .read(movieSubscriptionStatusSelectionProvider.notifier)
+            .select(status);
       },
       tabs: <Widget>[
         for (final status in kMovieSubscriptionStatusTabs)

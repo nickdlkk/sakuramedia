@@ -73,6 +73,43 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  testWidgets('标签面板可连续选择并清空，固定摘要不展开整个标签云', (tester) async {
+    bundle.adapter.enqueueJson(
+      method: 'GET',
+      path: '/tags',
+      body: [
+        {'tag_id': 1, 'name': '标签一', 'movie_count': 10},
+        {'tag_id': 2, 'name': '标签二', 'movie_count': 8},
+      ],
+    );
+    bundle.adapter.setFallbackJson(
+      method: 'GET',
+      path: '/movies',
+      body: moviesPage(),
+    );
+    await pumpTagsPage(tester);
+    expect(find.byKey(const Key('tags-option-1')), findsNothing);
+    await tester.tap(find.byKey(const Key('tags-selector-trigger')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('tags-option-1')));
+    await settleFilterRequest(tester);
+    expect(find.byKey(const Key('tags-selector-popover')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('tags-option-2')));
+    await settleFilterRequest(tester);
+    expect(find.byKey(const Key('tags-selected-1')), findsOneWidget);
+    expect(find.byKey(const Key('tags-selected-2')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('tags-clear-all')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('tags-selector-popover')), findsOneWidget);
+    expect(find.byKey(const Key('tags-selected-1')), findsNothing);
+    expect(find.byKey(const Key('tags-selected-2')), findsNothing);
+    await tester.tapAt(const Offset(790, 590));
+    await tester.pumpAndSettle();
+    expect(find.text('请选择标签查看影片'), findsOneWidget);
+    expect(find.byKey(const Key('tags-option-1')), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('caps popular tags to popularLimit and hides 展开全部', (
     WidgetTester tester,
   ) async {
@@ -90,6 +127,8 @@ void main() {
     );
 
     await pumpTagsPage(tester);
+    await tester.tap(find.byKey(const Key('tags-selector-trigger')));
+    await tester.pumpAndSettle();
 
     // popularLimit=15：仅展示前 15 个热门标签，更多标签靠搜索，不出现「展开全部」。
     expect(find.byKey(const Key('tags-option-14')), findsOneWidget);
@@ -114,6 +153,8 @@ void main() {
     );
 
     await pumpTagsPage(tester);
+    await tester.tap(find.byKey(const Key('tags-selector-trigger')));
+    await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('tags-option-4')), findsOneWidget);
     expect(find.text('展开全部'), findsNothing);
@@ -150,7 +191,7 @@ void main() {
     // 预选标签首拉影片默认走 or。
     expect(movieTagMatches(), <String?>['or']);
 
-    await tester.tap(find.byKey(const Key('tags-match-and')));
+    await tester.tap(find.byKey(const Key('tags-summary-match')));
     await settleFilterRequest(tester);
 
     // 切到「全部」后追加一次 and 请求。

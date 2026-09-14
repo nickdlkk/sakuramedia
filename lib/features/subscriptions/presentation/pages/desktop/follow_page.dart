@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:sakuramedia/widgets/base/layout/scrolling/app_fixed_header_layout.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sakuramedia/features/movies/data/dto/detail/movie_collection_type_dto.dart';
 import 'package:sakuramedia/features/movies/presentation/actions/movie_collection_feature_actions.dart';
@@ -109,10 +110,9 @@ class _DesktopFollowPageState extends ConsumerState<DesktopFollowPage>
     });
     final items = paged?.items ?? const [];
     final isInitialLoading = moviesAsync.isLoading && summary == null;
-    final initialErrorMessage =
-        moviesAsync.hasError && summary == null
-            ? _scope.initialLoadErrorText
-            : null;
+    final initialErrorMessage = moviesAsync.hasError && summary == null
+        ? _scope.initialLoadErrorText
+        : null;
     final showFooter =
         items.isNotEmpty &&
         (paged!.isLoadingMore || paged.loadMoreErrorMessage != null);
@@ -121,83 +121,78 @@ class _DesktopFollowPageState extends ConsumerState<DesktopFollowPage>
       onRefresh: _refresh,
       child: ColoredBox(
         color: context.appColors.surfaceElevated,
-        child: CustomScrollView(
-          controller: _scrollController,
-          slivers: [
-            SliverMainAxisGroup(
-              key: const Key('desktop-follow-page'),
-              slivers: [
-                SliverToBoxAdapter(
-                  child:
-                      selectionMode
-                          ? buildBatchSelectionToolbar()
-                          : AppFilterTotalHeader(
-                            leading: Text(
-                              '女优上新',
-                              style: resolveAppTextStyle(
-                                context,
-                                size: AppTextSize.s18,
-                                weight: AppTextWeight.semibold,
-                                tone: AppTextTone.primary,
-                              ),
-                            ),
-                            totalText: '${paged?.total ?? 0} 部',
-                            totalKey: const Key('desktop-follow-page-total'),
-                            trailing: buildEnterSelectionButton(),
-                          ),
-                ),
-                SliverToBoxAdapter(
-                  child: SizedBox(height: context.appSpacing.lg),
-                ),
-                MovieSummarySliver(
-                  items: items,
-                  isLoading: isInitialLoading,
-                  errorMessage: initialErrorMessage,
-                  onMovieTap:
-                      (movie) => context.pushDesktopMovieDetail(
-                        movieNumber: movie.movieNumber,
-                        fallbackPath: desktopFollowPath,
-                      ),
-                  onMovieMenuRequest: (movie, globalPosition) {
-                    unawaited(
-                      showMovieCollectionFeatureActionMenu(
-                        context: context,
-                        movieNumber: movie.movieNumber,
-                        globalPosition: globalPosition,
-                        isSubscribed: movie.isSubscribed,
-                      ),
-                    );
-                  },
-                  onMovieSubscriptionTap:
-                      (movie) => _toggleMovieSubscription(movie.movieNumber),
-                  isMovieSubscriptionUpdating:
-                      (movie) =>
-                          summary?.isSubscriptionUpdating(movie.movieNumber) ??
-                          false,
-                  emptyMessage: '暂无关注影片',
-                  selectionMode: selectionMode,
-                  isMovieSelected: (movie) => isSelected(movie.movieNumber),
-                  onMovieSelectedChanged:
-                      (movie, _) => toggleSelect(movie.movieNumber),
-                ),
-                if (showFooter)
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: EdgeInsets.only(top: context.appSpacing.md),
-                      child: AppPagedLoadMoreFooter(
-                        isLoading: paged.isLoadingMore,
-                        errorMessage: paged.loadMoreErrorMessage,
-                        onRetry:
-                            () =>
-                                ref
-                                    .read(movieSummaryProvider(_scope).notifier)
-                                    .loadMore(),
-                      ),
+        child: AppFixedHeaderLayout(
+          header: selectionMode
+              ? buildBatchSelectionToolbar()
+              : AppFilterTotalHeader(
+                  leading: Text(
+                    '女优上新',
+                    style: resolveAppTextStyle(
+                      context,
+                      size: AppTextSize.s18,
+                      weight: AppTextWeight.semibold,
+                      tone: AppTextTone.primary,
                     ),
                   ),
-              ],
-            ),
-          ],
+                  totalText: '${paged?.total ?? 0} 部',
+                  totalKey: const Key('desktop-follow-page-total'),
+                  trailing: buildEnterSelectionButton(),
+                ),
+          child: CustomScrollView(
+            controller: _scrollController,
+            slivers: [
+              SliverMainAxisGroup(
+                key: const Key('desktop-follow-page'),
+                slivers: [
+                  SliverToBoxAdapter(
+                    child: SizedBox(height: context.appSpacing.lg),
+                  ),
+                  MovieSummarySliver(
+                    items: items,
+                    isLoading: isInitialLoading,
+                    errorMessage: initialErrorMessage,
+                    onMovieTap: (movie) => context.pushDesktopMovieDetail(
+                      movieNumber: movie.movieNumber,
+                      fallbackPath: desktopFollowPath,
+                    ),
+                    onMovieMenuRequest: (movie, globalPosition) {
+                      unawaited(
+                        showMovieCollectionFeatureActionMenu(
+                          context: context,
+                          movieNumber: movie.movieNumber,
+                          globalPosition: globalPosition,
+                          isSubscribed: movie.isSubscribed,
+                        ),
+                      );
+                    },
+                    onMovieSubscriptionTap: (movie) =>
+                        _toggleMovieSubscription(movie.movieNumber),
+                    isMovieSubscriptionUpdating: (movie) =>
+                        summary?.isSubscriptionUpdating(movie.movieNumber) ??
+                        false,
+                    emptyMessage: '暂无关注影片',
+                    selectionMode: selectionMode,
+                    isMovieSelected: (movie) => isSelected(movie.movieNumber),
+                    onMovieSelectedChanged: (movie, _) =>
+                        toggleSelect(movie.movieNumber),
+                  ),
+                  if (showFooter)
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: EdgeInsets.only(top: context.appSpacing.md),
+                        child: AppPagedLoadMoreFooter(
+                          isLoading: paged.isLoadingMore,
+                          errorMessage: paged.loadMoreErrorMessage,
+                          onRetry: () => ref
+                              .read(movieSummaryProvider(_scope).notifier)
+                              .loadMore(),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );

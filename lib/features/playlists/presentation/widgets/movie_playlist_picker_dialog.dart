@@ -7,9 +7,9 @@ import 'package:sakuramedia/features/playlists/data/dto/playlist_dto.dart';
 import 'package:sakuramedia/features/playlists/presentation/widgets/create_playlist_dialog.dart';
 import 'package:sakuramedia/theme.dart';
 import 'package:sakuramedia/widgets/base/actions/app_icon_button.dart';
+import 'package:sakuramedia/widgets/base/actions/app_text_button.dart';
 import 'package:sakuramedia/widgets/base/overlays/app_bottom_drawer.dart';
 import 'package:sakuramedia/widgets/base/overlays/app_desktop_dialog.dart';
-import 'package:sakuramedia/widgets/base/feedback/app_empty_state.dart';
 
 import 'package:sakuramedia/features/playlists/presentation/providers/playlists_api_provider.dart';
 
@@ -26,24 +26,22 @@ Future<void> showMoviePlaylistPickerDialog(
     case MoviePlaylistPickerPresentation.dialog:
       return showDialog<void>(
         context: context,
-        builder:
-            (dialogContext) => MoviePlaylistPickerDialog(
-              movieNumber: movieNumber,
-              initialPlaylists: initialPlaylists,
-              presentation: MoviePlaylistPickerPresentation.dialog,
-            ),
+        builder: (dialogContext) => MoviePlaylistPickerDialog(
+          movieNumber: movieNumber,
+          initialPlaylists: initialPlaylists,
+          presentation: MoviePlaylistPickerPresentation.dialog,
+        ),
       );
     case MoviePlaylistPickerPresentation.bottomDrawer:
       return showAppBottomDrawer<void>(
         context: context,
         drawerKey: const Key('movie-playlist-picker-bottom-sheet'),
         heightFactor: 0.7,
-        builder:
-            (sheetContext) => MoviePlaylistPickerDialog(
-              movieNumber: movieNumber,
-              initialPlaylists: initialPlaylists,
-              presentation: MoviePlaylistPickerPresentation.bottomDrawer,
-            ),
+        builder: (sheetContext) => MoviePlaylistPickerDialog(
+          movieNumber: movieNumber,
+          initialPlaylists: initialPlaylists,
+          presentation: MoviePlaylistPickerPresentation.bottomDrawer,
+        ),
       );
   }
 }
@@ -67,7 +65,7 @@ class MoviePlaylistPickerDialog extends ConsumerStatefulWidget {
 
 class _MoviePlaylistPickerDialogState
     extends ConsumerState<MoviePlaylistPickerDialog> {
-  static const double _playlistCheckboxScale = 0.85;
+  final ScrollController _scrollController = ScrollController();
 
   List<PlaylistDto> _playlists = const <PlaylistDto>[];
   late Set<int> _selectedPlaylistIds;
@@ -78,8 +76,9 @@ class _MoviePlaylistPickerDialogState
   @override
   void initState() {
     super.initState();
-    _selectedPlaylistIds =
-        widget.initialPlaylists.map((playlist) => playlist.id).toSet();
+    _selectedPlaylistIds = widget.initialPlaylists
+        .map((playlist) => playlist.id)
+        .toSet();
     _load();
   }
 
@@ -100,172 +99,198 @@ class _MoviePlaylistPickerDialogState
         return;
       }
       setState(() {
-        _errorMessage = apiErrorMessage(error, fallback: '播放列表加载失败');
+        _errorMessage = '播放列表加载失败';
         _isLoading = false;
       });
     }
   }
 
   @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final spacing = context.appSpacing;
-    final isAnyUpdating = _updatingPlaylistIds.isNotEmpty;
+    final tokens = context.appComponentTokens;
     final isBottomDrawer =
         widget.presentation == MoviePlaylistPickerPresentation.bottomDrawer;
-    final playlistList = ListView.separated(
-      key: const Key('movie-playlist-list'),
-      shrinkWrap: true,
-      itemCount: _playlists.length,
-      separatorBuilder: (context, index) => SizedBox(height: spacing.sm),
-      itemBuilder: (context, index) {
-        final playlist = _playlists[index];
-        final selected = _selectedPlaylistIds.contains(playlist.id);
-        return InkWell(
-          key: Key('movie-playlist-option-${playlist.id}'),
-          borderRadius: context.appRadius.xsBorder,
-          onTap: isAnyUpdating ? null : () => _togglePlaylist(playlist),
-          child: Container(
-            padding: EdgeInsets.symmetric(horizontal: spacing.md),
-            decoration: BoxDecoration(
-              color: context.appColors.surfaceMuted,
-              borderRadius: context.appRadius.xsBorder,
-              border: Border.all(
-                color:
-                    selected
-                        ? Theme.of(context).colorScheme.primary
-                        : context.appColors.borderSubtle,
+    final playlistList = Scrollbar(
+      controller: _scrollController,
+      thumbVisibility: !isBottomDrawer,
+      child: ListView.builder(
+        key: const Key('movie-playlist-list'),
+        controller: _scrollController,
+        padding: EdgeInsets.zero,
+        shrinkWrap: true,
+        itemCount: _playlists.length,
+        itemBuilder: (context, index) {
+          final playlist = _playlists[index];
+          final selected = _selectedPlaylistIds.contains(playlist.id);
+          final updating = _updatingPlaylistIds.contains(playlist.id);
+          return Material(
+            color: context.appColors.surfaceCard,
+            clipBehavior: Clip.hardEdge,
+            child: InkWell(
+              key: Key('movie-playlist-option-${playlist.id}'),
+              hoverColor: context.appColors.surfaceMuted.withValues(
+                alpha: 0.45,
               ),
-            ),
-            child: Row(
-              children: [
-                Transform.scale(
-                  key: Key('movie-playlist-checkbox-scale-${playlist.id}'),
-                  scale: _playlistCheckboxScale,
-                  child: Checkbox(
-                    key: Key('movie-playlist-checkbox-${playlist.id}'),
-                    value: selected,
-                    onChanged:
-                        isAnyUpdating ? null : (_) => _togglePlaylist(playlist),
-                  ),
+              highlightColor: context.appColors.surfaceMuted.withValues(
+                alpha: 0.6,
+              ),
+              splashFactory: NoSplash.splashFactory,
+              onTap: updating ? null : () => _togglePlaylist(playlist),
+              child: Padding(
+                padding: EdgeInsets.symmetric(
+                  horizontal: spacing.sm,
+                  vertical: spacing.xs,
                 ),
-                SizedBox(width: spacing.sm),
-                Expanded(
-                  child: Text(
-                    playlist.name,
-                    style: resolveAppTextStyle(
-                      context,
-                      size: AppTextSize.s14,
-                      tone: AppTextTone.secondary,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        playlist.name,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: resolveAppTextStyle(
+                          context,
+                          size: AppTextSize.s14,
+                        ),
+                      ),
                     ),
-                  ),
-                ),
-                if (playlist.movieCount > 0)
-                  Text(
-                    '${playlist.movieCount}',
-                    style: resolveAppTextStyle(
-                      context,
-                      size: AppTextSize.s12,
-                      tone: AppTextTone.muted,
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-
-    final content = Stack(
-      alignment: Alignment.center,
-      children: [
-        AbsorbPointer(
-          absorbing: isAnyUpdating,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      '加入播放列表',
+                    SizedBox(width: spacing.md),
+                    Text(
+                      '${playlist.movieCount} 部',
                       style: resolveAppTextStyle(
                         context,
-                        size: AppTextSize.s16,
-                        weight: AppTextWeight.medium,
-                        tone: AppTextTone.secondary,
+                        size: AppTextSize.s12,
+                        tone: AppTextTone.muted,
                       ),
                     ),
-                  ),
-                  AppIconButton(
-                    key: const Key('movie-playlist-create-button'),
-                    onPressed: _createPlaylist,
-                    icon: const Icon(Icons.add_rounded),
-                  ),
-                ],
-              ),
-              SizedBox(height: spacing.lg),
-              if (_isLoading)
-                isBottomDrawer
-                    ? const Flexible(
-                      fit: FlexFit.loose,
-                      child: Center(
-                        key: Key('movie-playlist-loading'),
-                        child: CircularProgressIndicator(),
+                    SizedBox(width: spacing.sm),
+                    if (updating)
+                      SizedBox.square(
+                        dimension:
+                            kMinInteractiveDimension +
+                            Theme.of(
+                              context,
+                            ).visualDensity.baseSizeAdjustment.dy,
+                        child: Center(
+                          child: SizedBox.square(
+                            dimension: tokens.iconSizeXs,
+                            child: CircularProgressIndicator.adaptive(
+                              key: Key(
+                                'movie-playlist-updating-${playlist.id}',
+                              ),
+                              strokeWidth: 2,
+                            ),
+                          ),
+                        ),
+                      )
+                    else
+                      Checkbox(
+                        key: Key('movie-playlist-checkbox-${playlist.id}'),
+                        value: selected,
+                        onChanged: (_) => _togglePlaylist(playlist),
                       ),
-                    )
-                    : const SizedBox(
-                      key: Key('movie-playlist-loading'),
-                      height: 160,
-                      child: Center(child: CircularProgressIndicator()),
-                    )
-              else if (_errorMessage != null)
-                isBottomDrawer
-                    ? Flexible(
-                      fit: FlexFit.loose,
-                      child: AppEmptyState(message: _errorMessage!),
-                    )
-                    : SizedBox(
-                      height: 160,
-                      child: AppEmptyState(message: _errorMessage!),
-                    )
-              else if (_playlists.isEmpty)
-                isBottomDrawer
-                    ? const Flexible(
-                      fit: FlexFit.loose,
-                      child: Center(child: Text('暂无播放列表')),
-                    )
-                    : const SizedBox(
-                      height: 160,
-                      child: Center(child: Text('暂无播放列表')),
-                    )
-              else if (isBottomDrawer)
-                Flexible(fit: FlexFit.loose, child: playlistList)
-              else
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxHeight: 320),
-                  child: playlistList,
+                  ],
                 ),
-            ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+    final Widget body;
+    if (_isLoading) {
+      body = const Center(
+        key: Key('movie-playlist-loading'),
+        child: CircularProgressIndicator.adaptive(),
+      );
+    } else if (_errorMessage != null) {
+      body = Center(
+        child: Text(
+          _errorMessage!,
+          textAlign: TextAlign.center,
+          style: resolveAppTextStyle(
+            context,
+            size: AppTextSize.s14,
+            tone: AppTextTone.muted,
           ),
         ),
-        if (isAnyUpdating)
-          const SizedBox(
-            width: 24,
-            height: 24,
-            child: CircularProgressIndicator.adaptive(strokeWidth: 2),
+      );
+    } else if (_playlists.isEmpty) {
+      body = Center(
+        child: Text(
+          '暂无播放列表',
+          style: resolveAppTextStyle(
+            context,
+            size: AppTextSize.s14,
+            tone: AppTextTone.muted,
           ),
+        ),
+      );
+    } else {
+      body = playlistList;
+    }
+    final content = Column(
+      mainAxisSize: isBottomDrawer ? MainAxisSize.max : MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                '加入播放列表',
+                style: resolveAppTextStyle(
+                  context,
+                  size: AppTextSize.s16,
+                  weight: AppTextWeight.medium,
+                ),
+              ),
+            ),
+            AppIconButton(
+              key: const Key('movie-playlist-close-button'),
+              tooltip: '关闭',
+              onPressed: () => Navigator.of(context).pop(),
+              icon: const Icon(Icons.close_rounded),
+            ),
+          ],
+        ),
+        SizedBox(height: spacing.sm),
+        if (isBottomDrawer)
+          Expanded(child: body)
+        else
+          Flexible(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.sizeOf(context).height * 0.5,
+              ),
+              child: _isLoading || _errorMessage != null || _playlists.isEmpty
+                  ? SizedBox(height: 160, child: body)
+                  : body,
+            ),
+          ),
+        Divider(color: context.appColors.divider, height: spacing.lg),
+        AppTextButton(
+          key: const Key('movie-playlist-create-button'),
+          label: '新建播放列表',
+          icon: const Icon(Icons.add_rounded),
+          onPressed: _createPlaylist,
+        ),
       ],
     );
-
     if (!isBottomDrawer) {
       return AppDesktopDialog(
         dialogKey: const Key('movie-playlist-picker-dialog'),
-        width: context.appComponentTokens.playlistDialogWidth,
+        width: tokens.playlistDialogWidth,
+        showCloseButton: false,
         child: content,
       );
     }
-
     return content;
   }
 
@@ -297,6 +322,7 @@ class _MoviePlaylistPickerDialogState
             );
       }
     } catch (error) {
+      if (!mounted) return;
       setState(() {
         if (isSelected) {
           _selectedPlaylistIds.add(playlist.id);
@@ -321,8 +347,8 @@ class _MoviePlaylistPickerDialogState
       context,
       presentation:
           widget.presentation == MoviePlaylistPickerPresentation.bottomDrawer
-              ? CreatePlaylistDialogPresentation.bottomDrawer
-              : CreatePlaylistDialogPresentation.dialog,
+          ? CreatePlaylistDialogPresentation.bottomDrawer
+          : CreatePlaylistDialogPresentation.dialog,
     );
     if (!mounted || playlist == null) {
       return;

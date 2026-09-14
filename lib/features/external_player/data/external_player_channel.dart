@@ -1,10 +1,12 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:sakuramedia/features/external_player/data/external_playback_mode.dart';
 import 'package:sakuramedia/features/external_player/data/external_player_app.dart';
 
-/// 与原生（仅 Android）交互的外部播放器通道：枚举可用播放器、显式拉起播放。
+/// 与原生交互的外部播放器通道：枚举可用播放器、显式拉起播放。
 ///
-/// 非 Android / Web 平台上 [isSupported] 为 false，所有方法安全降级（不抛出）。
+/// Android、macOS 与 Windows 原生实现该通道。其他平台上 [isSupported] 为
+/// false，所有方法安全降级（不抛出）。
 class ExternalPlayerChannel {
   const ExternalPlayerChannel();
 
@@ -12,9 +14,12 @@ class ExternalPlayerChannel {
     'sakuramedia/external_player',
   );
 
-  /// 仅 Android 原生实现该通道。
-  bool get isSupported =>
-      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+  bool get isSupported => switch (defaultTargetPlatform) {
+    TargetPlatform.android ||
+    TargetPlatform.macOS ||
+    TargetPlatform.windows => true,
+    _ => false,
+  };
 
   /// 列出系统中可播放视频的应用。
   ///
@@ -58,8 +63,9 @@ class ExternalPlayerChannel {
   /// 返回 true 表示已成功唤起；false 表示目标播放器不可用（例如已卸载），
   /// 调用方应据此回落到应用内播放并提示用户。
   Future<bool> launch({
-    required String packageName,
+    required String playerId,
     required String url,
+    ExternalPlaybackMode playbackMode = ExternalPlaybackMode.followBackend,
     String? title,
     int? positionMs,
   }) async {
@@ -68,8 +74,8 @@ class ExternalPlayerChannel {
     }
     try {
       final launched = await _channel.invokeMethod<bool>('launch', {
-        'packageName': packageName,
-        'url': url,
+        'playerId': playerId,
+        'url': playbackMode.applyToUrl(url),
         'title': title,
         'positionMs': positionMs,
       });

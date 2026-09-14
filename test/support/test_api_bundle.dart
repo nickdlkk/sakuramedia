@@ -3,8 +3,6 @@ import 'package:sakuramedia/app/providers/riverpod_page_cache_provider.dart';
 import 'package:sakuramedia/app/riverpod_page_cache.dart';
 import 'package:sakuramedia/core/network/api_client.dart';
 import 'package:sakuramedia/core/network/providers/api_client_provider.dart';
-import 'package:sakuramedia/core/network/providers/sse_event_stream_client_provider.dart';
-import 'package:sakuramedia/core/network/sse_event_stream_client.dart';
 import 'package:sakuramedia/core/session/credential_store.dart';
 import 'package:sakuramedia/core/session/providers/credential_store_provider.dart';
 import 'package:sakuramedia/core/session/providers/session_store_provider.dart';
@@ -12,9 +10,7 @@ import 'package:sakuramedia/core/session/session_store.dart';
 import 'package:sakuramedia/features/account/data/account_api.dart';
 import 'package:sakuramedia/features/account/presentation/providers/account_api_provider.dart';
 import 'package:sakuramedia/features/activity/data/activity_api.dart';
-import 'package:sakuramedia/features/activity/data/activity_event_stream_client.dart';
 import 'package:sakuramedia/features/activity/presentation/providers/activity_api_provider.dart';
-import 'package:sakuramedia/features/activity/presentation/providers/activity_stream_client_provider.dart';
 import 'package:sakuramedia/features/actors/data/api/actors_api.dart';
 import 'package:sakuramedia/features/actors/presentation/providers/actors_api_provider.dart';
 import 'package:sakuramedia/features/auth/data/auth_api.dart';
@@ -33,8 +29,6 @@ import 'package:sakuramedia/features/discovery/data/discovery_api.dart';
 import 'package:sakuramedia/features/discovery/presentation/providers/discovery_api_provider.dart';
 import 'package:sakuramedia/features/downloads/data/downloads_api.dart';
 import 'package:sakuramedia/features/downloads/presentation/providers/downloads_api_provider.dart';
-import 'package:sakuramedia/features/hot_reviews/data/hot_reviews_api.dart';
-import 'package:sakuramedia/features/hot_reviews/presentation/providers/hot_reviews_api_provider.dart';
 import 'package:sakuramedia/features/image_search/data/image_search_api.dart';
 import 'package:sakuramedia/features/image_search/presentation/image_search_draft_store.dart';
 import 'package:sakuramedia/features/image_search/presentation/providers/image_search_api_provider.dart';
@@ -58,7 +52,6 @@ import 'package:sakuramedia/features/subscriptions/presentation/providers/movie_
 import 'package:sakuramedia/features/tags/data/tags_api.dart';
 import 'package:sakuramedia/features/tags/presentation/providers/tags_api_provider.dart';
 import 'package:sakuramedia/features/videos/data/api/video_collections_api.dart';
-import 'package:sakuramedia/features/videos/data/api/video_imports_api.dart';
 import 'package:sakuramedia/features/videos/data/api/videos_api.dart';
 import 'package:sakuramedia/features/videos/presentation/providers/videos_api_provider.dart';
 
@@ -72,7 +65,6 @@ class TestApiBundle {
     required this.apiClient,
     required this.accountApi,
     required this.activityApi,
-    required this.activityEventStreamClient,
     required this.actorsApi,
     required this.authApi,
     required this.clipsApi,
@@ -80,7 +72,6 @@ class TestApiBundle {
     required this.downloadClientsApi,
     required this.discoveryApi,
     required this.downloadsApi,
-    required this.sseEventStreamClient,
     required this.indexerSettingsApi,
     required this.mediaApi,
     required this.mediaImportApi,
@@ -90,11 +81,9 @@ class TestApiBundle {
     required this.movieSubscriptionsApi,
     required this.playlistsApi,
     required this.rankingsApi,
-    required this.hotReviewsApi,
     required this.tagsApi,
     required this.videosApi,
     required this.videoCollectionsApi,
-    required this.videoImportsApi,
     required this.clipCollectionsApi,
     required this.imageSearchApi,
     required this.adapter,
@@ -105,7 +94,6 @@ class TestApiBundle {
   final ApiClient apiClient;
   final AccountApi accountApi;
   final ActivityApi activityApi;
-  final ActivityEventStreamClient activityEventStreamClient;
   final ActorsApi actorsApi;
   final AuthApi authApi;
   final ClipsApi clipsApi;
@@ -113,7 +101,6 @@ class TestApiBundle {
   final DownloadClientsApi downloadClientsApi;
   final DiscoveryApi discoveryApi;
   final DownloadsApi downloadsApi;
-  final SseEventStreamClient sseEventStreamClient;
   final IndexerSettingsApi indexerSettingsApi;
   final MediaApi mediaApi;
   final MediaImportApi mediaImportApi;
@@ -123,11 +110,9 @@ class TestApiBundle {
   final MovieSubscriptionsApi movieSubscriptionsApi;
   final PlaylistsApi playlistsApi;
   final RankingsApi rankingsApi;
-  final HotReviewsApi hotReviewsApi;
   final TagsApi tagsApi;
   final VideosApi videosApi;
   final VideoCollectionsApi videoCollectionsApi;
-  final VideoImportsApi videoImportsApi;
   final ClipCollectionsApi clipCollectionsApi;
   final ImageSearchApi imageSearchApi;
   final FakeHttpClientAdapter adapter;
@@ -171,12 +156,6 @@ class TestApiBundle {
     MediaLibrariesApi? mediaLibrariesApi,
     DownloadClientsApi? downloadClientsApi,
     IndexerSettingsApi? indexerSettingsApi,
-    // SSE 流客户端：默认用 bundle 实例（静默不推事件）；要打事件的测试传
-    // FakeSseEventStreamClient / 自定义实例。
-    SseEventStreamClient? sseEventStreamClient,
-    ActivityEventStreamClient? activityEventStreamClient,
-    // 活动域 SSE 要换传输层时**必须连 ActivityApi 一起换**:它是构造注入
-    // streamClient 的,只 override activityEventStreamClientProvider 到不了它。
     ActivityApi? activityApi,
   }) {
     return <Override>[
@@ -195,7 +174,6 @@ class TestApiBundle {
       downloadClientsApiProvider.overrideWithValue(
         downloadClientsApi ?? this.downloadClientsApi,
       ),
-      hotReviewsApiProvider.overrideWithValue(hotReviewsApi),
       imageSearchApiProvider.overrideWithValue(imageSearchApi),
       indexerSettingsApiProvider.overrideWithValue(
         indexerSettingsApi ?? this.indexerSettingsApi,
@@ -213,7 +191,6 @@ class TestApiBundle {
       tagsApiProvider.overrideWithValue(tagsApi),
       videosApiProvider.overrideWithValue(videosApi),
       videoCollectionsApiProvider.overrideWithValue(videoCollectionsApi),
-      videoImportsApiProvider.overrideWithValue(videoImportsApi),
       if (pageStateCache != null)
         riverpodPageCacheProvider.overrideWithValue(pageStateCache),
       imageSearchDraftStoreProvider.overrideWithValue(
@@ -222,18 +199,10 @@ class TestApiBundle {
       collectionPlaybackHandoffProvider.overrideWithValue(
         collectionPlaybackHandoff ?? this.collectionPlaybackHandoff,
       ),
-      sseEventStreamClientProvider.overrideWithValue(
-        sseEventStreamClient ?? this.sseEventStreamClient,
-      ),
-      activityEventStreamClientProvider.overrideWithValue(
-        activityEventStreamClient ?? this.activityEventStreamClient,
-      ),
     ];
   }
 
   void dispose() {
-    activityEventStreamClient.dispose();
-    sseEventStreamClient.dispose();
     apiClient.dispose();
   }
 }
@@ -241,14 +210,6 @@ class TestApiBundle {
 Future<TestApiBundle> createTestApiBundle(SessionStore sessionStore) async {
   final credentialStore = InMemoryCredentialStore();
   final apiClient = ApiClient(sessionStore: sessionStore);
-  final activityEventStreamClient = createActivityEventStreamClient(
-    apiClient: apiClient,
-    sessionStore: sessionStore,
-  );
-  final sseEventStreamClient = createSseEventStreamClient(
-    apiClient: apiClient,
-    sessionStore: sessionStore,
-  );
   final adapter = FakeHttpClientAdapter();
   apiClient.rawDio.httpClientAdapter = adapter;
   apiClient.rawRefreshDio.httpClientAdapter = adapter;
@@ -260,17 +221,19 @@ Future<TestApiBundle> createTestApiBundle(SessionStore sessionStore) async {
     path: '/media-clips',
     body: const <String, dynamic>{'items': <dynamic>[], 'total': 0},
   );
+  // 时刻首页会隐式加载合集横滑区；默认给空列表，需验证合集展示的用例可显式 enqueue。
+  adapter.setFallbackJson(
+    method: 'GET',
+    path: '/moment-collections',
+    body: const <dynamic>[],
+  );
 
   return TestApiBundle(
     sessionStore: sessionStore,
     credentialStore: credentialStore,
     apiClient: apiClient,
     accountApi: AccountApi(apiClient: apiClient),
-    activityApi: ActivityApi(
-      apiClient: apiClient,
-      streamClient: activityEventStreamClient,
-    ),
-    activityEventStreamClient: activityEventStreamClient,
+    activityApi: ActivityApi(apiClient: apiClient),
     actorsApi: ActorsApi(apiClient: apiClient),
     authApi: AuthApi(
       apiClient: apiClient,
@@ -281,11 +244,7 @@ Future<TestApiBundle> createTestApiBundle(SessionStore sessionStore) async {
     configApi: ConfigApi(apiClient: apiClient),
     downloadClientsApi: DownloadClientsApi(apiClient: apiClient),
     discoveryApi: DiscoveryApi(apiClient: apiClient),
-    downloadsApi: DownloadsApi(
-      apiClient: apiClient,
-      streamClient: sseEventStreamClient,
-    ),
-    sseEventStreamClient: sseEventStreamClient,
+    downloadsApi: DownloadsApi(apiClient: apiClient),
     indexerSettingsApi: IndexerSettingsApi(apiClient: apiClient),
     mediaApi: MediaApi(apiClient: apiClient),
     mediaImportApi: MediaImportApi(apiClient: apiClient),
@@ -295,11 +254,9 @@ Future<TestApiBundle> createTestApiBundle(SessionStore sessionStore) async {
     movieSubscriptionsApi: MovieSubscriptionsApi(apiClient: apiClient),
     playlistsApi: PlaylistsApi(apiClient: apiClient),
     rankingsApi: RankingsApi(apiClient: apiClient),
-    hotReviewsApi: HotReviewsApi(apiClient: apiClient),
     tagsApi: TagsApi(apiClient: apiClient),
     videosApi: VideosApi(apiClient: apiClient),
     videoCollectionsApi: VideoCollectionsApi(apiClient: apiClient),
-    videoImportsApi: VideoImportsApi(apiClient: apiClient),
     clipCollectionsApi: ClipCollectionsApi(apiClient: apiClient),
     imageSearchApi: ImageSearchApi(apiClient: apiClient),
     adapter: adapter,

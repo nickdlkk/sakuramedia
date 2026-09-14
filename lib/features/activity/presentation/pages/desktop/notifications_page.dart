@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:sakuramedia/widgets/base/layout/scrolling/app_fixed_header_layout.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sakuramedia/features/activity/presentation/providers/notification_center_provider.dart';
 import 'package:sakuramedia/features/activity/presentation/providers/notification_center_state.dart';
@@ -10,7 +11,9 @@ import 'package:sakuramedia/widgets/base/actions/app_button.dart';
 import 'package:sakuramedia/widgets/base/interaction/refresh/app_page_refresh_scope.dart';
 import 'package:sakuramedia/widgets/base/layout/scrolling/app_paged_load_more_footer.dart';
 import 'package:sakuramedia/widgets/base/feedback/app_empty_state.dart';
+import 'package:sakuramedia/widgets/base/feedback/app_filter_result_loading_overlay.dart';
 import 'package:sakuramedia/widgets/base/feedback/app_filter_update_bar.dart';
+import 'package:sakuramedia/widgets/base/feedback/app_mobile_skeleton.dart';
 
 /// 独立的「通知」消息中心页。列表、分页、筛选和无感已读由全局通知 provider
 /// 驱动，卡片被渲染时即上报已读。
@@ -104,12 +107,59 @@ class _DesktopNotificationsPageState
               message: state.initialErrorMessage!,
               onRetry: ref.read(notificationCenterProvider.notifier).reloadAll,
             )
-          : CustomScrollView(
-              controller: _scrollController,
-              // 收敛视口外预构建，避免卡片「提前已读」。
-              cacheExtent: 0,
-              slivers: _buildSlivers(context, state),
+          : AppFixedHeaderLayout(
+              header: _buildHeader(context, state),
+              child: AppFilterResultLoadingOverlay(
+                isLoading: state.filterUpdate.isLoading,
+                hasPreviousItems: state.notifications.isNotEmpty,
+                child: CustomScrollView(
+                  controller: _scrollController,
+                  // 收敛视口外预构建，避免卡片「提前已读」。
+                  cacheExtent: 0,
+                  slivers: _buildSlivers(context, state),
+                ),
+              ),
             ),
+    );
+  }
+
+  Widget _buildHeader(BuildContext context, NotificationCenterState state) {
+    final notifier = ref.read(notificationCenterProvider.notifier);
+    return Padding(
+      key: const Key('desktop-notifications-page'),
+      padding: EdgeInsets.only(bottom: context.appSpacing.lg),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: NotificationFilterBar(
+                  state: state,
+                  onFilterChanged: notifier.applyNotificationFilter,
+                ),
+              ),
+              SizedBox(width: context.appSpacing.md),
+              AppButton(
+                key: const Key('notifications-mark-all-read'),
+                label: '全部已读',
+                size: AppButtonSize.small,
+                variant: AppButtonVariant.secondary,
+                isLoading: state.isMarkingAllRead,
+                onPressed: state.unreadCount > 0 && !state.isMarkingAllRead
+                    ? notifier.markAllRead
+                    : null,
+              ),
+            ],
+          ),
+          AppFilterUpdateBar(
+            state: state.filterUpdate,
+            hasPreviousItems: state.notifications.isNotEmpty,
+            onRetry: notifier.refreshNotifications,
+          ),
+        ],
+      ),
     );
   }
 
@@ -118,46 +168,7 @@ class _DesktopNotificationsPageState
     NotificationCenterState state,
   ) {
     final notifier = ref.read(notificationCenterProvider.notifier);
-    final slivers = <Widget>[
-      SliverToBoxAdapter(
-        child: Padding(
-          key: const Key('desktop-notifications-page'),
-          padding: EdgeInsets.only(bottom: context.appSpacing.lg),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Expanded(
-                    child: NotificationFilterBar(
-                      state: state,
-                      onFilterChanged: notifier.applyNotificationFilter,
-                    ),
-                  ),
-                  SizedBox(width: context.appSpacing.md),
-                  AppButton(
-                    key: const Key('notifications-mark-all-read'),
-                    label: '全部已读',
-                    size: AppButtonSize.small,
-                    variant: AppButtonVariant.secondary,
-                    isLoading: state.isMarkingAllRead,
-                    onPressed: state.unreadCount > 0 && !state.isMarkingAllRead
-                        ? notifier.markAllRead
-                        : null,
-                  ),
-                ],
-              ),
-              AppFilterUpdateBar(
-                state: state.filterUpdate,
-                hasPreviousItems: state.notifications.isNotEmpty,
-                onRetry: notifier.refreshNotifications,
-              ),
-            ],
-          ),
-        ),
-      ),
-    ];
+    final slivers = <Widget>[];
 
     if (state.notifications.isEmpty && state.filterUpdate.hasFailed) {
       return slivers;
@@ -213,17 +224,10 @@ class _NotificationsLoadingState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      key: const Key('desktop-notifications-loading'),
-      child: SizedBox(
-        width: double.infinity,
-        height: 220,
-        child: Center(
-          child: CircularProgressIndicator(
-            strokeWidth: context.appComponentTokens.movieCardLoaderStrokeWidth,
-          ),
-        ),
-      ),
+    return const AppMobileSkeletonList(
+      key: Key('desktop-notifications-loading'),
+      itemCount: 5,
+      padding: EdgeInsets.zero,
     );
   }
 }

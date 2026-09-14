@@ -153,6 +153,8 @@ void main() {
     expect(find.text('$currentYear'), findsOneWidget);
     expect(find.text('$currentYear(1)'), findsNothing);
 
+    await tester.ensureVisible(find.byKey(Key('movie-filter-year-$currentYear')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(Key('movie-filter-year-$currentYear')));
     await tester.pumpAndSettle();
 

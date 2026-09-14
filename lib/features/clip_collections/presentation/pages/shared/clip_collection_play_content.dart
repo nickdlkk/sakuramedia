@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:sakuramedia/widgets/domain/media/media_playback_info_button.dart';
 import 'package:sakuramedia/features/shared/presentation/providers/collection_playback_handoff_provider.dart';
 import 'package:sakuramedia/features/clip_collections/presentation/providers/clip_collections_api_provider.dart';
 import 'package:sakuramedia/features/clips/presentation/providers/clips_api_provider.dart';
@@ -18,7 +19,6 @@ import 'package:sakuramedia/widgets/base/media/video/video_loading_indicator.dar
 import 'package:sakuramedia/widgets/domain/collections/playback/collection_episode_queue_item.dart';
 import 'package:sakuramedia/widgets/domain/collections/playback/collection_filmstrip_controller.dart';
 import 'package:sakuramedia/widgets/domain/collections/playback/collection_play_split_layout.dart';
-import 'package:sakuramedia/widgets/domain/collections/playback/collection_playback_mode.dart';
 import 'package:sakuramedia/widgets/domain/collections/playback/collection_playback_page_mixin.dart';
 import 'package:sakuramedia/widgets/domain/collections/playback/episode_selector_overlay.dart';
 import 'package:sakuramedia/widgets/domain/movies/player/merged_position_indicator.dart';
@@ -144,10 +144,6 @@ class _ClipCollectionPlayContentState
               .toList();
         },
       );
-      // 详情页弹窗确认的播放形态（一次性 take，深链/刷新无值则回退 playlist）。
-      final mode =
-          handoff.takeMode(key: 'clip:${widget.collectionId}') ??
-          CollectionPlaybackMode.playlist;
       setState(() {
         _clips = playableClips;
         attachPlayback(
@@ -155,7 +151,6 @@ class _ClipCollectionPlayContentState
           videoController: videoController,
           filmstrip: filmstrip,
           startIndex: startIndex,
-          mode: mode,
           episodeDurationsSeconds: List<int>.unmodifiable(playableDurations),
         );
         _isLoading = false;
@@ -254,27 +249,24 @@ class _ClipCollectionPlayContentState
     BuildContext context,
     VideoController videoController,
   ) {
-    // 合并模式：底栏 progressIndicator 接管整段进度条 + 时间显示，
-    // 并把 media_kit 自带的 seek bar 关掉（避免两条进度条同时显示）。
-    final useMerged =
-        playbackMode == CollectionPlaybackMode.merged && player != null;
-    final progressIndicator =
-        useMerged
-            ? MergedPositionIndicator(
-              player: player!,
-              episodeDurationsSeconds: episodeDurationsSeconds,
-              onSeekGlobalSeconds: seekToGlobalSeconds,
-            )
-            : null;
+    final progressIndicator = MergedPositionIndicator(
+      player: player!,
+      episodeDurationsSeconds: episodeDurationsSeconds,
+      onSeekGlobalSeconds: seekToGlobalSeconds,
+    );
     return ThemedVideoPlayer(
       videoController: videoController,
       useTouchOptimizedControls: widget.useTouchOptimizedControls,
       videoKey: const Key('clip-collection-play-video'),
-      displaySeekBar: !useMerged,
-      topControls: buildMoviePlayerTopControls(
-        movieNumber: _currentClipTitle(),
-        onBackPressed: _handleBack,
-      ),
+      displaySeekBar: false,
+      topControls: [
+        ...buildMoviePlayerTopControls(
+          movieNumber: _currentClipTitle(),
+          onBackPressed: _handleBack,
+        ),
+        const Spacer(),
+        MediaPlaybackInfoButton(player: videoController.player),
+      ],
       bottomControls: buildCollectionPlayBottomControls(
         useTouchOptimizedControls: widget.useTouchOptimizedControls,
         onOpenEpisodes: openEpisodePanel,

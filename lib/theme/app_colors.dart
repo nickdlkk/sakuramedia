@@ -95,6 +95,10 @@ class AppColors extends ThemeExtension<AppColors> {
   final Color surfaceMuted;
   final Color noticeSurface;
   final Color desktopSidebarGlassTint;
+  // Windows blur is more transparent than macOS vibrancy; keep the tint
+  // denser so background windows don't compete with navigation labels.
+  Color get windowsSidebarGlassTint =>
+      desktopSidebarGlassTint.withValues(alpha: 0.92);
   final Color desktopSidebarGlassHover;
   final Color desktopSidebarGlassActive;
   final Color sidebarBackground;

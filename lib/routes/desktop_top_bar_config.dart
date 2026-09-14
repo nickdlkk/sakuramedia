@@ -4,6 +4,7 @@ import 'package:sakuramedia/routes/app_back_destination.dart';
 import 'package:sakuramedia/routes/app_navigation.dart';
 import 'package:sakuramedia/routes/app_route_spec.dart';
 import 'package:sakuramedia/routes/desktop_image_search_route_state.dart';
+import 'package:sakuramedia/routes/desktop_navigation_route_state.dart';
 import 'package:sakuramedia/routes/desktop_search_route_state.dart';
 
 @immutable
@@ -51,6 +52,14 @@ DesktopTopBarConfig resolveDesktopTopBarConfig({
   if (currentPath == desktopDiscoverMomentsPath) {
     return const DesktopTopBarConfig(
       title: '推荐时刻',
+      fallbackPath: desktopDiscoverPath,
+      isBackEnabled: true,
+    );
+  }
+
+  if (currentPath == desktopHotActressReleasesPath) {
+    return const DesktopTopBarConfig(
+      title: '热门新片',
       fallbackPath: desktopDiscoverPath,
       isBackEnabled: true,
     );
@@ -115,6 +124,15 @@ DesktopTopBarConfig resolveDesktopTopBarConfig({
   }
 
   if (currentPath.startsWith('$desktopVideosPath/')) {
+    if (currentPath.endsWith('/thumbnails')) {
+      return DesktopTopBarConfig(
+        title: '缩略图',
+        fallbackPath:
+            _fallbackPathFromExtra(routeExtra, currentPath: currentPath) ??
+            AppBackDestination.defaultLocationForPath(currentPath),
+        isBackEnabled: true,
+      );
+    }
     return DesktopTopBarConfig(
       title: '视频详情',
       fallbackPath:
@@ -160,9 +178,27 @@ DesktopTopBarConfig resolveDesktopTopBarConfig({
     );
   }
 
+  if (currentPath == desktopMomentCollectionsPath) {
+    return const DesktopTopBarConfig(
+      title: '时刻合集',
+      fallbackPath: desktopMomentsPath,
+      isBackEnabled: true,
+    );
+  }
+
+  if (currentPath.startsWith('$desktopMomentCollectionsPath/')) {
+    return DesktopTopBarConfig(
+      title: '时刻合集',
+      fallbackPath:
+          _fallbackPathFromExtra(routeExtra, currentPath: currentPath) ??
+          desktopMomentCollectionsPath,
+      isBackEnabled: true,
+    );
+  }
+
   if (currentPath == desktopImageSearchPath) {
     return DesktopTopBarConfig(
-      title: '以图搜图',
+      title: '画面搜索',
       fallbackPath:
           _fallbackPathFromExtra(routeExtra, currentPath: currentPath) ??
           AppBackDestination.defaultLocationForPath(currentPath),
@@ -172,12 +208,11 @@ DesktopTopBarConfig resolveDesktopTopBarConfig({
 
   if (currentPath == desktopSearchPath ||
       currentPath.startsWith('$desktopSearchPath/')) {
-    final title =
-        currentPath == desktopSearchPath
-            ? '搜索'
-            : _decodeSearchTitleSegment(
-              currentPath.substring(desktopSearchPath.length + 1),
-            );
+    final title = currentPath == desktopSearchPath
+        ? '搜索'
+        : _decodeSearchTitleSegment(
+            currentPath.substring(desktopSearchPath.length + 1),
+          );
     return DesktopTopBarConfig(
       title: title,
       fallbackPath:
@@ -211,6 +246,7 @@ String? _fallbackPathFromExtra(
   required String currentPath,
 }) {
   final fallbackPath = switch (routeExtra) {
+    DesktopNavigationRouteState(:final fallbackPath) => fallbackPath,
     DesktopSearchRouteState(:final fallbackPath) => fallbackPath,
     DesktopImageSearchRouteState(:final fallbackPath) => fallbackPath,
     String value when _allowsLegacyStringExtra(currentPath, value) => value,

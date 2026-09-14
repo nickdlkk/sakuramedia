@@ -27,6 +27,7 @@ class TagMovieSummaryContent extends ConsumerStatefulWidget {
     this.registerPageRefresh = false,
     this.onRefreshFailure,
     this.headerBuilder,
+    this.headerLeading,
     this.useMobileSelectionLayout = false,
   });
 
@@ -42,6 +43,7 @@ class TagMovieSummaryContent extends ConsumerStatefulWidget {
   final bool registerPageRefresh;
   final void Function(BuildContext context)? onRefreshFailure;
   final MovieSummaryListHeaderBuilder? headerBuilder;
+  final Widget? headerLeading;
   final bool useMobileSelectionLayout;
 
   @override
@@ -104,6 +106,7 @@ class _TagMovieSummaryContentState
       registerPageRefresh: widget.registerPageRefresh,
       onRefreshFailure: widget.onRefreshFailure,
       headerBuilder: widget.headerBuilder,
+      headerLeading: widget.headerLeading,
       useMobileSelectionLayout: widget.useMobileSelectionLayout,
       onMovieTap: widget.onMovieTap,
       bodyBuilder: widget.bodyBuilder,

@@ -5,6 +5,7 @@ import 'package:sakuramedia/features/tags/presentation/providers/tag_selection_s
 import 'package:sakuramedia/theme.dart';
 import 'package:sakuramedia/widgets/base/actions/app_text_button.dart';
 import 'package:sakuramedia/widgets/base/feedback/app_empty_state.dart';
+import 'package:sakuramedia/widgets/base/feedback/app_mobile_skeleton.dart';
 import 'package:sakuramedia/widgets/base/forms/app_text_field.dart';
 
 /// 标签多选区：搜索框 + 已选标签 chips + 热门/搜索结果标签云。
@@ -66,72 +67,63 @@ class _TagSelectorPanelState extends State<TagSelectorPanel> {
     final selection = widget.selection;
     final spacing = context.appSpacing;
 
-    return Container(
-      width: double.infinity,
-      padding: EdgeInsets.all(spacing.lg),
-      decoration: BoxDecoration(
-        color: context.appColors.surfaceCard,
-        borderRadius: context.appRadius.mdBorder,
-        border: Border.all(color: context.appColors.borderSubtle),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(
+              '选择标签',
+              style: resolveAppTextStyle(
+                context,
+                size: AppTextSize.s14,
+                weight: AppTextWeight.medium,
+                tone: AppTextTone.primary,
+              ),
+            ),
+            const Spacer(),
+            if (selection.hasSelection)
               Text(
-                '选择标签',
+                '已选 ${selection.selectedCount} 个',
+                key: const Key('tags-selected-count'),
                 style: resolveAppTextStyle(
                   context,
-                  size: AppTextSize.s14,
-                  weight: AppTextWeight.medium,
-                  tone: AppTextTone.primary,
+                  size: AppTextSize.s12,
+                  weight: AppTextWeight.regular,
+                  tone: AppTextTone.secondary,
                 ),
               ),
-              const Spacer(),
-              if (selection.hasSelection)
-                Text(
-                  '已选 ${selection.selectedCount} 个',
-                  key: const Key('tags-selected-count'),
-                  style: resolveAppTextStyle(
-                    context,
-                    size: AppTextSize.s12,
-                    weight: AppTextWeight.regular,
-                    tone: AppTextTone.secondary,
-                  ),
-                ),
-            ],
+          ],
+        ),
+        SizedBox(height: spacing.md),
+        AppTextField(
+          fieldKey: const Key('tags-search-field'),
+          controller: _searchController,
+          hintText: '搜索标签',
+          prefix: Icon(
+            Icons.search,
+            size: context.appComponentTokens.iconSizeSm,
+            color: context.appTextPalette.secondary,
           ),
-          SizedBox(height: spacing.md),
-          AppTextField(
-            fieldKey: const Key('tags-search-field'),
-            controller: _searchController,
-            hintText: '搜索标签',
-            prefix: Icon(
-              Icons.search,
-              size: context.appComponentTokens.iconSizeSm,
-              color: context.appTextPalette.secondary,
-            ),
-            suffix:
-                _searchController.text.isEmpty
-                    ? null
-                    : IconButton(
-                      icon: Icon(
-                        Icons.close,
-                        size: context.appComponentTokens.iconSizeSm,
-                      ),
-                      splashRadius: 16,
-                      onPressed: () {
-                        _searchController.clear();
-                        widget.onQueryChanged('');
-                      },
+          suffix:
+              _searchController.text.isEmpty
+                  ? null
+                  : IconButton(
+                    icon: Icon(
+                      Icons.close,
+                      size: context.appComponentTokens.iconSizeSm,
                     ),
-            onChanged: widget.onQueryChanged,
-          ),
-          SizedBox(height: spacing.md),
-          _buildBody(context),
-        ],
-      ),
+                    splashRadius: 16,
+                    onPressed: () {
+                      _searchController.clear();
+                      widget.onQueryChanged('');
+                    },
+                  ),
+          onChanged: widget.onQueryChanged,
+        ),
+        SizedBox(height: spacing.md),
+        _buildBody(context),
+      ],
     );
   }
 
@@ -174,27 +166,18 @@ class _TagSelectorPanelState extends State<TagSelectorPanel> {
 
   Widget _buildLoading(BuildContext context) {
     final spacing = context.appSpacing;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
+    const widths = <double>[88, 116, 76, 132, 98, 108, 82, 124, 92, 112];
+    return Wrap(
+      key: const Key('tags-selector-skeleton'),
+      spacing: spacing.sm,
+      runSpacing: spacing.sm,
       children: [
-        SizedBox(
-          width: 14,
-          height: 14,
-          child: CircularProgressIndicator(
-            strokeWidth: 2,
-            color: Theme.of(context).colorScheme.primary,
+        for (final width in widths)
+          AppSkeletonBlock(
+            width: width,
+            height: context.appComponentTokens.buttonHeightXs,
+            radius: context.appRadius.pillBorder,
           ),
-        ),
-        SizedBox(width: spacing.sm),
-        Text(
-          '标签加载中',
-          style: resolveAppTextStyle(
-            context,
-            size: AppTextSize.s12,
-            weight: AppTextWeight.regular,
-            tone: AppTextTone.muted,
-          ),
-        ),
       ],
     );
   }

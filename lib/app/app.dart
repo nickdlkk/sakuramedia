@@ -5,11 +5,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import 'package:go_router/go_router.dart';
 import 'package:oktoast/oktoast.dart';
 import 'package:sakuramedia/app/app_platform.dart';
-import 'package:sakuramedia/app/web_platform_notice.dart';
 import 'package:sakuramedia/core/session/providers/session_store_provider.dart';
 import 'package:sakuramedia/core/session/session_store.dart';
 import 'package:sakuramedia/routes/app_router.dart';
 import 'package:sakuramedia/theme.dart';
+import 'package:sakuramedia/widgets/shell/window/app_windows_caption.dart';
+import 'package:sakuramedia/widgets/shell/window/app_windows_frame.dart';
 import 'package:sakuramedia/widgets/base/media/images/app_image_fullscreen.dart';
 
 /// 允许发起拖拽滚动的指针类型集合(应用全局 [ScrollConfiguration] 使用)。
@@ -123,18 +124,17 @@ class _MyAppState extends State<MyApp> {
                 : sakuraDesktopThemeData,
             routerConfig: _router,
             builder: (context, child) {
-              return WebPlatformNoticeHost(
-                enabled: _platform == AppPlatform.web,
-                navigatorKey: _router.routerDelegate.navigatorKey,
-                child: AppImageFullscreenHost(
-                  child: ScrollConfiguration(
-                    behavior: const MaterialScrollBehavior().copyWith(
-                      dragDevices: kAppScrollDragDevices,
-                    ),
-                    child: child ?? const SizedBox.shrink(),
+              final content = AppImageFullscreenHost(
+                child: ScrollConfiguration(
+                  behavior: const MaterialScrollBehavior().copyWith(
+                    dragDevices: kAppScrollDragDevices,
                   ),
+                  child: child ?? const SizedBox.shrink(),
                 ),
               );
+              return usesAppWindowsCaption
+                  ? AppWindowsFrame(child: content)
+                  : content;
             },
           ),
         ),

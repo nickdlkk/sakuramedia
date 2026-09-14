@@ -49,6 +49,7 @@ void main() {
     );
     keepEventsProviderAlive(container, movieSubscriptionEventsProvider);
     keepEventsProviderAlive(container, movieCollectionTypeEventsProvider);
+    keepEventsProviderAlive(container, movieMediaEventsProvider);
   });
 
   tearDown(() {
@@ -67,6 +68,7 @@ void main() {
       MovieSummarySource.tags => '/movies',
       MovieSummarySource.subscribedActorsLatest =>
         '/movies/subscribed-actors/latest',
+      MovieSummarySource.blacklisted => '/movies',
       MovieSummarySource.actor => '/movies',
       MovieSummarySource.playlist => '/playlists/${scope.resourceId}/movies',
       MovieSummarySource.series => '/movies/by-series',
@@ -80,6 +82,169 @@ void main() {
     container.listen(movieSummaryProvider(scope), (_, __) {});
     return container.read(movieSummaryProvider(scope).future);
   }
+
+  test('分辨率筛选发送参数，退出可播放后清空并回到第一页', () async {
+    const scope = MovieSummaryScope.actor(actorId: 8, pageSize: 1);
+    await prime(scope, [_movie('ABC-001')]);
+    final notifier = container.read(movieSummaryProvider(scope).notifier);
+    final filter = MovieFilterState.initial.copyWith(
+      status: MovieStatusFilter.playable,
+      resolution: PlaylistResolutionFilter.k4k,
+    );
+    for (final next in [
+      filter,
+      filter.copyWith(status: MovieStatusFilter.all),
+      filter.copyWith(status: MovieStatusFilter.all).copyWith(
+        status: MovieStatusFilter.playable,
+      ),
+    ]) {
+      adapter.enqueueJson(
+        method: 'GET',
+        path: '/movies',
+        body: _page(items: [_movie('ABC-002')], total: 1, pageSize: 1),
+      );
+      await notifier.applyMovieFilter(next);
+      expect(
+        adapter.requests.last.uri.queryParameters['resolution'],
+        next.resolution?.apiValue,
+      );
+      expect(adapter.requests.last.uri.queryParameters['page'], '1');
+    }
+  });
+
+  test('媒体变更同步女优影片状态，保留已加载分页且不重拉列表', () async {
+    const scope = MovieSummaryScope.actor(actorId: 8, pageSize: 1);
+    adapter.enqueueJson(
+      method: 'GET',
+      path: '/movies',
+      body: {
+        'items': [_movie('ABC-001')],
+        'page': 1,
+        'page_size': 1,
+        'total': 3,
+      },
+    );
+    container.listen(movieSummaryProvider(scope), (_, __) {});
+    await container.read(movieSummaryProvider(scope).future);
+    adapter.enqueueJson(
+      method: 'GET',
+      path: '/movies',
+      body: {
+        'items': [_movie('ABC-002')],
+        'page': 2,
+        'page_size': 1,
+        'total': 3,
+      },
+    );
+    await container.read(movieSummaryProvider(scope).notifier).loadMore();
+    final before = container.read(movieSummaryProvider(scope)).requireValue;
+    container
+        .read(movieMediaEventsProvider.notifier)
+        .reportChange(
+          const MovieMediaChange(
+            movieNumber: 'ABC-002',
+            canPlay: false,
+            isSubscribed: true,
+          ),
+        );
+    await _settleEvents();
+    final after = container.read(movieSummaryProvider(scope)).requireValue;
+    expect(after.paged.items.map((item) => item.movieNumber), [
+      'ABC-001',
+      'ABC-002',
+    ]);
+    expect(after.paged.items.first.canPlay, isTrue);
+    expect(after.paged.items.last.canPlay, isFalse);
+    expect(after.paged.items.last.isSubscribed, isTrue);
+    expect(after.paged.currentPage, 2);
+    expect(after.paged.total, 3);
+    expect(after.paged.hasMore, isTrue);
+    expect(after.paged.syncedAt, before.paged.syncedAt);
+    expect(adapter.requests.length, 2);
+  });
+
+  for (final status in [
+    MovieStatusFilter.playable,
+    MovieStatusFilter.subscribed,
+    MovieStatusFilter.unsubscribed,
+  ]) {
+    test('媒体变更移除不符合女优影片 ${status.label} 筛选的条目', () async {
+      const scope = MovieSummaryScope.actor(actorId: 8);
+      final subscribed = status != MovieStatusFilter.unsubscribed;
+      final movies = [
+        _movie('ABC-001', isSubscribed: subscribed),
+        _movie('ABC-002', isSubscribed: subscribed),
+      ];
+      await prime(scope, movies);
+      adapter.enqueueJson(
+        method: 'GET',
+        path: '/movies',
+        body: _page(items: movies, total: 2),
+      );
+      await container
+          .read(movieSummaryProvider(scope).notifier)
+          .applyMovieFilter(MovieFilterState(status: status));
+      final event = MovieMediaChange(
+        movieNumber: 'ABC-001',
+        canPlay: false,
+        isSubscribed: !subscribed,
+      );
+      container.read(movieMediaEventsProvider.notifier).reportChange(event);
+      await _settleEvents();
+      container.read(movieMediaEventsProvider.notifier).reportChange(event);
+      await _settleEvents();
+      final state = container.read(movieSummaryProvider(scope)).requireValue;
+      expect(state.paged.items.single.movieNumber, 'ABC-002');
+      expect(state.paged.total, 1);
+      expect(state.paged.hasMore, isFalse);
+      expect(state.filter.movie.status, status);
+      expect(adapter.requests.length, 2);
+    });
+  }
+
+  test('女优已订阅筛选在强制取消完成广播后移除影片', () async {
+    const scope = MovieSummaryScope.actor(actorId: 8);
+    final movies = [_movie('ABC-001', isSubscribed: true)];
+    await prime(scope, movies);
+    adapter.enqueueJson(
+      method: 'GET',
+      path: '/movies',
+      body: _page(items: movies, total: 1),
+    );
+    await container
+        .read(movieSummaryProvider(scope).notifier)
+        .applyMovieFilter(
+          const MovieFilterState(status: MovieStatusFilter.subscribed),
+        );
+    container
+        .read(movieMediaEventsProvider.notifier)
+        .reportChange(
+          const MovieMediaChange(
+            movieNumber: 'ABC-001',
+            canPlay: false,
+            isSubscribed: true,
+          ),
+        );
+    await _settleEvents();
+    expect(
+      container
+          .read(movieSummaryProvider(scope))
+          .requireValue
+          .paged
+          .items
+          .single
+          .canPlay,
+      isFalse,
+    );
+    subscriptionBroadcaster().reportChange(
+      movieNumber: 'ABC-001',
+      isSubscribed: false,
+    );
+    await _settleEvents();
+    final state = container.read(movieSummaryProvider(scope)).requireValue;
+    expect(state.paged.items, isEmpty);
+    expect(state.paged.total, 0);
+  });
 
   test('按 scope 调用对应端点，actor 筛选写入请求参数', () async {
     const actorScope = MovieSummaryScope.actor(actorId: 8);
@@ -138,6 +303,41 @@ void main() {
       'ABC-001',
     ]);
     expect(state.paged.total, 1);
+  });
+
+  test('屏蔽影片 scope 只请求已屏蔽影片，取消屏蔽后就地移除条目', () async {
+    const scope = MovieSummaryScope.blacklisted();
+    await prime(scope, <Map<String, dynamic>>[
+      _movie('ABC-001'),
+      _movie('ABC-002'),
+    ]);
+
+    final listRequest = adapter.requests.single;
+    expect(listRequest.path, '/movies');
+    expect(listRequest.uri.queryParameters['blacklisted'], 'true');
+    expect(
+      listRequest.uri.queryParameters.containsKey('collection_type'),
+      isFalse,
+    );
+
+    adapter.enqueueJson(
+      method: 'DELETE',
+      path: '/movies/blacklist',
+      statusCode: 204,
+    );
+    await container
+        .read(movieSummaryProvider(scope).notifier)
+        .unblacklistMovie(movieNumber: 'ABC-001');
+
+    final state = container.read(movieSummaryProvider(scope)).requireValue;
+    expect(state.paged.items.map((item) => item.movieNumber), <String>[
+      'ABC-002',
+    ]);
+    expect(state.paged.total, 1);
+    expect(adapter.requests.last.method, 'DELETE');
+    expect(adapter.requests.last.body, <String, dynamic>{
+      'movie_numbers': <String>['ABC-001'],
+    });
   });
 
   test('播放列表和系列各自保持 family 实例隔离', () async {
@@ -227,7 +427,9 @@ void main() {
       isSubscribed: false,
     );
     await _settleEvents();
-    var state = container.read(movieSummaryProvider(subscribedScope)).requireValue;
+    var state = container
+        .read(movieSummaryProvider(subscribedScope))
+        .requireValue;
     expect(state.paged.items.map((item) => item.movieNumber), <String>[
       'ABC-002',
     ]);
@@ -278,6 +480,29 @@ void main() {
     final state = container.read(movieSummaryProvider(scope)).requireValue;
     expect(state.paged.items.single.isSubscribed, isTrue);
     expect(state.isSubscriptionUpdating('ABC-001'), isFalse);
+  });
+
+  test('屏蔽成功后从当前影片列表移除对应条目', () async {
+    const scope = MovieSummaryScope.latest();
+    await prime(scope, <Map<String, dynamic>>[
+      _movie('ABC-001'),
+      _movie('ABC-002'),
+    ]);
+    adapter.enqueueJson(
+      method: 'PUT',
+      path: '/movies/blacklist',
+      statusCode: 204,
+    );
+
+    await container
+        .read(movieSummaryProvider(scope).notifier)
+        .blacklistMovies(movieNumbers: const <String>['ABC-002']);
+
+    final state = container.read(movieSummaryProvider(scope)).requireValue;
+    expect(state.paged.items.map((item) => item.movieNumber), <String>[
+      'ABC-001',
+    ]);
+    expect(state.paged.total, 1);
   });
 
   test('批量取消订阅精确回滚 skipped 条目且只保留已接受变更', () async {

@@ -6,16 +6,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:oktoast/oktoast.dart';
 import 'package:sakuramedia/core/network/api_client.dart';
-import 'package:sakuramedia/core/network/sse_event_stream_client.dart';
 import 'package:sakuramedia/core/session/providers/session_store_provider.dart';
 import 'package:sakuramedia/core/session/session_store.dart';
-import 'package:sakuramedia/features/configuration/data/dto/download_client_dto.dart';
 import 'package:sakuramedia/features/downloads/data/download_candidate_dto.dart';
 import 'package:sakuramedia/features/downloads/data/download_request_dto.dart';
 import 'package:sakuramedia/features/downloads/data/downloads_api.dart';
 import 'package:sakuramedia/features/downloads/presentation/providers/downloads_api_provider.dart';
 import 'package:sakuramedia/features/movies/data/api/movies_api.dart';
 import 'package:sakuramedia/features/movies/data/dto/detail/movie_review_dto.dart';
+import 'package:sakuramedia/features/movies/data/dto/listing/movie_list_item_dto.dart';
 import 'package:sakuramedia/features/movies/data/dto/thumbnails/movie_media_thumbnail_dto.dart';
 import 'package:sakuramedia/features/movies/presentation/providers/movie_detail_magnet_provider.dart';
 import 'package:sakuramedia/features/movies/presentation/providers/movie_detail_review_provider.dart';
@@ -25,6 +24,8 @@ import 'package:sakuramedia/features/movies/presentation/widgets/detail/movie_de
 import 'package:sakuramedia/theme.dart';
 import 'package:sakuramedia/widgets/base/actions/app_button.dart';
 import 'package:sakuramedia/widgets/base/actions/app_text_button.dart';
+import 'package:sakuramedia/widgets/base/forms/app_select_field.dart';
+import 'package:sakuramedia/widgets/domain/media/media_thumbnail_action_support.dart';
 
 typedef _FetchMovieReviews =
     Future<List<MovieReviewDto>> Function({
@@ -81,10 +82,9 @@ class _FakeMoviesApi extends MoviesApi {
 class _FakeDownloadsApi extends DownloadsApi {
   _FakeDownloadsApi({
     required ApiClient apiClient,
-    required SseEventStreamClient streamClient,
     required this.searchHandler,
     required this.createHandler,
-  }) : super(apiClient: apiClient, streamClient: streamClient);
+  }) : super(apiClient: apiClient);
 
   final _SearchCandidates searchHandler;
   final _CreateDownloadRequest createHandler;
@@ -270,7 +270,11 @@ void main() {
       await tester.pump();
 
       expect(find.text('hot-review-1'), findsOneWidget);
-      expect(find.text('正在更新筛选结果'), findsOneWidget);
+      expect(find.text('正在更新筛选结果'), findsNothing);
+      expect(
+        find.byKey(const Key('app-filter-result-loading-overlay')),
+        findsNothing,
+      );
       expect(
         find.byKey(
           const Key('movie-detail-review-sort-switch-loading-spinner'),
@@ -292,6 +296,12 @@ void main() {
       await tester.pump(const Duration(milliseconds: 260));
       expect(requestCount, 2);
       expect(find.text('hot-review-1'), findsOneWidget);
+
+      await tester.pump(const Duration(milliseconds: 150));
+      expect(
+        find.byKey(const Key('app-filter-result-loading-overlay')),
+        findsOneWidget,
+      );
 
       pendingRecently.complete(<MovieReviewDto>[
         _buildReview(prefix: 'recent'),
@@ -416,7 +426,7 @@ void main() {
             ({required String movieNumber, String? indexerKind}) async {
               return const <DownloadCandidateDto>[
                 DownloadCandidateDto(
-                  source: 'torznab',
+                  sourceUri: 'provider://torznab/abcdef',
                   indexerName: 'mteam',
                   indexerKind: 'bt',
                   resolvedClientId: 2,
@@ -425,9 +435,6 @@ void main() {
                   title: 'ABC-001 4K 中文字幕',
                   sizeBytes: 12884901888,
                   seeders: 35,
-                  magnetUrl: 'magnet:?xt=urn:btih:abcdef',
-                  torrentUrl: '',
-                  tags: <String>['4K', '中字'],
                 ),
               ];
             },
@@ -467,34 +474,83 @@ void main() {
     },
   );
 
+  testWidgets(
+    'inspector keeps a selected downloader after visiting other tabs',
+    (WidgetTester tester) async {
+      const candidate = DownloadCandidateDto(
+        sourceUri: 'provider://dmhy/abcdef',
+        indexerName: 'dmhy',
+        indexerKind: 'bt',
+        resolvedClientId: 2,
+        resolvedClientName: 'qb-main',
+        downloadClients: <DownloadCandidateClientDto>[
+          DownloadCandidateClientDto(id: 2, name: 'qb-main'),
+          DownloadCandidateClientDto(id: 3, name: '115-main'),
+        ],
+        movieNumber: 'ABC-001',
+        title: 'ABC-001 中文字幕',
+        sizeBytes: 1024,
+        seeders: 8,
+      );
+      final clientSelector = find.byKey(
+        Key('movie-detail-magnet-client-${candidate.submitKey}'),
+      );
+
+      await _pumpInspectorPanel(
+        tester,
+        panelHeight: 520,
+        fetchMovieReviews:
+            ({
+              required String movieNumber,
+              required int page,
+              required int pageSize,
+              required MovieReviewSort sort,
+            }) async => const <MovieReviewDto>[],
+        searchCandidates:
+            ({required String movieNumber, String? indexerKind}) async =>
+                const <DownloadCandidateDto>[candidate],
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('磁力搜索'));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const Key('movie-detail-magnet-search-button')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(clientSelector);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('115-main').last);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('评论'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('缩略图'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('磁力搜索'));
+      await tester.pumpAndSettle();
+
+      expect(tester.widget<AppSelectField<int>>(clientSelector).value, 3);
+    },
+  );
+
   testWidgets('magnet candidate submits the explicitly selected downloader', (
     WidgetTester tester,
   ) async {
     const candidate = DownloadCandidateDto(
-      source: 'torznab',
+      sourceUri: 'provider://dmhy/abcdef',
       indexerName: 'dmhy',
       indexerKind: 'bt',
       resolvedClientId: 2,
       resolvedClientName: 'qb-main',
       downloadClients: <DownloadCandidateClientDto>[
-        DownloadCandidateClientDto(
-          id: 2,
-          name: 'qb-main',
-          kind: DownloadClientKind.qbittorrent,
-        ),
-        DownloadCandidateClientDto(
-          id: 3,
-          name: '115-main',
-          kind: DownloadClientKind.cloud115,
-        ),
+        DownloadCandidateClientDto(id: 2, name: 'qb-main'),
+        DownloadCandidateClientDto(id: 3, name: '115-main'),
       ],
       movieNumber: 'ABC-001',
       title: 'ABC-001 中文字幕',
       sizeBytes: 1024,
       seeders: 8,
-      magnetUrl: 'magnet:?xt=urn:btih:abcdef',
-      torrentUrl: '',
-      tags: <String>[],
     );
     int? submittedClientId;
 
@@ -536,7 +592,7 @@ void main() {
       find.byKey(Key('movie-detail-magnet-client-${candidate.submitKey}')),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('115-main · 115 离线').last);
+    await tester.tap(find.text('115-main').last);
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('movie-detail-magnet-submit-0')));
     await tester.pumpAndSettle();
@@ -545,10 +601,10 @@ void main() {
     await tester.pump(const Duration(seconds: 3));
   });
 
-  testWidgets('magnet candidate shows and copies its full magnet link', (
+  testWidgets('magnet candidate shows and copies its source URI', (
     WidgetTester tester,
   ) async {
-    const magnetUrl = 'magnet:?xt=urn:btih:abcdef&dn=ABC-001';
+    const sourceUri = 'provider://dmhy/abcdef?dn=ABC-001';
     Object? clipboardArguments;
     tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
       SystemChannels.platform,
@@ -580,7 +636,7 @@ void main() {
           ({required String movieNumber, String? indexerKind}) async =>
               const <DownloadCandidateDto>[
                 DownloadCandidateDto(
-                  source: 'torznab',
+                  sourceUri: sourceUri,
                   indexerName: 'dmhy',
                   indexerKind: 'bt',
                   resolvedClientId: 2,
@@ -589,9 +645,6 @@ void main() {
                   title: 'ABC-001 中文字幕',
                   sizeBytes: 1024,
                   seeders: 8,
-                  magnetUrl: magnetUrl,
-                  torrentUrl: '',
-                  tags: <String>[],
                 ),
               ],
     );
@@ -603,16 +656,16 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('磁力链接'), findsOneWidget);
-    expect(find.text(magnetUrl), findsOneWidget);
+    expect(find.text('资源地址'), findsOneWidget);
+    expect(find.text(sourceUri), findsOneWidget);
 
     final copyButton = find.byKey(const Key('movie-detail-magnet-copy-0'));
     await tester.ensureVisible(copyButton);
     await tester.tap(copyButton);
     await tester.pump();
 
-    expect(clipboardArguments, <String, dynamic>{'text': magnetUrl});
-    expect(find.text('磁力链接已复制'), findsOneWidget);
+    expect(clipboardArguments, <String, dynamic>{'text': sourceUri});
+    expect(find.text('资源地址已复制'), findsOneWidget);
     await tester.pump(const Duration(seconds: 3));
   });
 
@@ -669,6 +722,31 @@ void main() {
       );
     },
   );
+
+  test('thumbnail action descriptors disable unavailable optional actions', () {
+    const thumbnail = MovieMediaThumbnailDto(
+      thumbnailId: 56,
+      mediaId: 34,
+      offsetSeconds: 90,
+      image: MovieImageDto(id: 1, origin: '', small: '', medium: '', large: ''),
+    );
+
+    final actions = buildMediaThumbnailActionDescriptors(
+      thumbnail: thumbnail,
+      point: null,
+      canSearchSimilar: false,
+      canPlay: false,
+    );
+
+    expect(
+      actions.singleWhere((action) => action.label == '相似图片').enabled,
+      isFalse,
+    );
+    expect(
+      actions.singleWhere((action) => action.label == '播放').enabled,
+      isFalse,
+    );
+  });
 }
 
 /// 返回承载面板的 [ProviderContainer]（用 [UncontrolledProviderScope] 注入，
@@ -684,12 +762,6 @@ Future<ProviderContainer> _pumpInspectorPanel(
   final sessionStore = SessionStore.inMemory();
   final apiClient = ApiClient(sessionStore: sessionStore);
   addTearDown(apiClient.dispose);
-  final sseClient = createSseEventStreamClient(
-    apiClient: apiClient,
-    sessionStore: sessionStore,
-  );
-  addTearDown(sseClient.dispose);
-
   final fakeMoviesApi = _FakeMoviesApi(
     apiClient: apiClient,
     reviewsHandler: fetchMovieReviews,
@@ -698,7 +770,6 @@ Future<ProviderContainer> _pumpInspectorPanel(
   );
   final fakeDownloadsApi = _FakeDownloadsApi(
     apiClient: apiClient,
-    streamClient: sseClient,
     searchHandler:
         searchCandidates ??
         ({required String movieNumber, String? indexerKind}) async =>
@@ -760,10 +831,9 @@ DownloadTaskDto _emptyDownloadTask({required int clientId}) {
     clientId: clientId,
     movieNumber: null,
     name: '',
-    infoHash: '',
-    savePath: '',
+    remoteId: '',
+    state: '',
     progress: 0,
-    downloadState: '',
     importStatus: '',
     importStatusLabel: '',
     createdAt: null,

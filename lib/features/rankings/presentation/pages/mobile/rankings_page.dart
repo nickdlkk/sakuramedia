@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:sakuramedia/widgets/base/layout/scrolling/app_fixed_header_layout.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sakuramedia/app/page_cache_keys.dart';
 import 'package:sakuramedia/app/providers/riverpod_page_cache_provider.dart';
@@ -15,6 +16,7 @@ import 'package:sakuramedia/features/subscriptions/presentation/subscription_fee
 import 'package:sakuramedia/routes/app_navigation_actions.dart';
 import 'package:sakuramedia/theme.dart';
 import 'package:sakuramedia/widgets/base/actions/app_button.dart';
+import 'package:sakuramedia/widgets/base/feedback/app_filter_result_loading_overlay.dart';
 import 'package:oktoast/oktoast.dart';
 import 'package:sakuramedia/widgets/base/interaction/selection/multi_select_state_mixin.dart';
 import 'package:sakuramedia/widgets/base/layout/scrolling/app_adaptive_refresh_scroll_view.dart';
@@ -118,7 +120,35 @@ class _MobileRankingsPageState extends ConsumerState<MobileRankingsPage>
       color: context.appColors.surfaceCard,
       child: Column(
         children: [
-          Expanded(child: _buildScrollView(context, summary)),
+          Expanded(
+            child: AppFixedHeaderLayout(
+              header: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (selectionMode)
+                    buildMobileBatchSelectionHeader()
+                  else
+                    _buildHeader(context, summary),
+                  SizedBox(height: context.appSpacing.md),
+                  if (summary.filters.errorMessage != null &&
+                      summary.paged.filterUpdate.isIdle) ...[
+                    _FilterErrorBanner(
+                      message: summary.filters.errorMessage!,
+                      onRetry: () => ref
+                          .read(rankingSummaryProvider(_scope).notifier)
+                          .reloadFiltersAndData(),
+                    ),
+                    SizedBox(height: context.appSpacing.md),
+                  ],
+                ],
+              ),
+              child: AppFilterResultLoadingOverlay(
+                isLoading: summary.paged.filterUpdate.isLoading,
+                hasPreviousItems: summary.paged.items.isNotEmpty,
+                child: _buildScrollView(context, summary),
+              ),
+            ),
+          ),
           // 多选态的批量动作贴底常驻，与影片列表 / PornBox 一致。
           if (selectionMode) buildMobileBatchSelectionBottomBar(),
         ],
@@ -141,28 +171,6 @@ class _MobileRankingsPageState extends ConsumerState<MobileRankingsPage>
         SliverMainAxisGroup(
           key: const Key('mobile-rankings-page'),
           slivers: [
-            SliverToBoxAdapter(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  if (selectionMode)
-                    buildMobileBatchSelectionHeader()
-                  else
-                    _buildHeader(context, summary),
-                  SizedBox(height: context.appSpacing.md),
-                  if (summary.filters.errorMessage != null &&
-                      summary.paged.filterUpdate.isIdle) ...[
-                    _FilterErrorBanner(
-                      message: summary.filters.errorMessage!,
-                      onRetry: () => ref
-                          .read(rankingSummaryProvider(_scope).notifier)
-                          .reloadFiltersAndData(),
-                    ),
-                    SizedBox(height: context.appSpacing.md),
-                  ],
-                ],
-              ),
-            ),
             if (hasNoSources &&
                 !(summary.paged.filterUpdate.hasFailed &&
                     summary.paged.items.isEmpty))

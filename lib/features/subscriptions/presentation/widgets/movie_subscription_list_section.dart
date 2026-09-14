@@ -1,6 +1,13 @@
+import 'package:sakuramedia/widgets/base/operations/batch/batch_progress_dialog.dart';
+import 'package:sakuramedia/features/downloads/data/download_request_dto.dart';
+import 'package:sakuramedia/core/network/api_error_message.dart';
+import 'package:sakuramedia/features/downloads/presentation/providers/downloads_api_provider.dart';
+import 'package:sakuramedia/features/downloads/presentation/providers/download_task_center_provider.dart';
+import 'package:sakuramedia/widgets/domain/downloads/download_task_delete_dialog.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:sakuramedia/widgets/base/layout/scrolling/app_fixed_header_layout.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart' show HookConsumerWidget;
@@ -10,7 +17,6 @@ import 'package:sakuramedia/features/subscriptions/data/dto/movie_subscription_s
 import 'package:sakuramedia/features/subscriptions/presentation/movie_subscription_filter_state.dart';
 import 'package:sakuramedia/features/subscriptions/presentation/providers/movie_subscription_manager_provider.dart';
 import 'package:sakuramedia/features/subscriptions/presentation/providers/movie_subscription_manager_state.dart';
-import 'package:sakuramedia/features/subscriptions/presentation/providers/movie_subscription_status_counts_provider.dart';
 import 'package:sakuramedia/features/subscriptions/presentation/subscription_feedback.dart';
 import 'package:sakuramedia/features/subscriptions/presentation/widgets/movie_subscription_filter_sections.dart';
 import 'package:sakuramedia/features/subscriptions/presentation/widgets/movie_subscription_row.dart';
@@ -23,9 +29,11 @@ import 'package:sakuramedia/widgets/base/layout/cards/app_notice_card.dart';
 import 'package:sakuramedia/widgets/base/actions/app_icon_button.dart';
 import 'package:sakuramedia/widgets/base/feedback/app_confirm_dialog.dart';
 import 'package:sakuramedia/widgets/base/feedback/app_empty_state.dart';
+import 'package:sakuramedia/widgets/base/feedback/app_filter_result_loading_overlay.dart';
 import 'package:sakuramedia/widgets/base/interaction/selection/app_selection_toolbar.dart';
 import 'package:sakuramedia/widgets/base/navigation/app_list_header.dart';
 import 'package:sakuramedia/widgets/base/overlays/app_filter_popover.dart';
+import 'package:sakuramedia/widgets/domain/movies/movie_magnet_search_dialog.dart';
 
 /// 订阅管理页的列表主体：顶栏（筛选 / 计数 / 操作）+ 行卡片列表。
 ///
@@ -49,30 +57,57 @@ class MovieSubscriptionListSection extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final managerProvider = movieSubscriptionManagerProvider(
+      ref.watch(movieSubscriptionStatusSelectionProvider),
+    );
     final spacing = context.appSpacing;
     final ownedScrollController = useScrollController();
     final effectiveScrollController = scrollController ?? ownedScrollController;
-    ref.listen(
-      movieSubscriptionManagerProvider.select((value) => value.value?.filter),
-      (previous, next) {
-        if (previous != null &&
-            next != null &&
-            previous != next &&
-            effectiveScrollController.hasClients) {
-          effectiveScrollController.jumpTo(0);
+    useEffect(() {
+      void loadMoreIfNeeded() {
+        if (!effectiveScrollController.hasClients) return;
+        final current = ref.read(managerProvider).value;
+        if (current == null ||
+            current.paged.loadMoreErrorMessage != null ||
+            effectiveScrollController.position.extentAfter > 300) {
+          return;
         }
-      },
+        unawaited(ref.read(managerProvider.notifier).loadMore());
+      }
+
+      effectiveScrollController.addListener(loadMoreIfNeeded);
+      return () => effectiveScrollController.removeListener(loadMoreIfNeeded);
+    }, [effectiveScrollController, managerProvider]);
+    ref.listen(managerProvider.select((value) => value.value?.filter), (
+      previous,
+      next,
+    ) {
+      if (previous != null &&
+          next != null &&
+          previous != next &&
+          effectiveScrollController.hasClients) {
+        effectiveScrollController.jumpTo(0);
+      }
+    });
+    final paged = ref.watch(
+      managerProvider.select((asyncState) => asyncState.value?.paged),
     );
-    return CustomScrollView(
-      key: const Key('movie-subscriptions-scroll-view'),
-      controller: effectiveScrollController,
-      slivers: [
-        const SliverToBoxAdapter(child: _ListHeader()),
-        SliverToBoxAdapter(child: SizedBox(height: spacing.lg)),
-        const SliverToBoxAdapter(child: _queryExplanationTip),
-        SliverToBoxAdapter(child: SizedBox(height: spacing.md)),
-        _ListBodySliver(onOpenMovie: onOpenMovie),
-      ],
+    return AppFixedHeaderLayout(
+      header: _ListHeader(),
+      child: AppFilterResultLoadingOverlay(
+        isLoading: paged?.filterUpdate.isLoading ?? false,
+        hasPreviousItems: paged?.items.isNotEmpty ?? false,
+        child: CustomScrollView(
+          key: PageStorageKey(managerProvider),
+          controller: effectiveScrollController,
+          slivers: [
+            SliverToBoxAdapter(child: SizedBox(height: spacing.lg)),
+            const SliverToBoxAdapter(child: _queryExplanationTip),
+            SliverToBoxAdapter(child: SizedBox(height: spacing.md)),
+            _ListBodySliver(onOpenMovie: onOpenMovie),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -84,23 +119,25 @@ class _ListHeader extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final asyncState = ref.watch(movieSubscriptionManagerProvider);
+    final managerProvider = movieSubscriptionManagerProvider(
+      ref.watch(movieSubscriptionStatusSelectionProvider),
+    );
+    final asyncState = ref.watch(managerProvider);
     final current = asyncState.value;
     if (current != null && current.selectionMode) {
       return _SelectionHeader(state: current);
     }
 
-    final filter = current?.filter ?? MovieSubscriptionFilterState.initial;
+    final filter = current?.filter ??
+        MovieSubscriptionFilterState.initial.copyWith(
+          status: ref.watch(movieSubscriptionStatusSelectionProvider),
+        );
     final total = current?.paged.total ?? 0;
     final hasItems = current?.paged.items.isNotEmpty ?? false;
     final isInitialLoading = asyncState.isLoading && !asyncState.hasValue;
 
     void applyFilter(MovieSubscriptionFilterState next) {
-      unawaited(
-        ref
-            .read(movieSubscriptionManagerProvider.notifier)
-            .applyFilterState(next),
-      );
+      unawaited(ref.read(managerProvider.notifier).applyFilterState(next));
     }
 
     Widget buildPanel(BuildContext panelContext) {
@@ -125,9 +162,8 @@ class _ListHeader extends ConsumerWidget {
       filterUpdate:
           current?.paged.filterUpdate ?? const FilterUpdateState.idle(),
       hasPreviousFilterItems: hasItems,
-      onRetryFilter: () => unawaited(
-        ref.read(movieSubscriptionManagerProvider.notifier).retryFilter(),
-      ),
+      onRetryFilter: () =>
+          unawaited(ref.read(managerProvider.notifier).retryFilter()),
       informationSlots: <Widget>[
         AppListHeaderInfo(
           key: const Key('movie-subscriptions-total-info'),
@@ -135,15 +171,9 @@ class _ListHeader extends ConsumerWidget {
         ),
       ],
       actionSlots: <Widget>[
-        // 条件插槽而不是让按钮自己返回 SizedBox.shrink：AppListHeader 会在每两个
-        // 槽之间补间距，塞一个零宽 widget 会留下一道对不齐的空隙。
-        if (filter.status == MovieSubscriptionStatus.exhausted)
-          const _ResetAllExhaustedButton(),
         AppSelectionEntryButton(
           onPressed: hasItems
-              ? () => ref
-                    .read(movieSubscriptionManagerProvider.notifier)
-                    .enterSelectionMode()
+              ? () => ref.read(managerProvider.notifier).enterSelectionMode()
               : null,
         ),
         AppIconButton(
@@ -158,92 +188,76 @@ class _ListHeader extends ConsumerWidget {
 }
 
 void _refresh(WidgetRef ref) {
+  final managerProvider = movieSubscriptionManagerProvider(
+    ref.read(movieSubscriptionStatusSelectionProvider),
+  );
   unawaited(() async {
-    final message = await ref
-        .read(movieSubscriptionManagerProvider.notifier)
-        .refresh();
+    final message = await ref.read(managerProvider.notifier).refresh();
     if (message != null) showToast(message);
   }());
 }
 
-/// 「重置全部已放弃」——只在停在「已放弃」签、且确实有货时出现。
-///
-/// 刻意不做成常驻按钮：它是全量写操作，摆在别的签上既用不着，也容易在用户没看
-/// 清当前上下文时被误点。是否停在该签由调用方判定（见 [_ListHeader] 的条件插槽）。
-class _ResetAllExhaustedButton extends ConsumerWidget {
-  const _ResetAllExhaustedButton();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final exhaustedCount =
-        ref.watch(movieSubscriptionStatusCountsProvider).value?.exhausted ?? 0;
-    final isRunning = ref.watch(
-      movieSubscriptionManagerProvider.select(
-        (asyncState) =>
-            asyncState.value?.isBatchActionRunning(
-              MovieSubscriptionBatchAction.resetAllExhausted,
-            ) ??
-            false,
-      ),
-    );
-    if (exhaustedCount <= 0) {
-      return const SizedBox.shrink();
-    }
-
-    return AppButton(
-      key: const Key('movie-subscriptions-reset-all-exhausted-button'),
-      label: '重置全部（$exhaustedCount）',
-      size: AppButtonSize.small,
-      variant: AppButtonVariant.primary,
-      icon: const Icon(Icons.restart_alt_rounded),
-      isLoading: isRunning,
-      onPressed: isRunning
-          ? null
-          : () => unawaited(
-              _confirmResetAllExhausted(context, ref, exhaustedCount),
-            ),
-    );
-  }
-}
-
-/// 确认后立刻关弹窗、由顶栏按钮转圈报告进度。
-///
-/// 不走 `showAppConfirmDialog` 的 `onConfirm` slot：那条路径把失败一律折成
-/// `failureFallback` 文案，而这里的失败原因（索引器不可达 / 后端 5xx）已经被
-/// `apiErrorMessage` 翻成了具体中文，丢掉可惜。
-Future<void> _confirmResetAllExhausted(
-  BuildContext context,
-  WidgetRef ref,
-  int exhaustedCount,
-) async {
-  final confirmed = await showAppConfirmDialog(
-    context,
-    dialogKey: const Key('movie-subscriptions-reset-all-exhausted-dialog'),
-    title: '重置全部已放弃的订阅？',
-    message:
-        '$exhaustedCount 部影片会回到资源查询队列，下一轮定时任务重新去找种子。\n'
-        '注意：已判死的种子仍在选种黑名单里——重置是让它们去找别的种子，不是重试同一个。',
-    confirmLabel: '全部重置',
-  );
-  if (!confirmed) return;
-
-  final result = await ref
-      .read(movieSubscriptionManagerProvider.notifier)
-      .resetAllExhausted();
-  showToast(result.errorMessage ?? '已重置 ${result.affectedCount} 部影片的查询状态');
-}
-
 // --- 多选态顶栏 --------------------------------------------------------------
 
-class _SelectionHeader extends ConsumerWidget {
+class _SelectionHeader extends HookConsumerWidget {
   const _SelectionHeader({required this.state});
 
   final MovieSubscriptionManagerState state;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final notifier = ref.read(movieSubscriptionManagerProvider.notifier);
-    final busy = state.isBatchRunning;
+    final managerProvider = movieSubscriptionManagerProvider(
+      ref.watch(movieSubscriptionStatusSelectionProvider),
+    );
+    final notifier = ref.read(managerProvider.notifier);
+    final loadingDownloads = useState(false);
+    final busy = state.isBatchRunning || loadingDownloads.value;
+
+    Future<void> deleteDownloads() async {
+      loadingDownloads.value = true;
+      try {
+        final tasks = <DownloadTaskDto>[];
+        final result = await runBatchOperation<String>(
+          context,
+          title: '正在查询下载任务',
+          items: state.selectedMovieNumbers.toList(),
+          action: (number) async {
+            tasks.addAll(await ref.refresh(movieDownloadTasksProvider(number).future));
+          },
+        );
+        if (!context.mounted) return;
+        loadingDownloads.value = false;
+        if (result.failed.isNotEmpty) return;
+        if (tasks.isEmpty) {
+          showToast('所选影片没有下载任务');
+          return;
+        }
+        final api = ref.read(downloadsApiProvider);
+        var removed = 0;
+        await showDownloadTaskDeleteDialog(
+          context,
+          tasks: tasks,
+          showProgress: true,
+          onDelete: (id, deleteFiles) async {
+            await api.deleteDownloadTask(id, deleteFiles: deleteFiles);
+            removed++;
+          },
+        );
+        if (!context.mounted) return;
+        if (removed > 0) {
+          ref.invalidate(downloadTaskCenterProvider);
+          await notifier.refresh();
+          if (context.mounted) showToast('已删除 $removed 个下载任务');
+        }
+      } catch (error) {
+        if (context.mounted) {
+          showToast(apiErrorMessage(error, fallback: '下载任务加载失败'));
+        }
+      } finally {
+        if (context.mounted) loadingDownloads.value = false;
+      }
+    }
+
     final loadedCount = state.paged.items.length;
     final allSelected = loadedCount > 0 && state.selectionCount >= loadedCount;
     final selectAllLabel = allSelected ? '取消全选' : '全选（$loadedCount）';
@@ -259,35 +273,33 @@ class _SelectionHeader extends ConsumerWidget {
           : notifier.toggleSelectAllLoaded,
       exitKey: const Key('movie-subscriptions-selection-exit'),
       onExit: busy ? null : notifier.exitSelectionMode,
-      actions: _buildBatchActions(context, ref, state),
+      actions: _buildBatchActions(
+        context, ref, state,
+        loadingDownloads: loadingDownloads.value,
+        onDeleteDownloads: () => unawaited(deleteDownloads()),
+      ),
     );
   }
 }
 
-/// 多选态顶栏里的批量动作按钮。
-///
-/// 「只让正在执行的那一个 `isLoading`，其余禁用」——批量动作互斥，同时转两个圈会
-/// 让人以为发了两个请求。
+/// 多选态顶栏里的批量操作。
 List<Widget> _buildBatchActions(
   BuildContext context,
   WidgetRef ref,
-  MovieSubscriptionManagerState state,
-) {
-  final busy = state.isBatchRunning;
-  final resettableCount = state.resettableSelectionCount;
+  MovieSubscriptionManagerState state, {
+  required bool loadingDownloads,
+  required VoidCallback onDeleteDownloads,
+}) {
+  final busy = state.isBatchRunning || loadingDownloads;
   return <Widget>[
     AppButton(
-      key: const Key('movie-subscriptions-batch-reset-button'),
-      label: '重置查询（$resettableCount）',
+      key: const Key('movie-subscriptions-batch-delete-downloads-button'),
+      label: '删除下载任务',
       size: AppButtonSize.small,
-      variant: AppButtonVariant.secondary,
-      icon: const Icon(Icons.restart_alt_rounded),
-      isLoading: state.isBatchActionRunning(
-        MovieSubscriptionBatchAction.resetSearch,
-      ),
-      onPressed: busy || resettableCount == 0
-          ? null
-          : () => unawaited(_runBatchReset(ref)),
+      variant: AppButtonVariant.danger,
+      icon: const Icon(Icons.delete_outline_rounded),
+      isLoading: loadingDownloads,
+      onPressed: busy || !state.hasSelection ? null : onDeleteDownloads,
     ),
     AppButton(
       key: const Key('movie-subscriptions-batch-unsubscribe-button'),
@@ -305,25 +317,12 @@ List<Widget> _buildBatchActions(
   ];
 }
 
-/// 批量重置不弹确认：它是可逆的加法（把影片放回队列），最坏结果只是多打一轮索引器。
-Future<void> _runBatchReset(WidgetRef ref) async {
-  final result = await ref
-      .read(movieSubscriptionManagerProvider.notifier)
-      .batchResetSearch();
-  final message = result.errorMessage;
-  if (message != null) {
-    showToast(message);
-    return;
-  }
-  if (result.affectedCount == 0) return;
-  showToast('已重置 ${result.affectedCount} 部影片的查询状态');
-}
-
 Future<void> _confirmBatchUnsubscribe(
   BuildContext context,
   WidgetRef ref,
   MovieSubscriptionManagerState state,
 ) async {
+  final managerProvider = movieSubscriptionManagerProvider(state.filter.status);
   final count = state.selectionCount;
   final confirmed = await showAppConfirmDialog(
     context,
@@ -335,9 +334,7 @@ Future<void> _confirmBatchUnsubscribe(
   );
   if (!confirmed) return;
 
-  final result = await ref
-      .read(movieSubscriptionManagerProvider.notifier)
-      .batchUnsubscribe();
+  final result = await ref.read(managerProvider.notifier).batchUnsubscribe();
   if (!context.mounted) return;
   await showMovieSubscriptionBatchFeedback(context, result, subscribe: false);
 }
@@ -363,14 +360,17 @@ class _ListBodySliver extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final managerProvider = movieSubscriptionManagerProvider(
+      ref.watch(movieSubscriptionStatusSelectionProvider),
+    );
     // 只订阅 paged 段：多选 / 进行中集合变化时它保持相等，列表 sliver 不整体重建，
     // 每行由 [_RowConsumer] 各自订阅自己的选中 / pending 态。
     final asyncPaged = ref.watch(
-      movieSubscriptionManagerProvider.select(
+      managerProvider.select(
         (asyncState) => asyncState.whenData((state) => state.paged),
       ),
     );
-    final notifier = ref.read(movieSubscriptionManagerProvider.notifier);
+    final notifier = ref.read(managerProvider.notifier);
 
     // 不传 fixedItemExtent：错误行是条件渲染、进度行会换行，行高本来就不固定，
     // 强行给固定 extent 会让内容溢出。
@@ -402,11 +402,12 @@ class _EmptyState extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final managerProvider = movieSubscriptionManagerProvider(
+      ref.watch(movieSubscriptionStatusSelectionProvider),
+    );
     final filter =
         ref.watch(
-          movieSubscriptionManagerProvider.select(
-            (asyncState) => asyncState.value?.filter,
-          ),
+          managerProvider.select((asyncState) => asyncState.value?.filter),
         ) ??
         MovieSubscriptionFilterState.initial;
 
@@ -477,11 +478,9 @@ class _EmptyState extends ConsumerWidget {
             label: '查看全部订阅',
             size: AppButtonSize.small,
             variant: AppButtonVariant.secondary,
-            onPressed: () => unawaited(
-              ref
-                  .read(movieSubscriptionManagerProvider.notifier)
-                  .applyStatus(null),
-            ),
+            onPressed: () => ref
+                .read(movieSubscriptionStatusSelectionProvider.notifier)
+                .select(null),
           ),
         ],
       ],
@@ -490,7 +489,7 @@ class _EmptyState extends ConsumerWidget {
 }
 
 /// 单行的订阅者：只 watch 自己的选中 / pending 态，避免整表重建。
-class _RowConsumer extends ConsumerWidget {
+class _RowConsumer extends HookConsumerWidget {
   const _RowConsumer({required this.item, required this.onOpenMovie});
 
   final MovieSubscriptionListItemDto item;
@@ -498,52 +497,93 @@ class _RowConsumer extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final managerProvider = movieSubscriptionManagerProvider(
+      ref.watch(movieSubscriptionStatusSelectionProvider),
+    );
     final selectionMode = ref.watch(
-      movieSubscriptionManagerProvider.select(
+      managerProvider.select(
         (asyncState) => asyncState.value?.selectionMode ?? false,
       ),
     );
     final isSelected = ref.watch(
-      movieSubscriptionManagerProvider.select(
+      managerProvider.select(
         (asyncState) => asyncState.value?.isSelected(item.movieNumber) ?? false,
       ),
     );
     final isPending = ref.watch(
-      movieSubscriptionManagerProvider.select(
+      managerProvider.select(
         (asyncState) => asyncState.value?.isPending(item.movieNumber) ?? false,
       ),
     );
-    final notifier = ref.read(movieSubscriptionManagerProvider.notifier);
+    final notifier = ref.read(managerProvider.notifier);
+    final deleting = useState(false);
+    final tasksProvider = movieDownloadTasksProvider(item.movieNumber);
+    final tasks = ref.watch(tasksProvider).value;
 
     return MovieSubscriptionRow(
       item: item,
       selectionMode: selectionMode,
       isSelected: isSelected,
-      isPending: isPending,
+      isPending: isPending || deleting.value,
       onTap: selectionMode
           ? () => notifier.toggleSelection(item.movieNumber)
           : () => onOpenMovie(context, item.movieNumber),
-      onOpenDownloads: () =>
-          context.goDesktopDownloadTasks(movieNumber: item.movieNumber),
-      onOpenImportJob: () => context.goDesktopMediaImport(),
-      onResetSearch: () => unawaited(_resetRow(ref, item.movieNumber)),
+      onOpenDownloads: tasks?.isNotEmpty == true
+          ? () => context.goDesktopDownloadTasks(movieNumber: item.movieNumber)
+          : null,
+      onSearchMagnet: () => showMovieMagnetSearchDialog(
+        context: context,
+        movieNumber: item.movieNumber,
+      ),
+      onDeleteDownloads: tasks == null || tasks.isEmpty
+          ? null
+          : () async {
+              deleting.value = true;
+              try {
+                final currentTasks = await ref.refresh(tasksProvider.future);
+                if (!context.mounted) return;
+                if (currentTasks.isEmpty) {
+                  showToast('下载任务已不存在');
+                  await notifier.refresh();
+                  return;
+                }
+                final api = ref.read(downloadsApiProvider);
+                deleting.value = false;
+                var removed = false;
+                await showDownloadTaskDeleteDialog(
+                  context,
+                  tasks: currentTasks,
+                  onDelete: (id, deleteFiles) async {
+                    await api.deleteDownloadTask(id, deleteFiles: deleteFiles);
+                    removed = true;
+                  },
+                );
+                if (!context.mounted) return;
+                if (removed) {
+                  ref.invalidate(downloadTaskCenterProvider);
+                  await notifier.refresh();
+                }
+              } catch (error) {
+                if (context.mounted) {
+                  showToast(apiErrorMessage(error, fallback: '下载任务加载失败'));
+                }
+              } finally {
+                if (context.mounted) deleting.value = false;
+              }
+            },
       onUnsubscribe: () => unawaited(_unsubscribeRow(ref, item.movieNumber)),
     );
   }
 }
 
-Future<void> _resetRow(WidgetRef ref, String movieNumber) async {
-  final result = await ref
-      .read(movieSubscriptionManagerProvider.notifier)
-      .resetSearch(movieNumber);
-  showToast(result.errorMessage ?? '已重置 $movieNumber 的查询状态');
-}
-
 /// 单条取消订阅不弹确认：它是可逆的（重新订阅即可）、也不删任何文件，
 /// 二次确认只会让日常清理变啰嗦。批量才确认——那一下影响面大得多。
 Future<void> _unsubscribeRow(WidgetRef ref, String movieNumber) async {
+  final managerProvider = movieSubscriptionManagerProvider(
+    ref.read(movieSubscriptionStatusSelectionProvider),
+  );
   final result = await ref
-      .read(movieSubscriptionManagerProvider.notifier)
+      .read(managerProvider.notifier)
       .unsubscribe(movieNumber);
   showMovieSubscriptionFeedback(result);
 }

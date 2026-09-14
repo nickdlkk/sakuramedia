@@ -1,9 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sakuramedia/core/network/api_client.dart';
-import 'package:sakuramedia/core/network/api_exception.dart';
 import 'package:sakuramedia/core/session/session_store.dart';
-import 'package:sakuramedia/features/media_import/data/filesystem_entry_dto.dart';
-import 'package:sakuramedia/features/media_import/data/import_job_dto.dart';
 import 'package:sakuramedia/features/media_import/data/media_import_api.dart';
 import 'package:sakuramedia/features/media_import/data/media_import_source.dart';
 
@@ -36,378 +33,106 @@ void main() {
     sessionStore.dispose();
   });
 
-  test('listEntries parses listing and omits empty path query', () async {
+  test('browseSources posts the library and opaque parent reference', () async {
     adapter.enqueueJson(
-      method: 'GET',
-      path: '/filesystem/entries',
+      method: 'POST',
+      path: '/import-sources/browse',
       body: <String, dynamic>{
-        'path': '/mnt/incoming',
-        'parent': '/mnt',
+        'library_id': 7,
         'entries': <Map<String, dynamic>>[
           <String, dynamic>{
-            'name': 'movies',
-            'path': '/mnt/incoming/movies',
-            'type': 'dir',
-            'size': 0,
+            'source_ref': <String, dynamic>{'id': 'folder-1'},
+            'name': 'Movies',
+            'entry_type': 'directory',
+            'size_bytes': null,
+            'modified_at': null,
             'is_video': false,
           },
-          <String, dynamic>{
-            'name': 'ABP-123.mp4',
-            'path': '/mnt/incoming/ABP-123.mp4',
-            'type': 'video',
-            'size': 2147483648,
-            'is_video': true,
-          },
         ],
+        'next_cursor': 'next-page',
       },
     );
 
-    final listing = await api.listEntries();
+    final page = await api.browseSources(
+      libraryId: 7,
+      parentRef: <String, dynamic>{'id': 'root'},
+      cursor: 'cursor-1',
+      limit: 25,
+    );
 
-    expect(listing.path, '/mnt/incoming');
-    expect(listing.parent, '/mnt');
-    expect(listing.isRootsOverview, isFalse);
-    expect(listing.entries, hasLength(2));
-    expect(listing.entries.first.type, FilesystemEntryType.dir);
-    expect(listing.entries.first.isDirectory, isTrue);
-    expect(listing.entries[1].type, FilesystemEntryType.video);
-    expect(listing.entries[1].size, 2147483648);
-
-    final request = adapter.requests.single;
-    expect(request.uri.queryParameters.containsKey('path'), isFalse);
+    expect(page.libraryId, 7);
+    expect(page.entries.single.sourceRef, <String, dynamic>{'id': 'folder-1'});
+    expect(page.entries.single.isDirectory, isTrue);
+    expect(page.nextCursor, 'next-page');
+    expect(adapter.requests.single.body, <String, dynamic>{
+      'library_id': 7,
+      'parent_ref': <String, dynamic>{'id': 'root'},
+      'cursor': 'cursor-1',
+      'limit': 25,
+    });
   });
 
-  test('listEntries forwards path query when provided', () async {
+  test('createImport posts provider-neutral video contract', () async {
     adapter.enqueueJson(
-      method: 'GET',
-      path: '/filesystem/entries',
+      method: 'POST',
+      path: '/imports',
+      statusCode: 202,
       body: <String, dynamic>{
-        'path': '/mnt/incoming/movies',
-        'parent': '/mnt/incoming',
-        'entries': <Map<String, dynamic>>[],
+        'task_run_id': 42,
+        'task_key': 'media_import',
+        'state': 'accepted',
       },
     );
 
-    await api.listEntries(path: '/mnt/incoming/movies');
-
-    expect(
-      adapter.requests.single.uri.queryParameters['path'],
-      '/mnt/incoming/movies',
+    final response = await api.createImport(
+      mediaKind: 'video',
+      libraryId: 1,
+      source: const MediaImportSource(
+        sourceRef: <String, dynamic>{'provider_id': 'file-1'},
+      ),
+      sourceDisposition: SourceDisposition.keep,
+      collectionId: 9,
     );
+
+    expect(response.taskRunId, 42);
+    expect(adapter.requests.single.body, <String, dynamic>{
+      'media_kind': 'video',
+      'library_id': 1,
+      'source_ref': <String, dynamic>{'provider_id': 'file-1'},
+      'source_disposition': 'keep',
+      'collection_id': 9,
+    });
   });
 
   test(
-    'createImportJob sends transfer_mode wire value and parses response',
+    'createImport supports delete_after_commit without provider fields',
     () async {
       adapter.enqueueJson(
         method: 'POST',
-        path: '/import-jobs',
+        path: '/imports',
         statusCode: 202,
         body: <String, dynamic>{
-          'import_job_id': 7,
-          'task_run_id': 42,
-          'status': 'pending',
+          'task_run_id': 43,
+          'task_key': 'jav_import',
+          'state': 'pending',
         },
       );
 
-      final response = await api.createImportJob(
-        libraryId: 1,
-        source: const MediaImportSource.local('/mnt/incoming/movies'),
-        transferMode: TransferMode.cleanupSource,
+      await api.createImport(
+        mediaKind: 'jav',
+        libraryId: 2,
+        source: const MediaImportSource(
+          sourceRef: <String, dynamic>{'opaque': true},
+        ),
+        sourceDisposition: SourceDisposition.deleteAfterCommit,
       );
 
-      expect(response.importJobId, 7);
-      expect(response.taskRunId, 42);
-      expect(response.status, 'pending');
-
-      final body = adapter.requests.single.body as Map;
-      expect(body['library_id'], 1);
-      expect(body['source_path'], '/mnt/incoming/movies');
-      expect(body['transfer_mode'], 'cleanup-source');
+      expect(adapter.requests.single.body, <String, dynamic>{
+        'media_kind': 'jav',
+        'library_id': 2,
+        'source_ref': <String, dynamic>{'opaque': true},
+        'source_disposition': 'delete_after_commit',
+      });
     },
   );
-
-  test('createImportJob surfaces 409 conflict as ApiException', () async {
-    adapter.enqueueJson(
-      method: 'POST',
-      path: '/import-jobs',
-      statusCode: 409,
-      body: <String, dynamic>{
-        'error': <String, dynamic>{
-          'code': 'media_import_conflict',
-          'message': '同库同源正在导入',
-        },
-      },
-    );
-
-    await expectLater(
-      api.createImportJob(
-        libraryId: 1,
-        source: const MediaImportSource.local('/mnt/x'),
-      ),
-      throwsA(
-        isA<ApiException>()
-            .having((e) => e.statusCode, 'statusCode', 409)
-            .having((e) => e.error?.code, 'code', 'media_import_conflict'),
-      ),
-    );
-  });
-
-  test('createImportJob sends source_cid and copy for cloud115', () async {
-    adapter.enqueueJson(
-      method: 'POST',
-      path: '/import-jobs',
-      statusCode: 202,
-      body: <String, dynamic>{
-        'import_job_id': 8,
-        'task_run_id': 43,
-        'status': 'pending',
-      },
-    );
-
-    await api.createImportJob(
-      libraryId: 2,
-      source: const MediaImportSource.cloud115('cid-source'),
-      transferMode: TransferMode.copy,
-    );
-
-    final body = adapter.requests.single.body as Map;
-    expect(body, <String, dynamic>{
-      'library_id': 2,
-      'source_cid': 'cid-source',
-      'transfer_mode': 'copy',
-    });
-    expect(body.containsKey('source_path'), isFalse);
-  });
-
-  test('listImportJobs parses paginated jobs', () async {
-    adapter.enqueueJson(
-      method: 'GET',
-      path: '/import-jobs',
-      body: <String, dynamic>{
-        'items': <Map<String, dynamic>>[
-          <String, dynamic>{
-            'id': 3,
-            'source_path': '/mnt/incoming/movies',
-            'library_id': 1,
-            'task_run_id': 42,
-            'state': 'running',
-            'transfer_mode': 'auto',
-            'imported_count': 2,
-            'skipped_count': 1,
-            'failed_count': 0,
-            'created_at': '2026-06-07 10:00:00',
-            'updated_at': '2026-06-07 10:01:00',
-          },
-        ],
-        'page': 1,
-        'page_size': 20,
-        'total': 1,
-      },
-    );
-
-    final page = await api.listImportJobs();
-
-    expect(page.total, 1);
-    expect(page.items, hasLength(1));
-    final job = page.items.single;
-    expect(job.id, 3);
-    expect(job.taskRunId, 42);
-    expect(job.state, 'running');
-    expect(job.transferMode, TransferMode.auto);
-    expect(job.isTerminal, isFalse);
-    expect(job.importedCount, 2);
-  });
-
-  test('listImportJobs recognizes cloud115 source and copy mode', () async {
-    adapter.enqueueJson(
-      method: 'GET',
-      path: '/import-jobs',
-      body: <String, dynamic>{
-        'items': <Map<String, dynamic>>[
-          <String, dynamic>{
-            'id': 4,
-            'source_path': 'cloud115:cid-source',
-            'source_cid': 'cid-source',
-            'library_id': 2,
-            'task_run_id': 43,
-            'state': 'pending',
-            'transfer_mode': 'copy',
-            'imported_count': 0,
-            'skipped_count': 0,
-            'failed_count': 0,
-            'created_at': '2026-07-14 10:00:00',
-            'updated_at': '2026-07-14 10:00:00',
-          },
-        ],
-        'page': 1,
-        'page_size': 20,
-        'total': 1,
-      },
-    );
-
-    final job = (await api.listImportJobs()).items.single;
-
-    expect(job.sourceCid, 'cid-source');
-    expect(job.isCloud115, isTrue);
-    expect(job.canMutateFailedSource, isFalse);
-    expect(job.displaySourcePath, '115 网盘目录');
-    expect(job.transferMode, TransferMode.copy);
-    expect(job.transferMode.label, '复制并保留源文件');
-  });
-
-  test('getImportJob parses failed files with kinds', () async {
-    adapter.enqueueJson(
-      method: 'GET',
-      path: '/import-jobs/3',
-      body: _jobDetailBody(),
-    );
-
-    final job = await api.getImportJob(3);
-
-    expect(job.id, 3);
-    expect(job.state, 'completed');
-    expect(job.isTerminal, isTrue);
-    expect(job.failedFiles, hasLength(3));
-    expect(job.failedFiles[0].kind, FailedFileKind.file);
-    expect(job.failedFiles[0].isActionable, isTrue);
-    expect(job.failedFiles[1].kind, FailedFileKind.skipped);
-    expect(job.failedFiles[1].isActionable, isFalse);
-    expect(job.failedFiles[2].kind, FailedFileKind.warning);
-    expect(job.actionableFailedFiles, hasLength(1));
-  });
-
-  test('retryFailedFiles posts selected files', () async {
-    adapter.enqueueJson(
-      method: 'POST',
-      path: '/import-jobs/3/retry',
-      statusCode: 202,
-      body: <String, dynamic>{
-        'import_job_id': 9,
-        'task_run_id': 50,
-        'status': 'pending',
-      },
-    );
-
-    final response = await api.retryFailedFiles(
-      3,
-      files: <String>['/mnt/incoming/movies/ABP-123.mp4'],
-    );
-
-    expect(response.importJobId, 9);
-    final body = adapter.requests.single.body as Map;
-    expect(body['files'], <String>['/mnt/incoming/movies/ABP-123.mp4']);
-  });
-
-  test('retryFailedFiles omits files key when null (retry all)', () async {
-    adapter.enqueueJson(
-      method: 'POST',
-      path: '/import-jobs/3/retry',
-      statusCode: 202,
-      body: <String, dynamic>{
-        'import_job_id': 9,
-        'task_run_id': 50,
-        'status': 'pending',
-      },
-    );
-
-    await api.retryFailedFiles(3);
-
-    final body = adapter.requests.single.body as Map;
-    expect(body.containsKey('files'), isFalse);
-  });
-
-  test('deleteFailedFile sends path and parses updated job', () async {
-    adapter.enqueueJson(
-      method: 'DELETE',
-      path: '/import-jobs/3/failed-files',
-      body: _jobDetailBody(),
-    );
-
-    final job = await api.deleteFailedFile(
-      3,
-      path: '/mnt/incoming/movies/ABP-123.mp4',
-    );
-
-    expect(job.id, 3);
-    final body = adapter.requests.single.body as Map;
-    expect(body['path'], '/mnt/incoming/movies/ABP-123.mp4');
-  });
-
-  test('renameFailedFile sends path and new_name', () async {
-    adapter.enqueueJson(
-      method: 'POST',
-      path: '/import-jobs/3/failed-files/rename',
-      body: _jobDetailBody(),
-    );
-
-    await api.renameFailedFile(
-      3,
-      path: '/mnt/incoming/movies/raw.mp4',
-      newName: 'ABP-123.mp4',
-    );
-
-    final body = adapter.requests.single.body as Map;
-    expect(body['path'], '/mnt/incoming/movies/raw.mp4');
-    expect(body['new_name'], 'ABP-123.mp4');
-  });
-
-  test('renameFailedFile surfaces 422 invalid_new_name', () async {
-    adapter.enqueueJson(
-      method: 'POST',
-      path: '/import-jobs/3/failed-files/rename',
-      statusCode: 422,
-      body: <String, dynamic>{
-        'error': <String, dynamic>{
-          'code': 'invalid_new_name',
-          'message': '文件名非法',
-        },
-      },
-    );
-
-    await expectLater(
-      api.renameFailedFile(3, path: '/mnt/x', newName: '../evil'),
-      throwsA(
-        isA<ApiException>()
-            .having((e) => e.statusCode, 'statusCode', 422)
-            .having((e) => e.error?.code, 'code', 'invalid_new_name'),
-      ),
-    );
-  });
-}
-
-Map<String, dynamic> _jobDetailBody() {
-  return <String, dynamic>{
-    'id': 3,
-    'source_path': '/mnt/incoming/movies',
-    'library_id': 1,
-    'task_run_id': 42,
-    'state': 'completed',
-    'transfer_mode': 'auto',
-    'imported_count': 5,
-    'skipped_count': 1,
-    'failed_count': 2,
-    'created_at': '2026-06-07 10:00:00',
-    'updated_at': '2026-06-07 10:05:00',
-    'failed_files': <Map<String, dynamic>>[
-      <String, dynamic>{
-        'path': '/mnt/incoming/movies/ABP-123.mp4',
-        'reason': 'movie_number_not_found',
-        'detail': '',
-        'kind': 'file',
-      },
-      <String, dynamic>{
-        'path': '/mnt/incoming/movies/sample.mp4',
-        'reason': 'file_too_small',
-        'detail': '',
-        'kind': 'skipped',
-      },
-      <String, dynamic>{
-        'path': '/mnt/incoming/movies/ABP-999.mp4',
-        'reason': 'source_delete_failed',
-        'detail': '',
-        'kind': 'warning',
-      },
-    ],
-  };
 }

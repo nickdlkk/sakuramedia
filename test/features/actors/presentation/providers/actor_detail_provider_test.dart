@@ -51,13 +51,13 @@ void main() {
     addTearDown(subscription.close);
 
     expect(
-      (await container.read(actorDetailProvider(1).future)).actor?.name,
+      (await container.read(actorDetailProvider(1).future)).actor?.summary.name,
       'Old actor',
     );
     await container.read(actorDetailProvider(1).notifier).refresh();
 
     expect(
-      container.read(actorDetailProvider(1)).requireValue.actor?.name,
+      container.read(actorDetailProvider(1)).requireValue.actor?.summary.name,
       'New actor',
     );
   });
@@ -89,7 +89,7 @@ void main() {
     );
 
     expect(
-      container.read(actorDetailProvider(1)).requireValue.actor?.name,
+      container.read(actorDetailProvider(1)).requireValue.actor?.summary.name,
       'Old actor',
     );
   });

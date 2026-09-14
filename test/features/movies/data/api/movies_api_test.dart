@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sakuramedia/core/network/api_client.dart';
 import 'package:sakuramedia/core/network/api_exception.dart';
 import 'package:sakuramedia/core/session/session_store.dart';
+import 'package:sakuramedia/features/media/data/media_api.dart';
 import 'package:sakuramedia/features/movies/data/dto/detail/movie_collection_type_dto.dart';
 import 'package:sakuramedia/features/movies/data/dto/detail/movie_detail_dto.dart';
 import 'package:sakuramedia/features/movies/data/dto/thumbnails/movie_media_thumbnail_dto.dart';
@@ -20,6 +21,7 @@ void main() {
   late SessionStore sessionStore;
   late ApiClient apiClient;
   late MoviesApi moviesApi;
+  late MediaApi mediaApi;
   late FakeHttpClientAdapter adapter;
 
   setUp(() async {
@@ -32,6 +34,7 @@ void main() {
     );
     apiClient = ApiClient(sessionStore: sessionStore);
     moviesApi = MoviesApi(apiClient: apiClient);
+    mediaApi = MediaApi(apiClient: apiClient);
     adapter = FakeHttpClientAdapter();
     apiClient.rawDio.httpClientAdapter = adapter;
     apiClient.rawRefreshDio.httpClientAdapter = adapter;
@@ -337,6 +340,25 @@ void main() {
     expect(request.uri.queryParameters.containsKey('year'), isFalse);
   });
 
+  test('getMovies sends blacklisted filter when requested', () async {
+    adapter.enqueueJson(
+      method: 'GET',
+      path: '/movies',
+      statusCode: 200,
+      body: <String, dynamic>{
+        'items': const <Map<String, dynamic>>[],
+        'page': 1,
+        'page_size': 24,
+        'total': 0,
+      },
+    );
+
+    await moviesApi.getMovies(blacklisted: true, page: 1, pageSize: 24);
+
+    final request = adapter.requests.single;
+    expect(request.uri.queryParameters['blacklisted'], 'true');
+  });
+
   test('getMovies converts backend error to ApiException', () async {
     adapter.enqueueJson(
       method: 'GET',
@@ -606,10 +628,9 @@ void main() {
       ],
     );
 
-    final updates =
-        await moviesApi
-            .searchOnlineMoviesStream(movieNumber: 'ABP-123')
-            .toList();
+    final updates = await moviesApi
+        .searchOnlineMoviesStream(movieNumber: 'ABP-123')
+        .toList();
 
     final request = adapter.requests.single;
     expect(request.method, 'POST');
@@ -634,10 +655,9 @@ void main() {
         ],
       );
 
-      final updates =
-          await moviesApi
-              .searchOnlineMoviesStream(movieNumber: 'ABP-404')
-              .toList();
+      final updates = await moviesApi
+          .searchOnlineMoviesStream(movieNumber: 'ABP-404')
+          .toList();
 
       expect(updates.last.success, isFalse);
       expect(updates.last.reason, 'movie_not_found');
@@ -657,10 +677,9 @@ void main() {
       ],
     );
 
-    final updates =
-        await moviesApi
-            .searchOnlineMoviesStream(movieNumber: 'ABP-123')
-            .toList();
+    final updates = await moviesApi
+        .searchOnlineMoviesStream(movieNumber: 'ABP-123')
+        .toList();
 
     expect(updates.single.results.single.movieNumber, 'ABP-123');
   });
@@ -851,6 +870,7 @@ void main() {
         'score_number': 45,
         'is_collection': true,
         'is_subscribed': false,
+        'is_blacklisted': true,
         'can_play': true,
         'series_id': 7,
         'series_name': 'Series 1',
@@ -893,6 +913,14 @@ void main() {
             'large': 'plot-large.jpg',
           },
         ],
+        'merge_playback_candidates': [
+          <String, dynamic>{
+            'library_id': 9,
+            'library_name': 'VR 媒体库',
+            'provider_key': 'cloud115',
+            'segment_count': 2,
+          },
+        ],
         'playlists': [
           <String, dynamic>{
             'id': 1,
@@ -913,11 +941,11 @@ void main() {
             'library_id': 1,
             'play_url':
                 '/files/media/movies/ABC-001/video.mp4?expires=1700000900&signature=abc',
-            'storage_mode': 'hardlink',
+            'provider_key': 'filesystem',
+            'file_name': 'ABC-001.mp4',
             'resolution': '1920x1080',
             'file_size_bytes': 1073741824,
             'duration_seconds': 7200,
-            'special_tags': '普通',
             'valid': true,
             'progress': <String, dynamic>{
               'last_position_seconds': 600,
@@ -958,6 +986,7 @@ void main() {
                 },
               ],
             },
+            'playback_deliveries': const <String>['proxy', 'redirect'],
             'points': [
               <String, dynamic>{
                 'point_id': 1,
@@ -985,6 +1014,7 @@ void main() {
     expect(detail.title, 'Movie 1');
     expect(detail.preferredTitle, 'Movie 1');
     expect(detail.heat, 27);
+    expect(detail.isBlacklisted, isTrue);
     expect(detail.seriesId, 7);
     expect(detail.seriesName, 'Series 1');
     expect(detail.makerName, 'S1 NO.1 STYLE');
@@ -1011,6 +1041,9 @@ void main() {
     expect(detail.mediaItems.single.videoInfo?.subtitles.single.language, 'zh');
     expect(detail.mediaItems.single.points.single.thumbnailId, 66);
     expect(detail.mediaItems.single.points.single.offsetSeconds, 120);
+    expect(detail.mergePlaybackCandidates.single.libraryId, 9);
+    expect(detail.mergePlaybackCandidates.single.providerKey, 'cloud115');
+    expect(detail.mergePlaybackCandidates.single.segmentCount, 2);
     expect(
       detail.mediaItems.single.points.single.image?.bestAvailableUrl,
       'point-large.webp',
@@ -1019,6 +1052,29 @@ void main() {
     expect(detail.playlists.first.name, '最近播放');
     expect(detail.playlists.first.isSystem, isTrue);
     expect(detail.playlists.last.kind, 'custom');
+  });
+
+  test('getMergedPlayback requests the selected media library', () async {
+    adapter.enqueueJson(
+      method: 'GET',
+      path: '/movies/ABC-001/merged-playback',
+      statusCode: 200,
+      body: <String, dynamic>{
+        'play_url':
+            '/media/merged-play/index.m3u8?media_ids=10,11&expires=1&signature=sig',
+      },
+    );
+
+    final playback = await moviesApi.getMergedPlayback(
+      movieNumber: 'ABC-001',
+      libraryId: 9,
+    );
+
+    final request = adapter.requests.single;
+    expect(request.method, 'GET');
+    expect(request.path, '/movies/ABC-001/merged-playback');
+    expect(request.uri.queryParameters['library_id'], '9');
+    expect(playback.playUrl, contains('/media/merged-play/index.m3u8'));
   });
 
   test(
@@ -1161,28 +1217,31 @@ void main() {
     expect(detail.preferredDescription, 'summary fallback');
   });
 
-  test('getMovieDetail preferred description is empty when summary is blank', () async {
-    adapter.enqueueJson(
-      method: 'GET',
-      path: '/movies/ABC-022',
-      statusCode: 200,
-      body: <String, dynamic>{
-        'javdb_id': 'MovieA22',
-        'movie_number': 'ABC-022',
-        'title': 'Movie 22',
-        'summary': '  ',
-        'actors': const <Map<String, dynamic>>[],
-        'tags': const <Map<String, dynamic>>[],
-        'plot_images': const <Map<String, dynamic>>[],
-        'playlists': const <Map<String, dynamic>>[],
-        'media_items': const <Map<String, dynamic>>[],
-      },
-    );
+  test(
+    'getMovieDetail preferred description is empty when summary is blank',
+    () async {
+      adapter.enqueueJson(
+        method: 'GET',
+        path: '/movies/ABC-022',
+        statusCode: 200,
+        body: <String, dynamic>{
+          'javdb_id': 'MovieA22',
+          'movie_number': 'ABC-022',
+          'title': 'Movie 22',
+          'summary': '  ',
+          'actors': const <Map<String, dynamic>>[],
+          'tags': const <Map<String, dynamic>>[],
+          'plot_images': const <Map<String, dynamic>>[],
+          'playlists': const <Map<String, dynamic>>[],
+          'media_items': const <Map<String, dynamic>>[],
+        },
+      );
 
-    final detail = await moviesApi.getMovieDetail(movieNumber: 'ABC-022');
+      final detail = await moviesApi.getMovieDetail(movieNumber: 'ABC-022');
 
-    expect(detail.preferredDescription, isEmpty);
-  });
+      expect(detail.preferredDescription, isEmpty);
+    },
+  );
 
   test('getMovieDetail handles missing video info sections', () async {
     adapter.enqueueJson(
@@ -1202,17 +1261,18 @@ void main() {
             'media_id': 100,
             'library_id': 1,
             'play_url': '/files/media/movies/ABC-010/video.mp4',
-            'storage_mode': 'hardlink',
+            'provider_key': 'filesystem',
+            'file_name': 'ABC-010.mp4',
             'resolution': '1920x1080',
             'file_size_bytes': 1073741824,
             'duration_seconds': 7200,
-            'special_tags': '普通',
             'valid': true,
             'video_info': <String, dynamic>{
               'container': <String, dynamic>{'format_name': 'mp4'},
               'video': <String, dynamic>{'codec_name': 'h264'},
             },
             'points': const <Map<String, dynamic>>[],
+            'playback_deliveries': const <String>['proxy'],
           },
         ],
       },
@@ -1295,70 +1355,26 @@ void main() {
     );
   });
 
-  test('syncMovieInteraction posts rerun to unified action endpoint', () async {
-    adapter.enqueueJson(
-      method: 'POST',
-      path: '/system/resource-task-actions',
-      body: <String, dynamic>{
-        'task_key': 'movie_interaction_sync',
-        'action': 'rerun',
-        'task_run_id': 9,
-        'accepted_resource_ids': <int>[1],
-        'skipped': <Map<String, dynamic>>[],
-      },
-    );
-
-    await moviesApi.syncMovieInteraction(movieId: 1);
-
-    final request = adapter.requests.single;
-    expect(request.method, 'POST');
-    expect(request.path, '/system/resource-task-actions');
-    expect(request.body, <String, dynamic>{
-      'task_key': 'movie_interaction_sync',
-      'action': 'rerun',
-      'resource_ids': <int>[1],
-    });
-  });
-
-  test('syncMovieInteraction preserves backend ApiException payload', () async {
-    adapter.enqueueJson(
-      method: 'POST',
-      path: '/system/resource-task-actions',
-      statusCode: 502,
-      body: <String, dynamic>{
-        'error': <String, dynamic>{
-          'code': 'movie_interaction_sync_failed',
-          'message': '同步失败',
-        },
-      },
-    );
-
-    expect(
-      () => moviesApi.syncMovieInteraction(movieId: 1),
-      throwsA(
-        isA<ApiException>().having(
-          (ApiException error) => error.error?.code,
-          'error.code',
-          'movie_interaction_sync_failed',
-        ),
-      ),
-    );
-  });
-
   test('recomputeMovieHeat posts to heat recompute endpoint', () async {
     adapter.enqueueJson(
       method: 'POST',
       path: '/movies/ABC-001/heat-recompute',
-      statusCode: 200,
-      body: movieDetailBody(title: 'Recomputed movie'),
+      statusCode: 202,
+      body: <String, dynamic>{
+        'task_run_id': 42,
+        'task_key': 'movie_heat_update',
+        'state': 'pending',
+      },
     );
 
-    final detail = await moviesApi.recomputeMovieHeat(movieNumber: 'ABC-001');
+    final accepted = await moviesApi.recomputeMovieHeat(movieNumber: 'ABC-001');
 
     final request = adapter.requests.single;
     expect(request.method, 'POST');
     expect(request.path, '/movies/ABC-001/heat-recompute');
-    expect(detail.title, 'Recomputed movie');
+    expect(accepted.taskRunId, 42);
+    expect(accepted.taskKey, 'movie_heat_update');
+    expect(accepted.state, 'pending');
   });
 
   test('recomputeMovieHeat preserves backend ApiException payload', () async {
@@ -1536,7 +1552,7 @@ void main() {
       ],
     );
 
-    final thumbnails = await moviesApi.getMediaThumbnails(mediaId: 100);
+    final thumbnails = await mediaApi.getMediaThumbnails(mediaId: 100);
 
     expect(thumbnails, hasLength(1));
     expect(thumbnails.single, isA<MovieMediaThumbnailDto>());
@@ -1572,7 +1588,7 @@ void main() {
         ],
       );
 
-      final thumbnails = await moviesApi.getMediaThumbnails(mediaId: 100);
+      final thumbnails = await mediaApi.getMediaThumbnails(mediaId: 100);
 
       expect(thumbnails.single.width, isNull);
       expect(thumbnails.single.height, isNull);
@@ -1589,7 +1605,7 @@ void main() {
         body: const <Map<String, dynamic>>[],
       );
 
-      final thumbnails = await moviesApi.getMediaThumbnails(mediaId: 100);
+      final thumbnails = await mediaApi.getMediaThumbnails(mediaId: 100);
 
       expect(thumbnails, isEmpty);
     },
@@ -1609,7 +1625,7 @@ void main() {
     );
 
     expect(
-      () => moviesApi.getMediaThumbnails(mediaId: 404),
+      () => mediaApi.getMediaThumbnails(mediaId: 404),
       throwsA(
         isA<ApiException>()
             .having((ApiException error) => error.statusCode, 'statusCode', 404)
@@ -1636,7 +1652,7 @@ void main() {
         },
       );
 
-      final progress = await moviesApi.updateMediaProgress(
+      final progress = await mediaApi.updateMediaProgress(
         mediaId: 100,
         positionSeconds: 615,
       );
@@ -1665,7 +1681,7 @@ void main() {
     );
 
     expect(
-      () => moviesApi.updateMediaProgress(mediaId: 100, positionSeconds: 615),
+      () => mediaApi.updateMediaProgress(mediaId: 100, positionSeconds: 615),
       throwsA(
         isA<ApiException>().having(
           (ApiException error) => error.error?.code,
@@ -1750,6 +1766,39 @@ void main() {
       MovieSubscriptionSkipReason.movieNotFound,
     );
   });
+
+  test(
+    'setMoviesBlacklisted uses the blacklist endpoint for both states',
+    () async {
+      adapter
+        ..enqueueJson(method: 'PUT', path: '/movies/blacklist', statusCode: 204)
+        ..enqueueJson(
+          method: 'DELETE',
+          path: '/movies/blacklist',
+          statusCode: 204,
+        );
+
+      await moviesApi.setMoviesBlacklisted(
+        movieNumbers: const <String>['ABC-001', 'ABC-002'],
+        isBlacklisted: true,
+      );
+      await moviesApi.setMoviesBlacklisted(
+        movieNumbers: const <String>['ABC-001'],
+        isBlacklisted: false,
+      );
+
+      expect(adapter.requests.map((request) => request.method), <String>[
+        'PUT',
+        'DELETE',
+      ]);
+      expect(adapter.requests.first.body, <String, dynamic>{
+        'movie_numbers': <String>['ABC-001', 'ABC-002'],
+      });
+      expect(adapter.requests.last.body, <String, dynamic>{
+        'movie_numbers': <String>['ABC-001'],
+      });
+    },
+  );
 
   test('batchUnsubscribeMovies posts to unsubscriptions endpoint and parses '
       'has_media skip reason', () async {

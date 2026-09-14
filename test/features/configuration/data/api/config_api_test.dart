@@ -1,174 +1,109 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sakuramedia/core/session/session_store.dart';
-import 'package:sakuramedia/features/configuration/data/dto/config_dto.dart';
-import 'package:sakuramedia/features/configuration/data/dto/download_client_dto.dart';
 
 import '../../../../support/test_api_bundle.dart';
 
 void main() {
-  group('ConfigApi', () {
-    test('gets only advanced config sections from /config', () async {
-      final sessionStore = await _buildLoggedInSessionStore();
-      final bundle = await createTestApiBundle(sessionStore);
-      addTearDown(bundle.dispose);
+  test('GET /config parses the values snapshot', () async {
+    final sessionStore = await _buildLoggedInSessionStore();
+    final bundle = await createTestApiBundle(sessionStore);
+    addTearDown(bundle.dispose);
+    addTearDown(sessionStore.dispose);
+    bundle.adapter.enqueueJson(
+      method: 'GET',
+      path: '/config',
+      body: _configJson(),
+    );
 
-      bundle.adapter.enqueueJson(
-        method: 'GET',
-        path: '/config',
-        body: _buildConfigResourceJson(),
-      );
+    final result = await bundle.configApi.get();
 
-      final resource = await bundle.configApi.get();
+    expect(result.scheduler.crons['download_task_sync'], '* * * * *');
+    expect(result.scheduler.workerDefaultConcurrency, 4);
+    expect(result.downloads.subscriptionSearchFreshDays, 7);
+    expect(result.downloads.subscriptionSearchStaleAttemptLimit, 3);
+    expect(result.logging.level, 'INFO');
+  });
 
-      expect(resource.media.othersNumberFeatures, contains('OFJE'));
-      expect(resource.media.allowedMinVideoFileSize, 268435456);
-      expect(resource.metadata.javdbHost, 'jdforrepam.com');
-      expect(resource.scheduler.crons['download_task_sync'], '* * * * *');
-      expect(resource.downloads.smallFileCleanupThresholdMb, 256);
-      expect(resource.downloads.preferredClientKinds, <DownloadClientKind>[
-        DownloadClientKind.qbittorrent,
-        DownloadClientKind.cloud115,
-      ]);
-      expect(resource.logging.level, 'INFO');
-      expect(resource.effects['media'], 'hot');
-      expect(resource.effects.containsKey('database'), isFalse);
-      expect(resource.effects.containsKey('image_search'), isFalse);
-      expect(bundle.adapter.hitCount('GET', '/config'), 1);
+  test('GET /config defaults worker concurrency to 4 when omitted', () async {
+    final sessionStore = await _buildLoggedInSessionStore();
+    final bundle = await createTestApiBundle(sessionStore);
+    addTearDown(bundle.dispose);
+    addTearDown(sessionStore.dispose);
+    bundle.adapter.enqueueJson(
+      method: 'GET',
+      path: '/config',
+      body: _configJson(includeWorkerDefaultConcurrency: false),
+    );
+
+    final result = await bundle.configApi.get();
+
+    expect(result.scheduler.workerDefaultConcurrency, 4);
+  });
+
+  test('PATCH /config parses values and restart_required', () async {
+    final sessionStore = await _buildLoggedInSessionStore();
+    final bundle = await createTestApiBundle(sessionStore);
+    addTearDown(bundle.dispose);
+    addTearDown(sessionStore.dispose);
+    bundle.adapter.enqueueJson(
+      method: 'PATCH',
+      path: '/config',
+      body: _configJson(
+        extra: <String, dynamic>{
+          'restart_required': <String>['aps'],
+        },
+      ),
+    );
+
+    final result = await bundle.configApi.patch(const <String, dynamic>{
+      'scheduler': <String, dynamic>{'movie_heat_cron': '30 0 * * *'},
     });
 
-    test('patches partial config and parses restart metadata', () async {
-      final sessionStore = await _buildLoggedInSessionStore();
-      final bundle = await createTestApiBundle(sessionStore);
-      addTearDown(bundle.dispose);
-
-      bundle.adapter.enqueueJson(
-        method: 'PATCH',
-        path: '/config',
-        body: _buildConfigResourceJson(
-          includeEffects: false,
-          extra: <String, dynamic>{
-            'applied': <String>['scheduler.movie_heat_cron'],
-            'pending_restart': <Map<String, dynamic>>[
-              <String, dynamic>{
-                'field': 'scheduler.movie_heat_cron',
-                'restart': 'scheduler',
-              },
-            ],
-          },
-        ),
-      );
-
-      final result = await bundle.configApi.patch(const <String, dynamic>{
-        'scheduler': <String, dynamic>{'movie_heat_cron': '30 0 * * *'},
-      });
-
-      expect(result.applied, contains('scheduler.movie_heat_cron'));
-      expect(result.pendingRestart.single.field, 'scheduler.movie_heat_cron');
-      expect(result.pendingRestart.single.restart, 'scheduler');
-      final request = bundle.adapter.requests.single;
-      expect(request.method, 'PATCH');
-      expect(request.path, '/config');
-      expect(request.body.keys, contains('scheduler'));
-      expect(request.body.keys, isNot(contains('media')));
-      expect(request.body['scheduler']['movie_heat_cron'], '30 0 * * *');
-    });
-
-    test('throws when a target section is missing', () async {
-      final sessionStore = await _buildLoggedInSessionStore();
-      final bundle = await createTestApiBundle(sessionStore);
-      addTearDown(bundle.dispose);
-
-      final body = _buildConfigResourceJson();
-      final values = body['values'] as Map<String, dynamic>;
-      values.remove('scheduler');
-      bundle.adapter.enqueueJson(method: 'GET', path: '/config', body: body);
-
-      await expectLater(
-        bundle.configApi.get(),
-        throwsA(isA<FormatException>()),
-      );
-    });
-
-    // 回归：后端删掉 media.collection_duration_threshold_minutes 之后，只读
-    // downloads 一节的「下载偏好」页也被整包解析异常拖成「加载失败」。字段级
-    // 缺失必须降级成默认值，不能连坐其它节。
-    test('tolerates unknown field removal inside a section', () async {
-      final sessionStore = await _buildLoggedInSessionStore();
-      final bundle = await createTestApiBundle(sessionStore);
-      addTearDown(bundle.dispose);
-
-      final body = _buildConfigResourceJson();
-      final values = body['values'] as Map<String, dynamic>;
-      (values['media'] as Map<String, dynamic>)
-        ..remove('allowed_min_video_file_size')
-        ..remove('uncensored_tags');
-      (values['logging'] as Map<String, dynamic>).remove('level');
-      (values['scheduler'] as Map<String, dynamic>).remove('movie_heat_cron');
-      bundle.adapter.enqueueJson(method: 'GET', path: '/config', body: body);
-
-      final result = await bundle.configApi.get();
-
-      // 缺失字段降级成默认值……
-      expect(result.media.allowedMinVideoFileSize, 0);
-      expect(result.media.uncensoredTags, isEmpty);
-      expect(result.logging.level, 'INFO');
-      expect(result.scheduler.crons.containsKey('movie_heat'), isFalse);
-      // ……同节其它字段与其它节完全不受影响。
-      expect(result.media.othersNumberFeatures, <String>['OFJE', 'CJOB']);
-      expect(result.downloads.smallFileCleanupThresholdMb, 256);
-      expect(result.downloads.preferredClientKinds, <DownloadClientKind>[
-        DownloadClientKind.qbittorrent,
-        DownloadClientKind.cloud115,
-      ]);
+    expect(result.restartRequired, <String>['aps']);
+    expect(result.values.logging.level, 'INFO');
+    final request = bundle.adapter.requests.single;
+    expect(request.body, <String, dynamic>{
+      'scheduler': <String, dynamic>{'movie_heat_cron': '30 0 * * *'},
     });
   });
 }
 
-Map<String, dynamic> _buildConfigResourceJson({
-  bool includeEffects = true,
+Map<String, dynamic> _configJson({
   Map<String, dynamic> extra = const <String, dynamic>{},
-}) {
-  return <String, dynamic>{
-    'values': <String, dynamic>{
-      'media': <String, dynamic>{
-        'others_number_features': <String>['OFJE', 'CJOB'],
-        'inner_sub_tags': <String>['中字', '-C'],
-        'blueray_tags': <String>['蓝光', '4K'],
-        'uncensored_tags': <String>['uncensored', '-UC'],
-        'uncensored_prefix': <String>['PT-', 'S2M'],
-        'allowed_min_video_file_size': 268435456,
-      },
-      'metadata': <String, dynamic>{
-        'javdb_host': 'jdforrepam.com',
-      },
-      'scheduler': <String, dynamic>{
-        for (final key in AdvancedSchedulerConfigDto.cronKeys)
-          '${key}_cron':
-              key == 'download_task_sync' ? '* * * * *' : '0 2 * * *',
-      },
-      'downloads': <String, dynamic>{
-        'small_file_cleanup_threshold_mb': 256,
-        'preferred_client_kinds': <String>['qbittorrent', 'cloud115'],
-      },
-      'logging': <String, dynamic>{'level': 'INFO'},
-      'database': <String, dynamic>{
-        'url': 'postgresql://user:password@postgres:5432/sakuramedia',
-      },
-      'image_search': <String, dynamic>{'inference_api_key': 'secret'},
+  bool includeWorkerDefaultConcurrency = true,
+}) => <String, dynamic>{
+  'values': <String, dynamic>{
+    'media': <String, dynamic>{
+      'allowed_min_video_file_size': 268435456,
     },
-    if (includeEffects)
-      'effects': <String, dynamic>{
-        'media': 'hot',
-        'metadata': 'hot',
-        'scheduler': 'restart_scheduler',
-        'downloads': 'restart_scheduler',
-        'logging': 'restart_api',
-        'database': 'restart_api',
-        'image_search': 'restart_scheduler',
-      },
-    ...extra,
-  };
-}
+    'scheduler': <String, dynamic>{
+      if (includeWorkerDefaultConcurrency) 'worker_default_concurrency': 4,
+      'actor_subscription_sync_cron': '0 2 * * *',
+      'subscribed_movie_auto_download_cron': '30 2 * * *',
+      'download_task_sync_cron': '* * * * *',
+      'download_task_auto_import_cron': '* * * * *',
+      'movie_heat_cron': '15 0 * * *',
+      'movie_interaction_sync_cron': '0 5 * * *',
+      'movie_javdb_backfill_cron': '30 5 * * *',
+      'media_file_hash_backfill_cron': '0 3 * * *',
+      'media_file_scan_cron': '0 4 * * *',
+      'media_thumbnail_cron': '*/30 * * * *',
+      'image_search_index_cron': '*/5 * * * *',
+      'movie_similarity_recompute_cron': '30 3 * * *',
+      'moment_recommendation_generate_cron': '0 4 * * *',
+      'daily_recommendation_generate_cron': '0 5 * * *',
+      'activity_cleanup_cron': '30 5 * * *',
+      'gfriends_filetree_refresh_cron': '0 4 * * 1',
+    },
+    'downloads': <String, dynamic>{
+      'subscription_search_fresh_days': 7,
+      'subscription_search_stale_attempt_limit': 3,
+    },
+    'logging': <String, dynamic>{'level': 'INFO'},
+  },
+  'restart_required': const <String>[],
+  ...extra,
+};
 
 Future<SessionStore> _buildLoggedInSessionStore() async {
   final store = SessionStore.inMemory();

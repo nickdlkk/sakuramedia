@@ -21,6 +21,7 @@ class CollectionEpisodeQueueItem extends StatelessWidget {
     required this.subtitle,
     required this.isCurrent,
     required this.onTap,
+    this.trailing,
   });
 
   final Key itemKey;
@@ -29,7 +30,8 @@ class CollectionEpisodeQueueItem extends StatelessWidget {
   final String title;
   final String subtitle;
   final bool isCurrent;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -95,19 +97,34 @@ class CollectionEpisodeQueueItem extends StatelessWidget {
                       ),
                     ),
                     SizedBox(height: spacing.xs),
-                    Text(
-                      subtitle,
-                      style: resolveAppTextStyle(
-                        context,
-                        size: AppTextSize.s12,
-                        weight: AppTextWeight.regular,
-                        tone: AppTextTone.tertiary,
-                      ),
+                    Row(
+                      children: [
+                        if (isCurrent && trailing != null) ...[
+                          Icon(
+                            Icons.equalizer_rounded,
+                            size: context.appComponentTokens.iconSizeSm,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                          SizedBox(width: spacing.xs),
+                        ],
+                        Flexible(
+                          child: Text(
+                            subtitle,
+                            style: resolveAppTextStyle(
+                              context,
+                              size: AppTextSize.s12,
+                              weight: AppTextWeight.regular,
+                              tone: AppTextTone.tertiary,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
               ),
-              if (isCurrent)
+              if (trailing != null) trailing!,
+              if (isCurrent && trailing == null)
                 Padding(
                   padding: EdgeInsets.only(left: spacing.xs),
                   child: Icon(

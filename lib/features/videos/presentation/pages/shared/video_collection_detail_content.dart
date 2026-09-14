@@ -24,6 +24,7 @@ import 'package:sakuramedia/widgets/base/actions/app_button.dart';
 import 'package:sakuramedia/widgets/base/actions/app_icon_button.dart';
 import 'package:sakuramedia/widgets/base/actions/app_text_button.dart';
 import 'package:sakuramedia/widgets/base/feedback/app_empty_state.dart';
+import 'package:sakuramedia/widgets/base/feedback/app_filter_result_loading_overlay.dart';
 import 'package:sakuramedia/widgets/base/interaction/refresh/app_page_refresh_scope.dart';
 import 'package:sakuramedia/widgets/base/interaction/selection/app_selection_bottom_bar.dart';
 import 'package:sakuramedia/widgets/base/interaction/selection/app_selection_toolbar.dart';
@@ -31,7 +32,6 @@ import 'package:sakuramedia/widgets/base/interaction/selection/multi_select_stat
 import 'package:sakuramedia/widgets/base/navigation/app_list_header.dart';
 import 'package:sakuramedia/widgets/base/operations/batch/batch_progress_dialog.dart';
 import 'package:sakuramedia/widgets/domain/collections/collection_member_views.dart';
-import 'package:sakuramedia/widgets/domain/collections/playback/collection_playback_mode.dart';
 import 'package:sakuramedia/widgets/shell/mobile/app_mobile_subpage_shell.dart';
 
 /// 合集详情的成员排布方式：纵向列表（可拖序）或网格（侧重浏览）。
@@ -48,6 +48,7 @@ typedef VideoCollectionConfirm =
       required String confirmLabel,
       required Key confirmKey,
       Key? drawerKey,
+      Future<void> Function()? onConfirm,
     });
 
 typedef VideoCollectionPlayAllBuilder =
@@ -135,8 +136,7 @@ class VideoCollectionDetailContent extends ConsumerStatefulWidget {
   /// 「跳到其它合集」（桌面 push / 移动 push 路由），由壳实现。
   final void Function(BuildContext context, int collectionId)? onOpenCollection;
 
-  /// 确认弹层（桌面 `showAppConfirmDialog` / 移动 `showMobileClipConfirmDrawer`），
-  /// 由壳实现；`drawerKey` 仅移动端使用。
+  /// 确认弹层（桌面 dialog / 移动 drawer），由壳实现；`drawerKey` 仅移动端使用。
   final VideoCollectionConfirm? confirm;
 
   @override
@@ -203,7 +203,7 @@ class _VideoCollectionDetailContentState
       builder: (context) {
         if (async.isLoading && state == null) {
           return (widget.loadingBuilder ??
-              (_) => const Center(child: CircularProgressIndicator()))(context);
+              (_) => const Center(child: CircularProgressIndicator.adaptive()))(context);
         }
         if (async.hasError && state == null) {
           return _buildError(context, async.error!);
@@ -230,7 +230,13 @@ class _VideoCollectionDetailContentState
             SizedBox(
               height: _isMobile ? context.appSpacing.md : context.appSpacing.lg,
             ),
-            Expanded(child: _buildBody(context, state)),
+            Expanded(
+              child: AppFilterResultLoadingOverlay(
+                isLoading: state.filterUpdate.isLoading,
+                hasPreviousItems: state.items.isNotEmpty,
+                child: _buildBody(context, state),
+              ),
+            ),
             if (_isMobile && selectionMode) _buildBatchBar(context, state),
           ],
         );
@@ -772,27 +778,22 @@ class _VideoCollectionDetailContentState
     if (videoId == null) {
       return;
     }
+    final targetVideoId = videoId;
     final label = title.isEmpty ? '该视频' : '“$title”';
+    final notifier = ref.read(_providerRef.notifier);
     final confirmed = await _confirm(
       title: '删除视频',
       message: '确认删除$label？该操作不可恢复。',
       confirmLabel: '删除',
       confirmKey: Key('${widget.keyPrefix}-delete-confirm-button'),
       drawerKey: _isMobile ? Key('${widget.keyPrefix}-delete-drawer') : null,
+      onConfirm: () => notifier.deleteVideo(itemId, targetVideoId),
     );
     if (!mounted || !confirmed) {
       return;
     }
-    final error = await ref
-        .read(_providerRef.notifier)
-        .deleteVideo(itemId, videoId);
-    if (!mounted) {
-      return;
-    }
-    if (error == null) {
-      _mutationBroadcaster.reportDeleted(videoId);
-    }
-    showToast(error ?? '已删除视频');
+    _mutationBroadcaster.reportDeleted(targetVideoId);
+    showToast('已删除视频');
   }
 
   Future<bool> _confirm({
@@ -801,6 +802,7 @@ class _VideoCollectionDetailContentState
     required String confirmLabel,
     required Key confirmKey,
     Key? drawerKey,
+    Future<void> Function()? onConfirm,
   }) async {
     final handler = widget.confirm;
     if (handler == null) {
@@ -813,20 +815,13 @@ class _VideoCollectionDetailContentState
       confirmLabel: confirmLabel,
       confirmKey: confirmKey,
       drawerKey: drawerKey,
+      onConfirm: onConfirm,
     );
   }
 
   Future<void> _playFrom(int index) async {
     final state = ref.read(_providerRef).value;
     if (state == null) {
-      return;
-    }
-    // 进入连播前先询问形态（列表连播 / 合并播放）；外部点关闭返回 null → 放弃跳转。
-    final mode = await showCollectionPlaybackModePicker(
-      context: context,
-      useBottomDrawer: _isMobile,
-    );
-    if (mode == null || !mounted) {
       return;
     }
     final handoff = ref.read(collectionPlaybackHandoffProvider);
@@ -836,11 +831,6 @@ class _VideoCollectionDetailContentState
       collectionId: widget.collectionId,
       sort: sort,
       items: state.items,
-    );
-    // key 与连播页 takeMode 处保持一致：合集 + 排序，避免同合集换排序后串。
-    handoff.offerMode(
-      key: 'video:${widget.collectionId}:${sort ?? ''}',
-      mode: mode,
     );
     if (_isMobile) {
       MobileVideoCollectionPlayRouteData(

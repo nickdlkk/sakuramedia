@@ -1,119 +1,42 @@
-# layout & shell —— 页面壳层与容器
+# layout & shell —— 页面壳层和容器
 
-从整页壳层到卡片、说明块、迷你数据卡、设置项……所有"页面结构级容器"都在这里。
+## 应用壳层
 
-## 一、整页壳层
+- `AppDesktopShell`：`lib/widgets/shell/desktop/app_desktop_shell.dart`，桌面工作台容器。
+- `AppSidebar`、`AppSidebarGroup`、`AppSidebarItem`：`app_sidebar.dart`，桌面导航分组和条目。
+- `AppVersionInfoCard`：`app_version_info_card.dart`，应用版本与可用更新提示。
+- `AppTopBar`：`app_top_bar.dart`，桌面页面顶栏和操作区。
+- `AppMobileShell`、`AppMobileSubpageShell`：`lib/widgets/shell/mobile/`，移动一级入口和子页面容器。
+- `AppWindowDragArea`：`lib/widgets/shell/window/`，桌面窗口拖拽区。
 
-### AppDesktopShell
-- **路径**: `lib/widgets/shell/desktop/app_desktop_shell.dart`
-- **用途**: 桌面主壳:左 Sidebar + 顶 TopBar + body。
-- **required**: `currentPath` · `layout` · `topBarConfig` · `shellNavigatorKey` · `navGroups` · `child`
-- **何时用**: 桌面路由树顶层,通常由 `routes/` 里的 shell route 装配,业务代码基本不直接 new 它。
+新页面先选择对应平台 shell，再在内容区编排 feature 页面；不要在 feature 页面重新搭一套应用级导航。
 
-### AppMobileShell
-- **路径**: `lib/widgets/shell/mobile/app_mobile_shell.dart`
-- **用途**: 移动主壳:底部导航栏 + drawer(可选) + body。
-- **required**: `currentPath` · `navGroups` · `child`
-- **可选**: `currentIndex` · `onDestinationSelected` · `drawer` · `drawerEnableOpenDragGesture`
-- **何时用**: 移动路由树顶层,由 `routes/` 装配。
+## 页面和卡片容器
 
-### AppMobileSubpageShell
-- **路径**: `lib/widgets/shell/mobile/app_mobile_subpage_shell.dart`
-- **用途**: 移动**子页**壳(有 AppBar + 返回按钮 + 标题 + `defaultLocation` 回退)。
-- **required**: `title` · `child` · (`defaultLocation` 或 `fallbackPath` 二选一,后者已 deprecated)
-- **可选**: `currentPath` · `bodyPadding`(默认 `AppPageInsets.compactStandard`)
-- **何时用**: 所有移动"从主页面进的二级页"——设置详情、影片详情、切片列表等。**别自己拼 AppBar**。
+- `AppPageFrame`：页面最大宽度、边距和滚动内容容器。
+- `AppContentCard`：承载一组内容或表单的卡片。
+- `AppSettingsGroup`、`AppSettingCell`、`AppSettingIconBox`、`AppSettingCellChevron`、`AppSettingsRail`：设置页分组、条目和桌面设置导航。
+- `AppNoticeCard` / `AppNoticeStat`：页面顶部说明和统计摘要。
+- `AppStatTile`：突出数字统计；`AppInfoBlock`：标签和值的普通信息块。
+- `AppBadge`：小型徽标或状态标记。
 
-### AppSidebar / AppSidebarGroup / AppSidebarItem
-- **路径**: `lib/widgets/shell/desktop/app_sidebar.dart`
-- **用途**: 桌面左侧导航栏。`AppSidebar` 是整栏,`AppSidebarGroup` 分组,`AppSidebarItem` 是单个 item(支持 `badgeCount` 未读数)。
-- **AppSidebar required**: `currentPath` · `navGroups`
-- **AppSidebarItem required**: `icon` · `label` · `onTap` · `selected` · `collapsed`;可选 `badgeCount`
-- **何时用**: 只有 shell 自己用;新增导航项去改 `routes/nav_groups.dart` 之类的数据源,别直接 new item。
+这些组件位于 `lib/widgets/base/layout/cards/`。尺寸和间距走 theme token，页面只传语义内容和必要布局参数。
 
-### AppTopBar
-- **路径**: `lib/widgets/shell/desktop/app_top_bar.dart`
-- **用途**: 桌面顶部条(标题 + 右侧动作 + 平台窗口拖拽区)。
-- **required**: `currentPath` · `config`
-- **何时用**: shell 内部使用;业务代码通常通过 `topBarConfig` 声明右侧动作,不 new 它。
 
-### AppWindowDragArea
-- **路径**: `lib/widgets/shell/window/app_window_drag_area.dart` (条件导出:desktop / web stub)
-- **用途**: 桌面 window_manager 拖拽热区,web 上是空 stub。
-- **何时用**: 只在自定义窗口条时用,平台特有,业务侧一般不碰。
+## 固定列表控制栏与吸顶
 
-## 二、页面容器
+- `AppFixedHeaderLayout`：`lib/widgets/base/layout/scrolling/app_fixed_header_layout.dart`。`header` 自然占高，`child` 在剩余空间内滚动，适用于影片、女优、排行、搜索和管理列表。结果加载层放在 `child` 内，不覆盖固定控制栏。
+- `AppPinnedListHeader`：同目录 `app_pinned_list_header.dart`。用于资料/合集预览之后的控制栏，保持一个主滚动容器。必须传页面对应的主题背景色，避免卡片从栏内透出；正常/多选内容在同一个头中替换。
+- 吸顶页面切筛选时，使用控制栏的稳定 `GlobalKey` 和原滚动控制器调用 `AppPinnedListHeader.scrollToStart`。已经滚过介绍区时回到结果起点，尚未滚过时保留位置。
+- `AppFilterResultLoadingOverlay` 在吸顶页面传相同的 `protectedHeaderKey` 和 `scrollController`，按实际头部位置裁剪结果遮罩，兼容头部动态高度。
+- `AppAdaptiveRefreshScrollView` / `AppPullToRefresh` 在下拉期间发送 `AppPullRefreshNotification`，外层结果加载层据此暂停筛选加载标记。桌面页刷新和正常筛选不受影响，页面无需再维护一份图标互斥状态。
 
-### AppPageFrame
-- **路径**: `lib/widgets/base/layout/cards/app_page_frame.dart`
-- **用途**: 桌面页统一"标题 + eyebrow + description + 滚动 body"框架。
-- **required**: `title` · `child`
-- **可选**: `eyebrow` · `description` · `scrollController`
-- **何时用**: 新增桌面主页时首选。别自己套 `SingleChildScrollView + Padding + Column(标题, 描述, body)`。
+页面保留自己的滚动控制器、缓存键、Provider 和分页回调；不通过嵌套纵向列表或全量 `shrinkWrap` 网格实现固定栏。已有固定的合集详情布局可直接沿用。
 
-### AppContentCard
-- **路径**: `lib/widgets/base/layout/cards/app_content_card.dart`
-- **用途**: 卡壳容器(标题 + 内容 + 可选 header trailing)。
-- **required**: `title` · `child`
-- **可选**: `padding` · `titleStyle` · `headerBottomSpacing` · `headerTrailing`
-- **何时用**: 页内"分块显示信息"的通用容器(设置项组的父容器、详情页某个 section)。
+## 桌面一级页面保留
 
-## 三、设置类容器
+`DesktopBranchCache` 配合桌面一级导航的 StatefulShellRoute，按最近访问顺序最多保留 8 个分支；未访问页面不挂载，详情不加入缓存。隐藏分支停用 TickerMode 和焦点，离开桌面 shell 时一起释放。
 
-### AppSettingsGroup / AppSettingCell / AppSettingIconBox / AppSettingCellChevron
-- **路径**: `lib/widgets/base/layout/cards/app_settings_group.dart`
-- **用途**: 国内 App 风"设置项组"。`AppSettingsGroup` 是分组(可 header/footer),`AppSettingCell` 是行(左 icon + 标题/副标题 + 右 trailing / chevron),`AppSettingIconBox` 是标题左侧那个圆角图标框,`AppSettingCellChevron` 是右侧">"。
-- **AppSettingsGroup required**: `children`;可选 `header` · `footer` · `dividerIndent`
-- **AppSettingCell required**: `title`;可选 `icon` · `iconColor` · `subtitle` · `trailing` · `onTap`
-- **何时用**: 所有"设置类"页面。桌面 configuration 聚合页、移动 configuration 独立子页,都走它。
+## TabBarView 页面保留
 
-### AppSettingsRail
-- **路径**: `lib/widgets/base/layout/cards/app_settings_rail.dart`
-- **用途**: 桌面设置聚合页左侧那条**分类导航**(垂直 tab)。
-- **required**: `items: List<AppSettingsRailItem>` · `selectedIndex` · `onSelected`
-- **可选**: `width`(默认 188)
-- **何时用**: 只有 configuration 聚合页 shell 用。别用来做别的地方的垂直 tab——那属于 `AppTabBar` 或 sidebar。
-
-## 四、页面顶部说明 / 数据展示
-
-### AppNoticeCard(+ `AppNoticeStat`)
-- **路径**: `lib/widgets/base/layout/cards/app_notice_card.dart`
-- **用途**: 页面顶部"说明卡 / 概览卡"。
-- **required**: `description`
-- **可选**: `leadingIcon` · `title` · `stats: List<AppNoticeStat>`(每项 `label` / `value` / `valueSize`)
-- **内部规则**:
-  - **有 `title` 或非空 `stats` → `lgBorder`**(overview 系);否则 → `mdBorder`(account 提示条系)。
-  - **`stats.length >= 4` → 自动 2×2 grid**;1–3 项单排横列。
-  - 背景恒 `noticeSurface`。
-- **何时用**: 页面顶第一屏"给用户看一眼这里是什么 / 关键数字"。移动 + 桌面都在用。
-- **AppNoticeStat**: 数据模型,内部由 `AppStatTile` 渲染。
-
-### AppStatTile
-- **路径**: `lib/widgets/base/layout/cards/app_stat_tile.dart`
-- **用途**: **迷你数据卡**:数字大字上 / label 小字下(`surfaceCard` + `mdBorder`)。
-- **required**: `label` · `value`
-- **可选**: `valueSize`(默认 `AppTextSize.s16`,下载器等场景传 s18)
-- **何时用**: `AppNoticeCard.stats` 内部即用它;也可以直接摆一排。**强调数字**。
-- **和 `AppInfoBlock` 的差异**: **StatTile 强调数字、InfoBlock 强调标签**——语义完全不同,**不合并成 orientation 参数**。
-
-### AppInfoBlock
-- **路径**: `lib/widgets/base/layout/cards/app_info_block.dart`
-- **用途**: label 小字上 / value 正常下的**只读字段展示**(`surfaceMuted` + `mdBorder`)。
-- **required**: `label` · `value`
-- **何时用**: 展示"配置项当前值"、"详情键值对"这类"以标签为主"的信息。
-- **和 `AppStatTile` 的差异**: 见上一条。
-
-### AppBadge
-- **路径**: `lib/widgets/base/layout/cards/app_badge.dart`
-- **用途**: 小徽标(6 种 tone × 2 种 size)。
-- **required**: `label`
-- **可选**: `tone: neutral(默认)|primary|info|warning|error|success` · `size: compact|regular(默认)`
-- **何时用**: 卡片右上角状态、行内 tag、列表 item 的 badge。别自己染色 chip。
-
----
-
-## 相关约定
-
-- Shell / TopBar / Sidebar 是**路由层装配的东西**;业务代码通常不直接 new,而是在 `routes/` 里配 `topBarConfig` / `navGroups`。
-- 页面顶部有说明数据 → 首选 `AppNoticeCard`;单纯统计一排 → `AppStatTile` × N 自己 Row;详情区键值对 → `AppInfoBlock`。
-- 设置类页面**必须**走 `AppSettingsGroup + AppSettingCell`,别用 `ListTile` / 手写行。
+`AppKeepAlive` 位于 `lib/widgets/base/layout/keep_alive_page.dart`。它只保留已访问的 `PageView` / `TabBarView` 子页 Widget 生命周期，用于输入、滚动和局部交互在切换标签后恢复；不要用它把页面 Provider 提升为全局常驻状态。

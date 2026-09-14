@@ -61,7 +61,7 @@ final class ImageSearchProvider
   }
 }
 
-String _$imageSearchHash() => r'4c95292b7178fc6b6b3a563a85e46463a5f0c84c';
+String _$imageSearchHash() => r'07e7d3d5f935494a1db820bd2c9dbe6161954c3a';
 
 /// 按完整路由 location 隔离、由页面 LRU 缓存保活的图搜状态源。
 

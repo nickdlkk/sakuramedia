@@ -31,10 +31,14 @@ class VideoLoadingIndicator extends StatelessWidget {
             children: [
               SizedBox.square(
                 dimension: componentTokens.iconSizeMd,
-                child: CircularProgressIndicator(
+                child: CircularProgressIndicator.adaptive(
+                  backgroundColor: switch (Theme.of(context).platform) {
+                    TargetPlatform.iOS || TargetPlatform.macOS => context.appTextPalette.onMedia,
+                    _ => null,
+                  },
                   key: const Key('video-loading-spinner'),
                   strokeWidth: componentTokens.movieCardLoaderStrokeWidth,
-                  color: context.appTextPalette.onMedia,
+                  valueColor: AlwaysStoppedAnimation<Color?>(context.appTextPalette.onMedia),
                 ),
               ),
               SizedBox(width: spacing.sm),

@@ -12,7 +12,9 @@ import 'package:sakuramedia/features/movies/presentation/providers/mutation_even
 import 'package:sakuramedia/features/shared/presentation/providers/paged_async_notifier.dart';
 import 'package:sakuramedia/features/subscriptions/presentation/subscription_feedback.dart';
 import 'package:sakuramedia/theme.dart';
+import 'package:sakuramedia/widgets/base/layout/scrolling/app_fixed_header_layout.dart';
 import 'package:sakuramedia/widgets/base/feedback/app_filter_update_bar.dart';
+import 'package:sakuramedia/widgets/base/feedback/app_filter_result_loading_overlay.dart';
 import 'package:sakuramedia/widgets/base/interaction/refresh/app_page_refresh_scope.dart';
 import 'package:sakuramedia/widgets/base/interaction/selection/multi_select_state_mixin.dart';
 import 'package:sakuramedia/widgets/base/layout/scrolling/app_paged_load_more_footer.dart';
@@ -65,6 +67,7 @@ class MovieSummaryListContent extends ConsumerStatefulWidget {
     this.registerPageRefresh = false,
     this.onRefreshFailure,
     this.headerBuilder,
+    this.headerLeading,
     this.useMobileSelectionLayout = false,
   });
 
@@ -80,6 +83,7 @@ class MovieSummaryListContent extends ConsumerStatefulWidget {
   final bool registerPageRefresh;
   final void Function(BuildContext context)? onRefreshFailure;
   final MovieSummaryListHeaderBuilder? headerBuilder;
+  final Widget? headerLeading;
   final bool useMobileSelectionLayout;
 
   @override
@@ -101,6 +105,10 @@ class _MovieSummaryListContentState
   MovieBatchToggleExecutor get batchSubscriptionExecutor => ref
       .read(movieSummaryProvider(widget.scope).notifier)
       .batchToggleSubscription;
+
+  @override
+  MovieBlacklistBatchExecutor get batchBlacklistExecutor =>
+      ref.read(movieSummaryProvider(widget.scope).notifier).blacklistMovies;
 
   @override
   List<String> get batchSelectableNumbers =>
@@ -255,82 +263,93 @@ class _MovieSummaryListContentState
 
     final body = ColoredBox(
       color: widget.surfaceColor,
-      child: widget.bodyBuilder(
-        context,
-        _scrollController,
-        SliverMainAxisGroup(
-          slivers: [
-            SliverToBoxAdapter(
-              child: Column(
-                key: widget.contentKey,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  header,
-                  AppFilterUpdateBar(
-                    state:
-                        paged?.filterUpdate ?? const FilterUpdateState.idle(),
-                    hasPreviousItems: items.isNotEmpty,
-                    onRetry: () => unawaited(
-                      ref
-                          .read(movieSummaryProvider(widget.scope).notifier)
-                          .retryFilter(),
-                    ),
-                  ),
-                  SizedBox(height: widget.sectionSpacing),
-                ],
+      child: AppFixedHeaderLayout(
+        header: Column(
+          key: widget.contentKey,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (!selectionMode && widget.headerLeading != null)
+              widget.headerLeading!,
+            header,
+            AppFilterUpdateBar(
+              state: paged?.filterUpdate ?? const FilterUpdateState.idle(),
+              hasPreviousItems: items.isNotEmpty,
+              onRetry: () => unawaited(
+                ref
+                    .read(movieSummaryProvider(widget.scope).notifier)
+                    .retryFilter(),
               ),
             ),
-            if (!(paged?.filterUpdate.hasFailed ?? false) || items.isNotEmpty)
-              MovieSummarySliver(
-                items: items,
-                isLoading: isInitialLoading,
-                errorMessage: initialErrorMessage,
-                onMovieTap: (movie) =>
-                    widget.onMovieTap(context, movie.movieNumber),
-                onMovieMenuRequest: (movie, globalPosition) {
-                  unawaited(
-                    showMovieCollectionFeatureActionMenu(
-                      context: context,
-                      movieNumber: movie.movieNumber,
-                      globalPosition: globalPosition,
-                      isSubscribed: movie.isSubscribed,
-                      onEnterSelection: widget.useMobileSelectionLayout
-                          ? () {
-                              enterSelection();
-                              toggleSelect(movie.movieNumber);
-                            }
-                          : null,
-                    ),
-                  );
-                },
-                onMovieSubscriptionTap: (movie) =>
-                    _toggleMovieSubscription(movie.movieNumber),
-                isMovieSubscriptionUpdating: (movie) =>
-                    summary?.isSubscriptionUpdating(movie.movieNumber) ?? false,
-                emptyMessage:
-                    widget.emptyMessage ??
-                    (filter.isDefault ? '暂无影片，去搜索看看吧' : '当前筛选条件下暂无匹配影片'),
-                selectionMode: selectionMode,
-                isMovieSelected: (movie) => isSelected(movie.movieNumber),
-                onMovieSelectedChanged: (movie, _) =>
-                    toggleSelect(movie.movieNumber),
-              ),
-            if (showFooter)
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: EdgeInsets.only(top: context.appSpacing.md),
-                  child: AppPagedLoadMoreFooter(
-                    isLoading: paged.isLoadingMore,
-                    errorMessage: paged.loadMoreErrorMessage,
-                    onRetry: () => ref
-                        .read(movieSummaryProvider(widget.scope).notifier)
-                        .loadMore(),
-                  ),
-                ),
-              ),
+            SizedBox(height: widget.sectionSpacing),
           ],
         ),
-        widget.enableRefresh ? _handleRefresh : null,
+        child: AppFilterResultLoadingOverlay(
+          isLoading: paged?.filterUpdate.isLoading ?? false,
+          hasPreviousItems: items.isNotEmpty,
+          child: widget.bodyBuilder(
+            context,
+            _scrollController,
+            SliverMainAxisGroup(
+              slivers: [
+                if (!(paged?.filterUpdate.hasFailed ?? false) ||
+                    items.isNotEmpty)
+                  MovieSummarySliver(
+                    items: items,
+                    isLoading: isInitialLoading,
+                    errorMessage: initialErrorMessage,
+                    placeholderCount: 24,
+                    onMovieTap: (movie) =>
+                        widget.onMovieTap(context, movie.movieNumber),
+                    onMovieMenuRequest: (movie, globalPosition) {
+                      unawaited(
+                        showMovieCollectionFeatureActionMenu(
+                          context: context,
+                          movieNumber: movie.movieNumber,
+                          globalPosition: globalPosition,
+                          isSubscribed: movie.isSubscribed,
+                          onBlacklisted: () => ref
+                              .read(movieSummaryProvider(widget.scope).notifier)
+                              .removeMovies(<String>[movie.movieNumber]),
+                          onEnterSelection: widget.useMobileSelectionLayout
+                              ? () {
+                                  enterSelection();
+                                  toggleSelect(movie.movieNumber);
+                                }
+                              : null,
+                        ),
+                      );
+                    },
+                    onMovieSubscriptionTap: (movie) =>
+                        _toggleMovieSubscription(movie.movieNumber),
+                    isMovieSubscriptionUpdating: (movie) =>
+                        summary?.isSubscriptionUpdating(movie.movieNumber) ??
+                        false,
+                    emptyMessage:
+                        widget.emptyMessage ??
+                        (filter.isDefault ? '暂无影片，去搜索看看吧' : '当前筛选条件下暂无匹配影片'),
+                    selectionMode: selectionMode,
+                    isMovieSelected: (movie) => isSelected(movie.movieNumber),
+                    onMovieSelectedChanged: (movie, _) =>
+                        toggleSelect(movie.movieNumber),
+                  ),
+                if (showFooter)
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: EdgeInsets.only(top: context.appSpacing.md),
+                      child: AppPagedLoadMoreFooter(
+                        isLoading: paged.isLoadingMore,
+                        errorMessage: paged.loadMoreErrorMessage,
+                        onRetry: () => ref
+                            .read(movieSummaryProvider(widget.scope).notifier)
+                            .loadMore(),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            widget.enableRefresh ? _handleRefresh : null,
+          ),
+        ),
       ),
     );
 

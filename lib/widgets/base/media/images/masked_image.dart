@@ -16,8 +16,6 @@ import 'package:sakuramedia/theme.dart';
 /// - 由 `Image` widget 消费稳定的 provider，避免走过去 `CachedNetworkImage → OctoImage`
 ///   路径下每次 build 因 `ResizeImage` 无 `==` 覆盖被视为"新图"导致 Image element
 ///   被 `ValueKey(image)` 强制替换、fade 动画 250ms 重放的闪烁问题。
-///
-/// 兼容原 API：`visibleWidthFactor` + `visibleAlignment` 分支保留（hot_reviews 卡片依赖）。
 /// 新增可选 `alignment`——直接传给 `Image.alignment`，用于横图裁竖封面时需要 topCenter 等场景。
 class MaskedImage extends ConsumerStatefulWidget {
   const MaskedImage({
@@ -25,16 +23,10 @@ class MaskedImage extends ConsumerStatefulWidget {
     required this.url,
     this.fit = BoxFit.cover,
     this.alignment = Alignment.center,
-    this.visibleWidthFactor,
-    this.visibleAlignment = Alignment.center,
     this.memCacheWidth,
     this.memCacheHeight,
-  }) : assert(
-         visibleWidthFactor == null ||
-             (visibleWidthFactor > 0 && visibleWidthFactor <= 1),
-       );
+  });
 
-  static const double _decodeDevicePixelRatioCap = 2.0;
   static const int _decodeSizeUpperBound = 1024;
 
   final String url;
@@ -44,8 +36,6 @@ class MaskedImage extends ConsumerStatefulWidget {
   /// 竖封面套横框场景常传 `Alignment.topCenter` 露出海报上半部（番号+人脸）。
   final AlignmentGeometry alignment;
 
-  final double? visibleWidthFactor;
-  final AlignmentGeometry visibleAlignment;
   final int? memCacheWidth;
   final int? memCacheHeight;
 
@@ -153,34 +143,7 @@ class _MaskedImageState extends ConsumerState<MaskedImage> {
           );
         }
 
-        if (widget.visibleWidthFactor == null) {
-          return imageContent;
-        }
-
-        if (!constraints.hasBoundedWidth || !constraints.maxWidth.isFinite) {
-          return imageContent;
-        }
-
-        final croppedWidth = constraints.maxWidth / widget.visibleWidthFactor!;
-        final croppedHeight =
-            constraints.hasBoundedHeight && constraints.maxHeight.isFinite
-                ? constraints.maxHeight
-                : null;
-
-        return ClipRect(
-          child: OverflowBox(
-            alignment: widget.visibleAlignment,
-            minWidth: croppedWidth,
-            maxWidth: croppedWidth,
-            minHeight: croppedHeight,
-            maxHeight: croppedHeight,
-            child: SizedBox(
-              width: croppedWidth,
-              height: croppedHeight,
-              child: imageContent,
-            ),
-          ),
-        );
+        return imageContent;
       },
     );
   }
@@ -190,17 +153,12 @@ class _MaskedImageState extends ConsumerState<MaskedImage> {
     BoxConstraints constraints,
   ) {
     final dpr = MediaQuery.devicePixelRatioOf(context);
-    final effectiveDpr = dpr.clamp(1.0, MaskedImage._decodeDevicePixelRatioCap);
 
     int? cacheWidth;
     if (constraints.hasBoundedWidth &&
         constraints.maxWidth.isFinite &&
         constraints.maxWidth > 0) {
-      final factor = widget.visibleWidthFactor;
-      final widthMultiplier =
-          (factor != null && factor > 0 && factor <= 1) ? 1 / factor : 1.0;
-      final rawWidth =
-          (constraints.maxWidth * widthMultiplier * effectiveDpr).round();
+      final rawWidth = (constraints.maxWidth * dpr).round();
       cacheWidth = rawWidth.clamp(1, MaskedImage._decodeSizeUpperBound);
     }
 
@@ -208,7 +166,7 @@ class _MaskedImageState extends ConsumerState<MaskedImage> {
     if (constraints.hasBoundedHeight &&
         constraints.maxHeight.isFinite &&
         constraints.maxHeight > 0) {
-      final rawHeight = (constraints.maxHeight * effectiveDpr).round();
+      final rawHeight = (constraints.maxHeight * dpr).round();
       cacheHeight = rawHeight.clamp(1, MaskedImage._decodeSizeUpperBound);
     }
 

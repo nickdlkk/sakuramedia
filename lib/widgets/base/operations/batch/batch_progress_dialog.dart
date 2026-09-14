@@ -11,7 +11,6 @@ class BatchRunResult<T> {
   final List<T> failed;
 
   int get total => succeeded.length + failed.length;
-  bool get hasFailure => failed.isNotEmpty;
 }
 
 /// 顺序执行一组单条任务，并用进度弹窗呈现过程。
@@ -99,62 +98,65 @@ class _BatchProgressDialogState<T> extends State<_BatchProgressDialog<T>> {
     final colors = context.appColors;
     final value = _total == 0 ? 1.0 : _current / _total;
 
-    return AppDesktopDialog(
-      width: 360,
-      showCloseButton: false,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            _done ? '已完成' : widget.title,
-            style: resolveAppTextStyle(
-              context,
-              size: AppTextSize.s16,
-              weight: AppTextWeight.semibold,
-              tone: AppTextTone.primary,
-            ),
-          ),
-          SizedBox(height: spacing.md),
-          ClipRRect(
-            borderRadius: context.appRadius.smBorder,
-            child: LinearProgressIndicator(
-              value: value,
-              minHeight: 6,
-              backgroundColor: colors.surfaceMuted,
-            ),
-          ),
-          SizedBox(height: spacing.sm),
-          Text(
-            _done
-                ? '成功 ${_succeeded.length} 个，失败 ${_failed.length} 个'
-                : '处理中 $_current/$_total',
-            style: resolveAppTextStyle(
-              context,
-              size: AppTextSize.s12,
-              weight: AppTextWeight.regular,
-              tone:
-                  _done && _failed.isNotEmpty
-                      ? AppTextTone.error
-                      : AppTextTone.secondary,
-            ),
-          ),
-          if (_done) ...[
-            SizedBox(height: spacing.lg),
-            Align(
-              alignment: Alignment.centerRight,
-              child: AppButton(
-                key: const Key('batch-progress-close-button'),
-                label: '关闭',
-                size: AppButtonSize.small,
-                onPressed:
-                    () => Navigator.of(context).pop(
-                      BatchRunResult<T>(succeeded: _succeeded, failed: _failed),
-                    ),
+    return PopScope(
+      canPop: _done,
+      child: AppDesktopDialog(
+        width: 360,
+        showCloseButton: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              _done ? '已完成' : widget.title,
+              style: resolveAppTextStyle(
+                context,
+                size: AppTextSize.s16,
+                weight: AppTextWeight.semibold,
+                tone: AppTextTone.primary,
               ),
             ),
+            SizedBox(height: spacing.md),
+            ClipRRect(
+              borderRadius: context.appRadius.smBorder,
+              child: LinearProgressIndicator(
+                value: value,
+                minHeight: 6,
+                backgroundColor: colors.surfaceMuted,
+              ),
+            ),
+            SizedBox(height: spacing.sm),
+            Text(
+              _done
+                  ? '成功 ${_succeeded.length} 个，失败 ${_failed.length} 个'
+                  : '处理中 $_current/$_total',
+              style: resolveAppTextStyle(
+                context,
+                size: AppTextSize.s12,
+                weight: AppTextWeight.regular,
+                tone:
+                    _done && _failed.isNotEmpty
+                        ? AppTextTone.error
+                        : AppTextTone.secondary,
+              ),
+            ),
+            if (_done) ...[
+              SizedBox(height: spacing.lg),
+              Align(
+                alignment: Alignment.centerRight,
+                child: AppButton(
+                  key: const Key('batch-progress-close-button'),
+                  label: '关闭',
+                  size: AppButtonSize.small,
+                  onPressed:
+                      () => Navigator.of(context).pop(
+                        BatchRunResult<T>(succeeded: _succeeded, failed: _failed),
+                      ),
+                ),
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
